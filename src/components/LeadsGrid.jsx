@@ -13,6 +13,7 @@ const LeadsGrid = () => {
     const { user, userDetails, logout } = useAuth();
     const {
         acctNo,
+        acctId,
         acctName,
         accounts,
         isAccountLinked,
@@ -65,7 +66,7 @@ const LeadsGrid = () => {
     // Fetch leads from API
     const fetchLeads = async () => {
         // Wait until account state is resolved before fetching
-        if (!isAccountLinked || !acctNo) return;
+        if (!isAccountLinked || !acctId) return;
 
         setLoading(true);
         setError(null);
@@ -75,7 +76,7 @@ const LeadsGrid = () => {
                 page: currentPage,
                 limit: pageSize,
                 ...(sortField && { sortBy: sortField, sortOrder }),
-                ...(acctNo && { acctNo }),
+                ...(acctId && { acctId }),
                 ...appliedFilters
             };
 
@@ -114,12 +115,12 @@ const LeadsGrid = () => {
 
     useEffect(() => {
         fetchLeads();
-    }, [currentPage, pageSize, sortField, sortOrder, appliedFilters, acctNo, isAccountLinked]);
+    }, [currentPage, pageSize, sortField, sortOrder, appliedFilters, acctId, isAccountLinked]);
 
     // Fetch admins and build a lookup map keyed by adminId
     useEffect(() => {
-        if (!acctNo) return;
-        api.get('/api/accounts/admins', { params: { acctNo } })
+        if (!acctId) return;
+        api.get('/api/accounts/admins', { params: { acctId } })
             .then((res) => {
                 const list = Array.isArray(res.data) ? res.data : (res.data.admins || res.data.data || []);
                 const map = {};
@@ -130,7 +131,7 @@ const LeadsGrid = () => {
                 setAdminsMap(map);
             })
             .catch(() => { });
-    }, [acctNo]);
+    }, [acctId]);
 
     // Handle sorting
     const handleSort = (field) => {
@@ -185,7 +186,7 @@ const LeadsGrid = () => {
             const params = {
                 limit: 100000, // fetch all matching records
                 ...(sortField && { sortBy: sortField, sortOrder }),
-                ...(acctNo && { acctNo }),
+                ...(acctId && { acctId }),
                 ...appliedFilters
             };
 

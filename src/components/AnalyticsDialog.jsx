@@ -1,6 +1,8 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import api from '../api/axiosConfig';
+import { useAccount } from '../context/AccountContext';
+import { resolveActiveAcctNo } from '../utils/accountHelpers';
 import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
 import {
     PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
@@ -135,7 +137,7 @@ const ChartRenderer = ({ chartConfig, fetchChartData }) => {
         };
 
         loadChartData();
-    }, [chartConfig.xAxis, chartConfig.yAxis, chartConfig.aggregation, chartConfig.dateFilterFrom, chartConfig.dateFilterTo]);
+    }, [chartConfig.xAxis, chartConfig.yAxis, chartConfig.aggregation, chartConfig.dateFilterFrom, chartConfig.dateFilterTo, chartConfig._refreshKey]);
 
     const yAxisLabel = chartConfig.yAxis?.label || 'Value';
 
@@ -165,6 +167,7 @@ const ChartRenderer = ({ chartConfig, fetchChartData }) => {
 };
 
 const AnalyticsDialog = ({ isOpen, onClose }) => {
+    const { acctNo, acctId } = useAccount();
     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(false);
     const [fields, setFields] = useState([]);
@@ -204,12 +207,38 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
         yAxis: null,
         aggregation: null,
         dateFilterFrom: '',
-        dateFilterTo: ''
+        dateFilterTo: '',
+        _refreshKey: 0
     };
 
-    // State for charts
-    const [charts, setCharts] = useState([]);
-    const [nextChartId, setNextChartId] = useState(1);
+    // Load saved charts from localStorage (keyed by account)
+    const getStorageKey = (acct) =>
+        `analyticsDialog_charts_${acct || 'default'}`;
+
+    const loadSavedCharts = (acct) => {
+        try {
+            const saved = localStorage.getItem(getStorageKey(acct));
+            return saved ? JSON.parse(saved) : [];
+        } catch {
+            return [];
+        }
+    };
+
+    // State for charts — fully restored from localStorage (all filters + axes)
+    const [charts, setCharts] = useState(() => {
+        const initAcctNo = resolveActiveAcctNo();
+        const saved = loadSavedCharts(initAcctNo);
+        return saved.map(entry => ({
+            ...defaultChartConfig,
+            ...entry,
+            id: entry.id
+        }));
+    });
+    const [nextChartId, setNextChartId] = useState(() => {
+        const initAcctNo = resolveActiveAcctNo();
+        const saved = loadSavedCharts(initAcctNo);
+        return saved.length > 0 ? Math.max(...saved.map(c => c.id)) + 1 : 1;
+    });
 
     // Update individual chart config
     const updateChartConfig = (chartId, field, value) => {
@@ -240,10 +269,37 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
         }
     }, [isOpen]);
 
+    // Reload charts from localStorage when the active account changes
+    useEffect(() => {
+        if (!acctNo) return;
+        const saved = loadSavedCharts(acctNo);
+        const restored = saved.map(entry => ({ ...defaultChartConfig, ...entry, id: entry.id }));
+        setCharts(restored);
+        setNextChartId(restored.length > 0 ? Math.max(...restored.map(c => c.id)) + 1 : 1);
+    }, [acctNo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Persist all chart config to localStorage whenever charts change (keyed by account)
+    useEffect(() => {
+        try {
+            const chartsToSave = charts.map(chart => ({
+                id: chart.id,
+                chartType: chart.chartType,
+                xAxis: chart.xAxis,
+                yAxis: chart.yAxis,
+                aggregation: chart.aggregation,
+                dateFilterFrom: chart.dateFilterFrom,
+                dateFilterTo: chart.dateFilterTo
+            }));
+            localStorage.setItem(getStorageKey(acctNo), JSON.stringify(chartsToSave));
+        } catch {
+            // ignore storage errors
+        }
+    }, [charts, acctNo]);
+
     const fetchLeadsData = async () => {
         setLoading(true);
         try {
-            const params = { limit: 1000 };
+            const params = { limit: 1000, ...(acctId && { acctId }) };
             const response = await api.get('/api/leads', { params });
             setLeads(response.data.data || []);
 
@@ -284,6 +340,7 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                 xAxis: chartConfig.xAxis.value,
                 yAxis: chartConfig.yAxis.value,
                 aggregation: chartConfig.aggregation.value,
+                ...(acctId && { acctId }),
             };
 
             if (chartConfig.dateFilterFrom) {
@@ -382,6 +439,46 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                     )}
                 </h4>
                 <div className="flex items-center gap-2">
+                    {/* Quick date presets */}
+                    {(() => {
+                        const toISO = (d) => d.toISOString().split('T')[0];
+                        const applyPreset = (preset) => {
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            let from, to;
+                            if (preset === 'today') {
+                                from = toISO(today);
+                                to = toISO(today);
+                            } else if (preset === 'yesterday') {
+                                const y = new Date(today); y.setDate(y.getDate() - 1);
+                                from = toISO(y); to = toISO(y);
+                            } else if (preset === 'last2') {
+                                const d = new Date(today); d.setDate(d.getDate() - 2);
+                                from = toISO(d); to = toISO(today);
+                            }
+                            updateChartConfig(chartConfig.id, 'dateFilterFrom', from);
+                            updateChartConfig(chartConfig.id, 'dateFilterTo', to);
+                        };
+                        const presets = [
+                            { key: 'today', label: 'Today' },
+                            { key: 'yesterday', label: 'Yesterday' },
+                            { key: 'last2', label: 'Last 2 Days' },
+                        ];
+                        return (
+                            <div className="flex items-center gap-1">
+                                {presets.map(p => (
+                                    <button
+                                        key={p.key}
+                                        onClick={() => applyPreset(p.key)}
+                                        className="px-2 py-1 text-[10px] font-semibold rounded-md border border-gray-300 bg-gray-50 text-gray-700 hover:bg-black hover:text-white hover:border-black transition-all duration-200"
+                                    >
+                                        {p.label}
+                                    </button>
+                                ))}
+                            </div>
+                        );
+                    })()}
+
                     <div className="flex items-center gap-2">
                         <label className="text-xs text-gray-600">From:</label>
                         <input
@@ -415,6 +512,30 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                         </button>
                     )}
                     <button
+                        onClick={() => {
+                            // Bust the cache for this chart so fresh data is fetched
+                            const cacheKey = JSON.stringify({
+                                xAxis: chartConfig.xAxis?.value,
+                                yAxis: chartConfig.yAxis?.value,
+                                aggregation: chartConfig.aggregation?.value,
+                                dateFilterFrom: chartConfig.dateFilterFrom || '',
+                                dateFilterTo: chartConfig.dateFilterTo || ''
+                            });
+                            setChartDataCache(prev => {
+                                const next = { ...prev };
+                                delete next[cacheKey];
+                                return next;
+                            });
+                            updateChartConfig(chartConfig.id, '_refreshKey', (chartConfig._refreshKey || 0) + 1);
+                        }}
+                        className="p-1.5 text-gray-700 hover:text-black hover:bg-gray-100 rounded-lg transition-all"
+                        title="Refresh chart data"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
+                    <button
                         onClick={() => removeChart(chartConfig.id)}
                         className="p-1.5 text-gray-700 hover:text-black hover:bg-gray-100 rounded-lg transition-all ml-2"
                         title="Delete chart"
@@ -425,6 +546,7 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                     </button>
                 </div>
             </div>
+
 
             {/* Chart Controls */}
             <div className="grid grid-cols-4 gap-3 mb-4">

@@ -10,6 +10,7 @@ const AdminPage = () => {
     const { user, userDetails, logout } = useAuth();
     const {
         acctNo,
+        acctId,
         acctName,
         accounts,
         isAccountLinked,
@@ -151,7 +152,7 @@ const AdminPage = () => {
 
             {/* ── Page body ─────────────────────────────────────────────────── */}
             <div className="flex-1 overflow-hidden flex flex-col px-3 sm:px-4 py-3">
-                <AdminTab acctNo={acctNo} />
+                <AdminTab acctId={acctId} />
             </div>
         </div>
     );

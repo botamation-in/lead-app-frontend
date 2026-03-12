@@ -22,7 +22,7 @@ const formatFieldName = (key) => {
         .replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
-const AdminTab = ({ acctNo }) => {
+const AdminTab = ({ acctId }) => {
     const [admins, setAdmins] = useState([]);
     const [columns, setColumns] = useState([]);
     const [filters, setFilters] = useState({});
@@ -39,11 +39,11 @@ const AdminTab = ({ acctNo }) => {
     const [totalRecords, setTotalRecords] = useState(0);
 
     const loadAdminsFromDb = useCallback(async (filterParams = {}, sortBy = '', order = 'asc', page = 1, limit = 20) => {
-        if (!acctNo) return;
+        if (!acctId) return;
         setLoading(true);
         setError('');
         try {
-            const params = { acctNo, page, limit, ...filterParams };
+            const params = { acctId, page, limit, ...filterParams };
             if (sortBy) { params.sortBy = sortBy; params.sortOrder = order; }
             const response = await api.get('/api/accounts/admins/list', { params });
             const data = response.data;
@@ -78,14 +78,14 @@ const AdminTab = ({ acctNo }) => {
         } finally {
             setLoading(false);
         }
-    }, [acctNo]);
+    }, [acctId]);
 
     const syncAdmins = useCallback(async () => {
-        if (!acctNo) return;
+        if (!acctId) return;
         setSyncing(true);
         setError('');
         try {
-            await api.get('/api/accounts/admins', { params: { acctNo } });
+            await api.get('/api/accounts/admins', { params: { acctId } });
             const activeFilters = Object.keys(appliedFilters).reduce((acc, k) => {
                 if (appliedFilters[k]) { acc[k] = appliedFilters[k]; }
                 return acc;
@@ -96,7 +96,7 @@ const AdminTab = ({ acctNo }) => {
         } finally {
             setSyncing(false);
         }
-    }, [acctNo, appliedFilters, sortField, sortOrder, currentPage, pageSize, loadAdminsFromDb]);
+    }, [acctId, appliedFilters, sortField, sortOrder, currentPage, pageSize, loadAdminsFromDb]);
 
     // Initial load
     useEffect(() => { loadAdminsFromDb(); }, [loadAdminsFromDb]);
