@@ -4,10 +4,12 @@
  * On success, links the account directly.
  */
 import React, { useState } from 'react';
-import api, { authApi } from '../api/axiosConfig';
+import api from '../api/axiosConfig';
+import { useAuth } from '../context/AuthContext';
 import { useNotifications } from './Notifications';
 
 const LinkAccountDialog = ({ isOpen, onClose, onSave }) => {
+    const { user, userDetails } = useAuth();
     const [acctNo, setAcctNo] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
@@ -28,16 +30,8 @@ const LinkAccountDialog = ({ isOpen, onClose, onSave }) => {
         setIsLoading(true);
 
         try {
-            // Retrieve current user's email from auth backend
-            let userEmail = '';
-            const userId = localStorage.getItem('userId') || '';
-
-            try {
-                const userRes = await authApi.get(`/api/user/users/${userId}`);
-                userEmail = userRes.data?.user?.email || '';
-            } catch {
-                console.warn('[LinkAccount] Could not fetch user email — continuing without it.');
-            }
+            const userId = user?.userId || localStorage.getItem('userId') || '';
+            const userEmail = userDetails?.email || user?.email || '';
 
             // Verify the account number against the lead-management backend
             const response = await api.post('/api/ui/accounts/verify', {
