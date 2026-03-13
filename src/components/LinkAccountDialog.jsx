@@ -40,7 +40,7 @@ const LinkAccountDialog = ({ isOpen, onClose, onSave }) => {
             }
 
             // Verify the account number against the lead-management backend
-            const response = await api.post('/api/accounts/verify', {
+            const response = await api.post('/api/ui/accounts/verify', {
                 acctNo: acctNo.trim(),
                 userId,
                 email: userEmail,
@@ -53,6 +53,7 @@ const LinkAccountDialog = ({ isOpen, onClose, onSave }) => {
                 if (onSave) {
                     onSave({
                         account: {
+                            acctId: data.account?.acctId || data.account?._id || '',
                             acctNo: data.account?.acctNo || acctNo.trim(),
                             name: data.account?.name || '',
                             accountName: data.account?.name || '',

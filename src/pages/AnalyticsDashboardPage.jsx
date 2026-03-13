@@ -116,7 +116,7 @@ const AnalyticsDashboardPage = () => {
                 ...(chartConfig.dateFilterTo && { dateTo: chartConfig.dateFilterTo })
             };
 
-            const response = await api.get('/api/analytics/chart-data', { params });
+            const response = await api.get('/api/ui/analytics/chart-data', { params });
             setChartDataCache(prev => ({
                 ...prev,
                 [chartId]: response.data.data || []
@@ -208,7 +208,7 @@ const AnalyticsDashboardPage = () => {
         setLoading(true);
         try {
             const params = { ...(acctId && { acctId }) };
-            const response = await api.get('/api/leads', { params });
+            const response = await api.get('/api/ui/leads', { params });
 
             const excludeFields = ['__v', 'updatedAt', '_id'];
             if (response.data.fields && response.data.fields.length > 0) {

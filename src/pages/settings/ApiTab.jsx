@@ -32,7 +32,7 @@ const ApiTab = ({ acctId: acctIdProp }) => {
         if (!resolvedAcctId) { showError('No account ID available.'); return; }
         setLoading(true);
         try {
-            const response = await api.post('/api/accounts/token', {
+            const response = await api.post('/api/ui/accounts/token', {
                 acctId: resolvedAcctId,
                 masked: false,
             });
@@ -62,7 +62,7 @@ const ApiTab = ({ acctId: acctIdProp }) => {
         setLoading(true);
         setShowConfirm(false);
         try {
-            const response = await api.post('/api/accounts/token/regenerate', {
+            const response = await api.post('/api/ui/accounts/token/regenerate', {
                 acctId: resolvedAcctId,
             });
             if (response.status !== 200) throw new Error('Failed to regenerate token.');
@@ -122,8 +122,8 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                     disabled={loading}
                     title="Copy token"
                     className={`p-2 rounded-lg border transition-colors disabled:opacity-40 ${copySuccess
-                            ? 'border-green-400 bg-green-50'
-                            : 'border-gray-300 bg-white hover:bg-gray-50'
+                        ? 'border-green-400 bg-green-50'
+                        : 'border-gray-300 bg-white hover:bg-gray-50'
                         }`}
                 >
                     {copySuccess ? (

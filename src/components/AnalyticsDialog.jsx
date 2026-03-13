@@ -300,7 +300,7 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
         setLoading(true);
         try {
             const params = { limit: 1000, ...(acctId && { acctId }) };
-            const response = await api.get('/api/leads', { params });
+            const response = await api.get('/api/ui/leads', { params });
             setLeads(response.data.data || []);
 
             if (response.data.fields && response.data.fields.length > 0) {
@@ -350,7 +350,7 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                 params.dateTo = chartConfig.dateFilterTo;
             }
 
-            const response = await api.get('/api/analytics/chart-data', { params });
+            const response = await api.get('/api/ui/analytics/chart-data', { params });
             const data = response.data.data || [];
 
             // Cache the result

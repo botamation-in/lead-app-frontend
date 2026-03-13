@@ -27,7 +27,7 @@ const LeadsGrid = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [fields, setFields] = useState([]);
-    const [adminsMap, setAdminsMap] = useState({});
+
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
 
@@ -80,7 +80,7 @@ const LeadsGrid = () => {
                 ...appliedFilters
             };
 
-            const response = await api.get('/api/leads', { params });
+            const response = await api.get('/api/ui/leads', { params });
 
             setLeads(response.data.data || []);
             setTotalRecords(response.data.pagination?.total || 0);
@@ -116,22 +116,6 @@ const LeadsGrid = () => {
     useEffect(() => {
         fetchLeads();
     }, [currentPage, pageSize, sortField, sortOrder, appliedFilters, acctId, isAccountLinked]);
-
-    // Fetch admins and build a lookup map keyed by adminId
-    useEffect(() => {
-        if (!acctId) return;
-        api.get('/api/accounts/admins', { params: { acctId } })
-            .then((res) => {
-                const list = Array.isArray(res.data) ? res.data : (res.data.admins || res.data.data || []);
-                const map = {};
-                list.forEach((admin) => {
-                    const id = admin.adminId || admin._id || admin.id;
-                    if (id) map[String(id)] = admin;
-                });
-                setAdminsMap(map);
-            })
-            .catch(() => { });
-    }, [acctId]);
 
     // Handle sorting
     const handleSort = (field) => {
@@ -190,7 +174,7 @@ const LeadsGrid = () => {
                 ...appliedFilters
             };
 
-            const response = await api.get('/api/leads', { params });
+            const response = await api.get('/api/ui/leads', { params });
             const allLeads = response.data.data || [];
 
             if (allLeads.length === 0) {
@@ -208,13 +192,7 @@ const LeadsGrid = () => {
                 const row = {};
                 exportFields.forEach(field => {
                     if (field === 'adminId') {
-                        const admin = adminsMap[String(lead.adminId)];
-                        const adminName = admin
-                            ? (admin.firstName
-                                ? `${admin.firstName}${admin.lastName ? ' ' + admin.lastName : ''}`
-                                : admin.name || admin.fullName || admin.username || admin.adminName || lead.adminId)
-                            : (lead.adminId || '-');
-                        row['Admin Name'] = adminName;
+                        row['Admin Name'] = lead.adminName || lead.adminId || '-';
                     } else if (field === 'createdAt' || field.includes('Date') || field.includes('date')) {
                         row[formatFieldName(field)] = lead[field] ? new Date(lead[field]).toLocaleDateString() : '-';
                     } else {
@@ -504,11 +482,19 @@ const LeadsGrid = () => {
                         <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-white rounded-lg shadow-2xl border border-gray-200 animate-scale-in">
                             {error && (
                                 <div className="bg-gray-100 border-l-4 border-black text-gray-900 px-3 py-2 m-3 rounded-lg">
-                                    <div className="flex items-center gap-2">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                        <span className="text-xs font-medium">Error: {error}</span>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <span className="text-xs font-medium">Error: {error}</span>
+                                        </div>
+                                        <button
+                                            onClick={fetchLeads}
+                                            className="text-xs font-medium underline hover:text-black transition-colors"
+                                        >
+                                            Try Again
+                                        </button>
                                     </div>
                                 </div>
                             )}
@@ -577,13 +563,8 @@ const LeadsGrid = () => {
                                                                     <td key={field} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">-</td>
                                                                 );
                                                             }
-                                                            const admin = adminsMap[String(lead.adminId)];
-                                                            const imgUrl = admin && (admin.profileImage || admin.profileImageUrl || admin.avatar || admin.photo);
-                                                            const adminName = admin
-                                                                ? (admin.firstName
-                                                                    ? `${admin.firstName}${admin.lastName ? ' ' + admin.lastName : ''}`
-                                                                    : admin.name || admin.fullName || admin.username || admin.adminName || '-')
-                                                                : '-';
+                                                            const imgUrl = lead.adminImage || lead.adminProfileImage || null;
+                                                            const adminName = lead.adminName || '-';
                                                             const initial = adminName !== '-' ? adminName.charAt(0).toUpperCase() : null;
                                                             const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0284c7'];
                                                             const avatarColor = initial ? COLORS[(initial.charCodeAt(0) || 0) % COLORS.length] : null;

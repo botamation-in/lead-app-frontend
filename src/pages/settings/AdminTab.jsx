@@ -45,7 +45,7 @@ const AdminTab = ({ acctId }) => {
         try {
             const params = { acctId, page, limit, ...filterParams };
             if (sortBy) { params.sortBy = sortBy; params.sortOrder = order; }
-            const response = await api.get('/api/accounts/admins/list', { params });
+            const response = await api.get('/api/ui/admins/list', { params });
             const data = response.data;
             const list = Array.isArray(data) ? data : (data.admins || data.data || []);
             const pagination = data.pagination || null;
@@ -85,7 +85,7 @@ const AdminTab = ({ acctId }) => {
         setSyncing(true);
         setError('');
         try {
-            await api.get('/api/accounts/admins', { params: { acctId } });
+            await api.get('/api/ui/admins', { params: { acctId } });
             const activeFilters = Object.keys(appliedFilters).reduce((acc, k) => {
                 if (appliedFilters[k]) { acc[k] = appliedFilters[k]; }
                 return acc;
@@ -101,9 +101,9 @@ const AdminTab = ({ acctId }) => {
     // Initial load
     useEffect(() => { loadAdminsFromDb(); }, [loadAdminsFromDb]);
 
-    // Re-fetch when applied filters, sort, or page changes
+    // Re-fetch when applied filters, sort, or page changes (skip initial — loadAdminsFromDb effect handles it)
     useEffect(() => {
-        if (columns.length === 0) return; // skip before columns are known
+        if (columns.length === 0) return;
         const activeFilters = Object.keys(appliedFilters).reduce((acc, k) => {
             if (appliedFilters[k]) { acc[k] = appliedFilters[k]; }
             return acc;

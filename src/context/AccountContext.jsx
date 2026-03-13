@@ -54,7 +54,7 @@ export const AccountProvider = ({ children }) => {
 
         try {
             const response = await api.get(
-                `/api/accounts/user/${userId}`
+                `/api/ui/accounts/user/${userId}`
             );
 
             if (
@@ -137,7 +137,7 @@ export const AccountProvider = ({ children }) => {
         }
 
         const newAccount = {
-            acctId: account.acctId || `acc_${Date.now()}`,
+            acctId: account.acctId || '',
             acctNo: account.acctNo,
             accountName: account.accountName || account.name,
             canCreateCalendar: true,
