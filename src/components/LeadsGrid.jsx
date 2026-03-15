@@ -63,21 +63,88 @@ const LeadsGrid = () => {
     const [filters, setFilters] = useState({});
     const [appliedFilters, setAppliedFilters] = useState({});
 
+    // Category filter state
+    const [categories, setCategories] = useState([]);
+    const [selectedCategory, setSelectedCategory] = useState('');
+    const [categoryLoading, setCategoryLoading] = useState(false);
+    const [categoriesReady, setCategoriesReady] = useState(false);
+
+    // Fetch category names from API using acctId
+    const fetchCategories = async () => {
+        if (!acctId) return;
+        setCategoryLoading(true);
+        setCategoriesReady(false);
+        try {
+            const response = await api.get('/api/ui/leads/categories', { params: { acctId } });
+            const d = response.data;
+            const raw = Array.isArray(d)
+                ? d
+                : Array.isArray(d?.data)
+                    ? d.data
+                    : Array.isArray(d?.categories)
+                        ? d.categories
+                        : [];
+            const filtered = raw.filter(item => item?._id && item?.categoryName);
+            setCategories(filtered);
+            // Restore from localStorage (scoped per account), fallback to default from API
+            const stored = localStorage.getItem(`selectedCategory_${acctId}`);
+            const storedCat = stored && filtered.find(c => c._id === stored);
+            const activeCat = storedCat || filtered.find(c => c.default === true);
+            if (activeCat) {
+                setSelectedCategory(activeCat._id);
+                setAppliedFilters(prev => ({ ...prev, categoryId: activeCat._id }));
+            }
+            setCategoriesReady(true);
+        } catch (err) {
+            console.error('Error fetching categories:', err);
+        } finally {
+            setCategoryLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchCategories();
+    }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const handleCategoryChange = (value) => {
+        setSelectedCategory(value);
+        if (value) localStorage.setItem(`selectedCategory_${acctId}`, value);
+        else localStorage.removeItem(`selectedCategory_${acctId}`);
+        setAppliedFilters(prev => {
+            const updated = { ...prev };
+            if (value) updated['categoryId'] = value;
+            else delete updated['categoryId'];
+            return updated;
+        });
+        setCurrentPage(1);
+    };
+
+    const handleSetDefault = async (categoryId) => {
+        try {
+            await api.put(`/api/ui/leads/categories/${categoryId}/default`, { acctId });
+            setCategories(prev => prev.map(c => ({ ...c, default: c._id === categoryId })));
+            showSuccess('Default category updated.');
+        } catch (err) {
+            showError(err.response?.data?.message || 'Failed to update default category.');
+        }
+    };
+
     // Fetch leads from API
     const fetchLeads = async () => {
-        // Wait until account state is resolved before fetching
-        if (!isAccountLinked || !acctId) return;
+        // Wait until account state is resolved and categories are ready before fetching
+        if (!isAccountLinked || !acctId || !categoriesReady) return;
 
         setLoading(true);
         setError(null);
 
         try {
+            const { category: _omit, ...safeFilters } = appliedFilters;
             const params = {
                 page: currentPage,
                 limit: pageSize,
                 ...(sortField && { sortBy: sortField, sortOrder }),
                 ...(acctId && { acctId }),
-                ...appliedFilters
+                ...safeFilters
             };
 
             const response = await api.get('/api/ui/leads', { params });
@@ -115,7 +182,7 @@ const LeadsGrid = () => {
 
     useEffect(() => {
         fetchLeads();
-    }, [currentPage, pageSize, sortField, sortOrder, appliedFilters, acctId, isAccountLinked]);
+    }, [currentPage, pageSize, sortField, sortOrder, appliedFilters, acctId, isAccountLinked, categoriesReady]);
 
     // Handle sorting
     const handleSort = (field) => {
@@ -476,6 +543,44 @@ const LeadsGrid = () => {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                 </svg>
                             </button>
+
+                            {/* Category Combobox + Default Checkbox */}
+                            <div className="flex items-center gap-2">
+                                <div className="relative flex items-center">
+                                    <select
+                                        value={selectedCategory}
+                                        onChange={(e) => handleCategoryChange(e.target.value)}
+                                        disabled={categoryLoading || !acctId}
+                                        className="h-8 pl-2 pr-7 text-[11px] font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed appearance-none cursor-pointer"
+                                        title="Filter by Category"
+                                    >
+                                        <option value="">All Categories</option>
+                                        {categories.map((cat) => (
+                                            <option key={cat._id} value={cat._id}>{cat.categoryName}</option>
+                                        ))}
+                                    </select>
+                                    <svg className="pointer-events-none absolute right-1.5 w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </div>
+                                {selectedCategory && (() => {
+                                    const activeCat = categories.find(c => c._id === selectedCategory);
+                                    return activeCat ? (
+                                        <label
+                                            className="flex items-center gap-1.5 cursor-pointer select-none"
+                                            title={activeCat.default ? 'This is the default category' : 'Mark as default'}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={!!activeCat.default}
+                                                onChange={() => { if (!activeCat.default) handleSetDefault(activeCat._id); }}
+                                                className="w-3.5 h-3.5 accent-black cursor-pointer"
+                                            />
+                                            <span className="text-[11px] font-medium text-gray-600">Default</span>
+                                        </label>
+                                    ) : null;
+                                })()}
+                            </div>
                         </div>
 
                         {/* Table Section */}
