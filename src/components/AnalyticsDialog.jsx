@@ -2,6 +2,7 @@ import React, { useState, useEffect, Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import api from '../api/axiosConfig';
 import { useAccount } from '../context/AccountContext';
+import LoadingMask from './LoadingMask';
 import { resolveActiveAcctNo } from '../utils/accountHelpers';
 import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
 import {
@@ -142,9 +143,8 @@ const ChartRenderer = ({ chartConfig, fetchChartData }) => {
     const yAxisLabel = chartConfig.yAxis?.label || 'Value';
 
     if (chartLoading) return (
-        <div className="text-center py-12">
-            <div className="spinner mx-auto"></div>
-            <p className="text-gray-600 mt-4 text-sm font-medium">Loading data...</p>
+        <div className="relative min-h-[200px]">
+            <LoadingMask loading={true} title="Loading chart data..." message="Please wait..." />
         </div>
     );
 
@@ -322,12 +322,14 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
         }
 
         // Create cache key
+        const categoryId = acctId ? localStorage.getItem(`selectedCategory_${acctId}`) : null;
         const cacheKey = JSON.stringify({
             xAxis: chartConfig.xAxis.value,
             yAxis: chartConfig.yAxis.value,
             aggregation: chartConfig.aggregation.value,
             dateFilterFrom: chartConfig.dateFilterFrom || '',
-            dateFilterTo: chartConfig.dateFilterTo || ''
+            dateFilterTo: chartConfig.dateFilterTo || '',
+            categoryId: categoryId || ''
         });
 
         // Return cached data if available
@@ -341,6 +343,7 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                 yAxis: chartConfig.yAxis.value,
                 aggregation: chartConfig.aggregation.value,
                 ...(acctId && { acctId }),
+                ...(categoryId && { categoryId }),
             };
 
             if (chartConfig.dateFilterFrom) {

@@ -5,6 +5,7 @@ import api from '../api/axiosConfig';
 import { useAuth } from '../context/AuthContext';
 import { useAccount } from '../context/AccountContext';
 import AccountCombobox from './AccountCombobox';
+import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
 import { useNotifications } from './Notifications';
 import DeleteConfirmation from './DeleteConfirmation';
 import LoadingMask from './LoadingMask';
@@ -548,23 +549,25 @@ const LeadsGrid = () => {
 
                             {/* Category Combobox + Default Checkbox */}
                             <div className="flex items-center gap-2">
-                                <div className="relative flex items-center">
-                                    <select
-                                        value={selectedCategory}
-                                        onChange={(e) => handleCategoryChange(e.target.value)}
-                                        disabled={categoryLoading || !acctId}
-                                        className="h-8 pl-2 pr-7 text-[11px] font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed appearance-none cursor-pointer"
-                                        title="Filter by Category"
-                                    >
-                                        <option value="">All Categories</option>
-                                        {categories.map((cat) => (
-                                            <option key={cat._id} value={cat._id}>{cat.categoryName}</option>
-                                        ))}
-                                    </select>
-                                    <svg className="pointer-events-none absolute right-1.5 w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </div>
+                                <Combobox
+                                    value={
+                                        (selectedCategory ? categories.find(c => c._id === selectedCategory) : null)
+                                        ?? { _id: '', categoryName: 'All Categories' }
+                                    }
+                                    onChange={(val) => handleCategoryChange(val?._id || '')}
+                                    displayValue={(option) => option?.categoryName || 'All Categories'}
+                                    options={[{ _id: '', categoryName: 'All Categories' }, ...categories]}
+                                    disabled={categoryLoading || !acctId}
+                                    placeholder="All Categories"
+                                    className="w-40"
+                                    dropdownClassName="!min-w-0 !w-[160px]"
+                                >
+                                    {(option) => (
+                                        <ComboboxOption key={option._id || 'all'} value={option}>
+                                            <ComboboxLabel>{option.categoryName}</ComboboxLabel>
+                                        </ComboboxOption>
+                                    )}
+                                </Combobox>
                                 {selectedCategory && (() => {
                                     const activeCat = categories.find(c => c._id === selectedCategory);
                                     return activeCat ? (

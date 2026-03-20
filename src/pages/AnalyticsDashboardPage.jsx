@@ -5,7 +5,7 @@ import { useAccount } from '../context/AccountContext';
 import { resolveActiveAcctNo } from '../utils/accountHelpers';
 import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
 import {
-    PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
+    PieChart, Pie, Cell, BarChart, Bar, AreaChart, Area,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import LoadingMask from '../components/LoadingMask';
@@ -16,6 +16,11 @@ const AnalyticsDashboardPage = () => {
     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(false);
     const [fields, setFields] = useState([]);
+
+    // Category state
+    const [categories, setCategories] = useState([]);
+    const [selectedCategory, setSelectedCategory] = useState('');
+    const [categoryLoading, setCategoryLoading] = useState(false);
 
     // Chart types
     const chartTypes = [
@@ -112,6 +117,7 @@ const AnalyticsDashboardPage = () => {
                 yAxis: chartConfig.yAxis.value,
                 aggregation: chartConfig.aggregation.value,
                 ...(acctId && { acctId }),
+                ...(selectedCategory && { categoryId: selectedCategory }),
                 ...(chartConfig.dateFilterFrom && { dateFrom: chartConfig.dateFilterFrom }),
                 ...(chartConfig.dateFilterTo && { dateTo: chartConfig.dateFilterTo })
             };
@@ -178,6 +184,33 @@ const AnalyticsDashboardPage = () => {
         }
     }, [charts, acctNo]);
 
+    // Fetch categories
+    const fetchCategories = async () => {
+        if (!acctId) return;
+        setCategoryLoading(true);
+        try {
+            const response = await api.get('/api/ui/leads/categories', { params: { acctId } });
+            const d = response.data;
+            const raw = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : Array.isArray(d?.categories) ? d.categories : [];
+            const filtered = raw.filter(item => item?._id && item?.categoryName);
+            setCategories(filtered);
+            const stored = localStorage.getItem(`selectedCategory_${acctId}`);
+            const storedCat = stored && filtered.find(c => c._id === stored);
+            const activeCat = storedCat || filtered.find(c => c.default === true);
+            if (activeCat) setSelectedCategory(activeCat._id);
+        } catch (err) {
+            console.error('Error fetching categories:', err);
+        } finally {
+            setCategoryLoading(false);
+        }
+    };
+
+    const handleCategoryChange = (value) => {
+        setSelectedCategory(value);
+        if (value) localStorage.setItem(`selectedCategory_${acctId}`, value);
+        else localStorage.removeItem(`selectedCategory_${acctId}`);
+    };
+
     // Reload charts from localStorage when the active account changes
     useEffect(() => {
         if (!acctNo) return;
@@ -188,11 +221,16 @@ const AnalyticsDashboardPage = () => {
         setChartDataCache({});
     }, [acctNo]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Fetch fields for dropdowns — re-runs when acctNo is resolved/changes
+    // Fetch categories when acctId changes
+    useEffect(() => {
+        fetchCategories();
+    }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Fetch fields for dropdowns — re-runs when acctNo / selectedCategory changes
     useEffect(() => {
         if (!acctNo) return;
         fetchFieldsData();
-    }, [acctNo]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [acctNo, selectedCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Re-fetch chart data for charts restored from localStorage once fields are loaded
     useEffect(() => {
@@ -207,7 +245,7 @@ const AnalyticsDashboardPage = () => {
     const fetchFieldsData = async () => {
         setLoading(true);
         try {
-            const params = { ...(acctId && { acctId }) };
+            const params = { ...(acctId && { acctId }), ...(selectedCategory && { categoryId: selectedCategory }) };
             const response = await api.get('/api/ui/leads', { params });
 
             const excludeFields = ['__v', 'updatedAt', '_id'];
@@ -231,115 +269,164 @@ const AnalyticsDashboardPage = () => {
         return chartDataCache[chartId] || [];
     };
 
-    // Colors for charts - Grayscale palette
+    // Colors for charts - Vibrant palette
     const COLORS = [
-        '#1a1a1a', '#2d2d2d', '#3d3d3d', '#525252', '#666666',
-        '#7a7a7a', '#8f8f8f', '#a3a3a3', '#b8b8b8', '#cccccc',
-        '#000000', '#404040', '#595959', '#737373', '#8c8c8c'
+        '#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#3b82f6',
+        '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4',
+        '#84cc16', '#a855f7', '#22c55e', '#eab308', '#ef4444'
     ];
 
-    // Render Pie Chart with Recharts
+    // Shared attractive tooltip style
+    const tooltipStyle = {
+        contentStyle: {
+            backgroundColor: 'rgba(255,255,255,0.98)',
+            border: 'none',
+            borderRadius: '16px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            padding: '12px 16px',
+            fontSize: '13px'
+        },
+        labelStyle: { color: '#1e293b', fontWeight: 700, marginBottom: 4 },
+        itemStyle: { color: '#64748b' },
+        cursor: { fill: 'rgba(99,102,241,0.06)' }
+    };
+
+    // Render Pie Chart — modern donut with radial gradients
     const renderPieChart = (chartData, yAxisLabel) => (
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={320}>
             <PieChart>
+                <defs>
+                    {COLORS.map((color, i) => (
+                        <radialGradient key={i} id={`pieGrad-${i}`} cx="50%" cy="50%" r="50%">
+                            <stop offset="0%" stopColor={color} stopOpacity={1} />
+                            <stop offset="100%" stopColor={color} stopOpacity={0.75} />
+                        </radialGradient>
+                    ))}
+                </defs>
                 <Pie
                     data={chartData}
                     cx="50%"
                     cy="50%"
+                    innerRadius={65}
+                    outerRadius={115}
+                    paddingAngle={3}
                     labelLine={false}
-                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                    outerRadius={100}
-                    fill="#8884d8"
+                    label={({ percent }) => percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ''}
                     dataKey="value"
                 >
                     {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <Cell
+                            key={`cell-${index}`}
+                            fill={`url(#pieGrad-${index % COLORS.length})`}
+                            stroke="white"
+                            strokeWidth={2}
+                        />
                     ))}
                 </Pie>
                 <Tooltip
-                    contentStyle={{
-                        backgroundColor: '#fff',
-                        border: '2px solid #e0e0e0',
-                        borderRadius: '12px',
-                        boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
-                    }}
+                    contentStyle={tooltipStyle.contentStyle}
+                    labelStyle={tooltipStyle.labelStyle}
+                    itemStyle={tooltipStyle.itemStyle}
                     formatter={(value, name) => [value, yAxisLabel]}
                 />
-                <Legend />
+                <Legend iconType="circle" iconSize={10} />
             </PieChart>
         </ResponsiveContainer>
     );
 
-    // Render Bar Chart with Recharts
+    // Render Bar Chart — gradient bars, clean grid
     const renderBarChart = (chartData, yAxisLabel) => (
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={320}>
             <BarChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 40 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <defs>
+                    {COLORS.map((color, i) => (
+                        <linearGradient key={i} id={`barGrad-${i}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={color} stopOpacity={1} />
+                            <stop offset="100%" stopColor={color} stopOpacity={0.45} />
+                        </linearGradient>
+                    ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis
                     dataKey="name"
                     tick={{ fill: '#64748b', fontSize: 11 }}
                     angle={-45}
                     textAnchor="end"
                     height={60}
+                    axisLine={{ stroke: '#e2e8f0' }}
+                    tickLine={false}
                 />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
+                <YAxis
+                    tick={{ fill: '#64748b', fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                />
                 <Tooltip
-                    contentStyle={{
-                        backgroundColor: '#fff',
-                        border: '2px solid #e0e0e0',
-                        borderRadius: '12px',
-                        boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
-                    }}
+                    contentStyle={tooltipStyle.contentStyle}
+                    labelStyle={tooltipStyle.labelStyle}
+                    itemStyle={tooltipStyle.itemStyle}
+                    cursor={tooltipStyle.cursor}
                     formatter={(value) => [value, yAxisLabel]}
                 />
-                <Legend />
+                <Legend iconType="circle" iconSize={10} />
                 <Bar
                     dataKey="value"
                     name={yAxisLabel}
-                    fill="#1a1a1a"
                     radius={[8, 8, 0, 0]}
+                    maxBarSize={60}
                 >
                     {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <Cell key={`cell-${index}`} fill={`url(#barGrad-${index % COLORS.length})`} />
                     ))}
                 </Bar>
             </BarChart>
         </ResponsiveContainer>
     );
 
-    // Render Line Chart with Recharts
+    // Render Line Chart — area chart with gradient fill
     const renderLineChart = (chartData, yAxisLabel) => (
-        <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 40 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <ResponsiveContainer width="100%" height={320}>
+            <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 40 }}>
+                <defs>
+                    <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis
                     dataKey="name"
                     tick={{ fill: '#64748b', fontSize: 11 }}
                     angle={-45}
                     textAnchor="end"
                     height={60}
+                    axisLine={{ stroke: '#e2e8f0' }}
+                    tickLine={false}
                 />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
+                <YAxis
+                    tick={{ fill: '#64748b', fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                />
                 <Tooltip
-                    contentStyle={{
-                        backgroundColor: '#fff',
-                        border: '2px solid #e0e0e0',
-                        borderRadius: '12px',
-                        boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
-                    }}
+                    contentStyle={tooltipStyle.contentStyle}
+                    labelStyle={tooltipStyle.labelStyle}
+                    itemStyle={tooltipStyle.itemStyle}
+                    cursor={{ stroke: '#6366f1', strokeWidth: 1, strokeDasharray: '4 4' }}
                     formatter={(value) => [value, yAxisLabel]}
                 />
-                <Legend />
-                <Line
+                <Legend iconType="circle" iconSize={10} />
+                <Area
                     type="monotone"
                     dataKey="value"
                     name={yAxisLabel}
-                    stroke="#1a1a1a"
+                    stroke="#6366f1"
                     strokeWidth={3}
-                    dot={{ fill: '#1a1a1a', strokeWidth: 2, r: 5 }}
-                    activeDot={{ r: 7, fill: '#3d3d3d' }}
+                    fill="url(#areaGrad)"
+                    dot={{ fill: '#6366f1', stroke: 'white', strokeWidth: 2, r: 5 }}
+                    activeDot={{ r: 7, fill: '#4f46e5', stroke: 'white', strokeWidth: 2 }}
                 />
-            </LineChart>
+            </AreaChart>
         </ResponsiveContainer>
     );
 
@@ -349,7 +436,7 @@ const AnalyticsDashboardPage = () => {
         const yAxisLabel = chartConfig.yAxis?.label || 'Value';
 
         if (isLoading) return (
-            <div className="relative py-12">
+            <div className="relative min-h-[200px]">
                 <LoadingMask loading={true} title="Loading chart data..." message="Please wait..." />
             </div>
         );
@@ -408,7 +495,7 @@ const AnalyticsDashboardPage = () => {
                 {/* ── Top bar: title + pinned action buttons (never wraps) ── */}
                 <div className="flex items-center justify-between mb-2">
                     <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2 min-w-0">
-                        <div className="w-2 h-2 rounded-full bg-black shrink-0"></div>
+                        <div className="w-2 h-2 rounded-full bg-indigo-500 shrink-0"></div>
                         <span className="shrink-0">Chart {chartConfig.id}</span>
                         {chartConfig.xAxis && chartConfig.yAxis && chartConfig.aggregation && (
                             <span className="font-normal text-gray-400 text-xs truncate">
@@ -635,13 +722,13 @@ const AnalyticsDashboardPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Header */}
+        <div className="min-h-screen bg-gray-50 relative">
+            <LoadingMask loading={loading} title="Loading..." message="Please wait while we fetch your data" />
             <div className="bg-white border-b border-gray-200 shadow-sm">
                 <div className="container mx-auto px-4 py-4">
                     <div className="flex justify-between items-center">
                         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-                            <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
+                            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
                                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                 </svg>
@@ -649,6 +736,26 @@ const AnalyticsDashboardPage = () => {
                             Analytics Dashboard
                         </h1>
                         <div className="flex items-center gap-2">
+                            {/* Category Combobox */}
+                            <Combobox
+                                value={
+                                    (selectedCategory ? categories.find(c => c._id === selectedCategory) : null)
+                                    ?? { _id: '', categoryName: 'All Categories' }
+                                }
+                                onChange={(val) => handleCategoryChange(val?._id || '')}
+                                displayValue={(option) => option?.categoryName || 'All Categories'}
+                                options={[{ _id: '', categoryName: 'All Categories' }, ...categories]}
+                                disabled={categoryLoading || !acctId}
+                                placeholder="All Categories"
+                                className="w-44"
+                                dropdownClassName="!min-w-0 !w-[176px]"
+                            >
+                                {(option) => (
+                                    <ComboboxOption key={option._id || 'all'} value={option}>
+                                        <ComboboxLabel>{option.categoryName}</ComboboxLabel>
+                                    </ComboboxOption>
+                                )}
+                            </Combobox>
                             <button
                                 onClick={refreshAllCharts}
                                 disabled={globalRefreshing}
@@ -687,7 +794,7 @@ const AnalyticsDashboardPage = () => {
                         <p className="text-gray-500 mb-8 text-lg">Get started by adding your first chart to visualize your data</p>
                         <button
                             onClick={addChart}
-                            className="px-6 py-3 bg-black hover:bg-gray-800 text-white rounded-lg transition-all font-medium inline-flex items-center gap-2"
+                            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all font-medium inline-flex items-center gap-2"
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
