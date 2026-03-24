@@ -39,6 +39,23 @@ const LeadsGrid = () => {
 
     const userMenuRef = useRef(null);
     const filterTimerRef = useRef(null);
+    const columnSelectorRef = useRef(null);
+
+    // Column visibility: null = all visible; array = selected field keys (in original order)
+    const [visibleFields, setVisibleFields] = useState(null);
+    const [showColumnSelector, setShowColumnSelector] = useState(false);
+
+    // localStorage key scoped per account + category
+    const getColVisKey = (acctId, categoryId) => `colVis_${acctId}_${categoryId || 'all'}`;
+    const getFiltersKey = (acctId, categoryId) => `filters_${acctId}_${categoryId || 'all'}`;
+
+    // Save + set column visibility
+    const updateVisibleFields = (newVal) => {
+        setVisibleFields(newVal);
+        const key = getColVisKey(acctId, selectedCategory);
+        if (newVal === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, JSON.stringify(newVal));
+    };
 
     // Close dropdowns when clicking outside
     useEffect(() => {
@@ -46,10 +63,13 @@ const LeadsGrid = () => {
             if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
                 setShowUserMenu(false);
             }
+            if (columnSelectorRef.current && !columnSelectorRef.current.contains(e.target)) {
+                setShowColumnSelector(false);
+            }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);;
+    }, []);
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -112,8 +132,21 @@ const LeadsGrid = () => {
         setSelectedCategory(value);
         if (value) localStorage.setItem(`selectedCategory_${acctId}`, value);
         else localStorage.removeItem(`selectedCategory_${acctId}`);
-        setAppliedFilters(prev => {
-            const updated = { ...prev };
+        // Restore saved field filters for the new category (or reset to empty)
+        const savedFilters = (() => {
+            try {
+                const raw = localStorage.getItem(getFiltersKey(acctId, value));
+                return raw ? JSON.parse(raw) : null;
+            } catch { return null; }
+        })();
+        // Reset input filters to restored values (or empty strings for each existing field)
+        setFilters(prev => {
+            const reset = {};
+            Object.keys(prev).forEach(f => { reset[f] = savedFilters?.[f] ?? ''; });
+            return reset;
+        });
+        setAppliedFilters(() => {
+            const updated = savedFilters ? { ...savedFilters } : {};
             if (value) updated['categoryId'] = value;
             else delete updated['categoryId'];
             return updated;
@@ -159,19 +192,42 @@ const LeadsGrid = () => {
             // Extract field names from the first lead object
             if ((response.data.data || []).length > 0) {
                 const firstLead = response.data.data[0];
-                const excludeFields = ['__v', 'updatedAt', '_id'];
+                const excludeFields = ['__v', 'updatedAt', '_id', 'acctId', 'categoryId'];
                 const rawFields = Object.keys(firstLead).filter(field => !excludeFields.includes(field));
                 const displayFields = rawFields.includes('adminId')
                     ? ['adminId', ...rawFields.filter(f => f !== 'adminId')]
                     : rawFields;
                 setFields(displayFields);
+                // Restore saved column visibility for this account + category
+                try {
+                    const saved = localStorage.getItem(getColVisKey(acctId, selectedCategory));
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        const valid = parsed.filter(f => displayFields.includes(f));
+                        setVisibleFields(valid.length > 0 ? valid : null);
+                    } else {
+                        setVisibleFields(null);
+                    }
+                } catch {
+                    setVisibleFields(null);
+                }
 
                 if (Object.keys(filters).length === 0) {
+                    // Restore persisted filters for this account + category on initial load
+                    const savedFilters = (() => {
+                        try {
+                            const raw = localStorage.getItem(getFiltersKey(acctId, selectedCategory));
+                            return raw ? JSON.parse(raw) : null;
+                        } catch { return null; }
+                    })();
                     const initialFilters = {};
                     displayFields.forEach(field => {
-                        initialFilters[field] = '';
+                        initialFilters[field] = savedFilters?.[field] ?? '';
                     });
                     setFilters(initialFilters);
+                    if (savedFilters && Object.keys(savedFilters).length > 0) {
+                        setAppliedFilters(prev => ({ ...prev, ...savedFilters }));
+                    }
                 }
             }
         } catch (err) {
@@ -206,6 +262,14 @@ const LeadsGrid = () => {
                 const updated = { ...prev };
                 if (value) updated[field] = value;
                 else delete updated[field];
+                // Persist field filters (exclude categoryId) to localStorage
+                const { categoryId: _cat, ...fieldFilters } = updated;
+                const key = getFiltersKey(acctId, selectedCategory);
+                if (Object.keys(fieldFilters).length > 0) {
+                    localStorage.setItem(key, JSON.stringify(fieldFilters));
+                } else {
+                    localStorage.removeItem(key);
+                }
                 return updated;
             });
             setCurrentPage(1);
@@ -339,9 +403,28 @@ const LeadsGrid = () => {
         return value;
     };
 
+    // Block the entire page until accounts + categories are resolved
+    if (!accountsLoaded || !categoriesReady) {
+        return (
+            <div className="h-screen flex items-center justify-center bg-gray-50">
+                <div className="flex flex-col items-center space-y-4 p-8 bg-white rounded-2xl shadow-2xl border border-gray-200">
+                    <div className="relative">
+                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-200"></div>
+                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-black border-t-transparent absolute top-0"></div>
+                    </div>
+                    <div className="text-center">
+                        <span className="text-lg font-semibold text-gray-900">Loading Leads</span>
+                        <p className="text-sm text-gray-500 mt-1">Fetching your categories and leads...</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="h-screen flex flex-col bg-gray-50 overflow-hidden relative">
             <LoadingMask loading={isExporting} title="Exporting..." message="Please wait while we export your leads to Excel" />
+            <LoadingMask loading={loading} title="Loading Leads..." message="Please wait while we fetch your data" />
             <NotificationComponent />
             <DeleteConfirmation
                 isOpen={deleteDialogOpen}
@@ -506,7 +589,13 @@ const LeadsGrid = () => {
                                     const cleared = {};
                                     fields.forEach(f => { cleared[f] = ''; });
                                     setFilters(cleared);
-                                    setAppliedFilters({});
+                                    // Remove persisted filters for this account + category
+                                    localStorage.removeItem(getFiltersKey(acctId, selectedCategory));
+                                    setAppliedFilters(prev => {
+                                        const updated = {};
+                                        if (prev.categoryId) updated.categoryId = prev.categoryId;
+                                        return updated;
+                                    });
                                     setCurrentPage(1);
                                 }}
                                 disabled={loading || Object.keys(appliedFilters).length === 0}
@@ -538,14 +627,97 @@ const LeadsGrid = () => {
                             </button>
 
                             <button
-                                onClick={() => navigate('/analytics')}
-                                className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-gray-100 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-gray-400 focus:ring-1 focus:ring-gray-400"
+                                onClick={() => window.open('/analytics', '_blank')}
+                                className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-blue-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-blue-500 focus:ring-1 focus:ring-blue-400"
                                 title="Analytics"
                             >
-                                <svg className="w-4 h-4 text-gray-700 group-hover:text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                 </svg>
                             </button>
+
+                            {/* Column Visibility Selector */}
+                            {fields.length > 0 && (
+                                <div className="relative" ref={columnSelectorRef}>
+                                    <button
+                                        onClick={() => setShowColumnSelector(v => !v)}
+                                        className={`group relative w-8 h-8 bg-transparent rounded-lg transition-all duration-300 flex items-center justify-center hover:scale-110 border focus:ring-1 focus:ring-orange-400 hover:bg-orange-50 hover:border-orange-500 ${showColumnSelector
+                                            ? 'bg-orange-50 border-orange-500'
+                                            : 'border-gray-300'
+                                            }`}
+                                        title="Show / hide columns"
+                                    >
+                                        <svg
+                                            className={`w-4 h-4 transition-colors ${showColumnSelector ? 'text-orange-600' : 'text-gray-600 group-hover:text-orange-600'
+                                                }`}
+                                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 6h18M3 14h18M3 18h18" />
+                                        </svg>
+                                        {visibleFields !== null && visibleFields.length !== fields.length && (
+                                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-black rounded-full text-white text-[8px] flex items-center justify-center font-bold leading-none">
+                                                {visibleFields.length}
+                                            </span>
+                                        )}
+                                    </button>
+
+                                    {showColumnSelector && (
+                                        <div className="absolute left-0 mt-1 w-52 bg-white rounded-lg shadow-2xl border border-gray-200 z-50">
+                                            {/* Header */}
+                                            <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
+                                                <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Columns</span>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => updateVisibleFields(null)}
+                                                        className="text-[10px] text-black hover:text-gray-600 font-semibold"
+                                                    >
+                                                        All
+                                                    </button>
+                                                    <span className="text-gray-300 text-[10px]">|</span>
+                                                    <button
+                                                        onClick={() => updateVisibleFields(fields.slice(0, 1))}
+                                                        className="text-[10px] text-gray-400 hover:text-gray-700 font-semibold"
+                                                    >
+                                                        None
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            {/* Field list */}
+                                            <div className="max-h-64 overflow-y-auto py-1">
+                                                {fields.map(field => {
+                                                    const checked = visibleFields === null || visibleFields.includes(field);
+                                                    return (
+                                                        <label
+                                                            key={field}
+                                                            className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 cursor-pointer"
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={checked}
+                                                                onChange={() => {
+                                                                    const current = visibleFields ?? fields;
+                                                                    let next;
+                                                                    if (current.includes(field)) {
+                                                                        const removed = current.filter(f => f !== field);
+                                                                        next = removed.length > 0 ? removed : current;
+                                                                    } else {
+                                                                        next = fields.filter(f => current.includes(f) || f === field);
+                                                                    }
+                                                                    updateVisibleFields(next);
+                                                                }}
+                                                                className="w-3.5 h-3.5 accent-black cursor-pointer flex-shrink-0"
+                                                            />
+                                                            <span className="text-[11px] text-gray-700 font-medium truncate">
+                                                                {formatFieldName(field)}
+                                                            </span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Category Combobox + Default Checkbox */}
                             <div className="flex items-center gap-2">
@@ -613,7 +785,7 @@ const LeadsGrid = () => {
                                 <table className="min-w-full divide-y divide-gray-200">
                                     <thead className="bg-black">
                                         <tr>
-                                            {fields.map((field) => (
+                                            {(visibleFields ?? fields).map((field) => (
                                                 <th key={field} className="px-3 py-2 text-center">
                                                     <div
                                                         className="flex items-center justify-center gap-1 cursor-pointer hover:text-gray-300 mb-1.5 transition-colors group"
@@ -642,7 +814,7 @@ const LeadsGrid = () => {
                                     <tbody className="bg-white divide-y divide-gray-100">
                                         {loading ? (
                                             <tr>
-                                                <td colSpan={fields.length + 1} className="px-3 py-6 text-center">
+                                                <td colSpan={(visibleFields ?? fields).length + 1} className="px-3 py-6 text-center">
                                                     <div className="flex flex-col justify-center items-center gap-2">
                                                         <div className="relative">
                                                             <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-300"></div>
@@ -654,7 +826,7 @@ const LeadsGrid = () => {
                                             </tr>
                                         ) : leads.length === 0 ? (
                                             <tr>
-                                                <td colSpan={fields.length + 1} className="px-3 py-6 text-center">
+                                                <td colSpan={(visibleFields ?? fields).length + 1} className="px-3 py-6 text-center">
                                                     <div className="flex flex-col items-center gap-2">
                                                         <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
@@ -666,7 +838,7 @@ const LeadsGrid = () => {
                                         ) : (
                                             leads.map((lead, index) => (
                                                 <tr key={lead._id} className="hover:bg-gray-50 transition-all duration-200" style={{ animationDelay: `${index * 50}ms` }}>
-                                                    {fields.map((field) => {
+                                                    {(visibleFields ?? fields).map((field) => {
                                                         if (field === 'adminId') {
                                                             if (!lead.adminId) {
                                                                 return (

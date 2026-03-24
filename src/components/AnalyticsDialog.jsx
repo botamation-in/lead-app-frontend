@@ -122,6 +122,73 @@ const renderLineChart = (chartData, yAxisLabel) => (
     </ResponsiveContainer>
 );
 
+// Render Heat Map — colored tile grid, intensity proportional to value magnitude
+const renderHeatmapChart = (chartData, yAxisLabel) => {
+    const max = Math.max(...chartData.map(d => d.value));
+    const min = Math.min(...chartData.map(d => d.value));
+    const range = max - min || 1;
+    return (
+        <div className="w-full overflow-auto p-3" style={{ minHeight: 200 }}>
+            <div className="flex items-center gap-3 mb-3 flex-wrap">
+                <span className="text-xs text-gray-500 font-medium">Scale:</span>
+                {[0, 0.25, 0.5, 0.75, 1].map(i => (
+                    <div key={i} className="flex items-center gap-1">
+                        <div className="w-4 h-4 rounded" style={{ backgroundColor: `rgba(26,26,26,${0.1 + i * 0.9})` }} />
+                        <span className="text-[10px] text-gray-500">{Math.round(min + i * range).toLocaleString()}</span>
+                    </div>
+                ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {chartData.map((entry, index) => {
+                    const intensity = (entry.value - min) / range;
+                    return (
+                        <div
+                            key={index}
+                            title={`${entry.name}: ${entry.value.toLocaleString()} ${yAxisLabel}`}
+                            style={{ backgroundColor: `rgba(26,26,26,${0.1 + intensity * 0.9})` }}
+                            className="flex flex-col items-center justify-center rounded-xl p-3 min-w-[72px] cursor-default transition-transform duration-150 hover:scale-110"
+                        >
+                            <span className="text-sm font-black leading-none" style={{ color: intensity > 0.55 ? 'white' : '#1e293b' }}>
+                                {entry.value.toLocaleString()}
+                            </span>
+                            <span className="text-[10px] mt-1 max-w-[80px] text-center leading-tight overflow-hidden" style={{ color: intensity > 0.55 ? 'rgba(255,255,255,0.8)' : '#64748b', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                {entry.name}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
+// Render Number Chart — large KPI total with top breakdown
+const renderNumberChart = (chartData, yAxisLabel) => {
+    const total = chartData.reduce((sum, d) => sum + (d.value || 0), 0);
+    const fmt = (n) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : n.toLocaleString();
+    const topItems = [...chartData].sort((a, b) => b.value - a.value).slice(0, 4);
+    return (
+        <div className="flex flex-col items-center justify-center gap-4 py-6 px-4">
+            <div className="text-center">
+                <div className="text-7xl font-black tracking-tighter text-gray-900 leading-none">
+                    {fmt(total)}
+                </div>
+                <div className="text-sm text-gray-500 mt-3 font-medium uppercase tracking-widest">{yAxisLabel}</div>
+            </div>
+            {topItems.length > 1 && (
+                <div className="flex flex-wrap justify-center gap-3 mt-2">
+                    {topItems.map((item, i) => (
+                        <div key={i} className="text-center bg-gray-50 rounded-xl px-4 py-2 border border-gray-200 min-w-[80px]">
+                            <div className="text-lg font-bold text-gray-800">{item.value.toLocaleString()}</div>
+                            <div className="text-[11px] text-gray-500 truncate max-w-[100px]">{item.name}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 // Chart Renderer Component
 const ChartRenderer = ({ chartConfig, fetchChartData }) => {
     const [chartData, setChartData] = useState([]);
@@ -149,8 +216,8 @@ const ChartRenderer = ({ chartConfig, fetchChartData }) => {
     );
 
     if (!chartConfig.chartType) return <div className="text-center py-12 text-gray-500 text-sm">Select chart type to begin</div>;
-    if (!chartConfig.xAxis) return <div className="text-center py-12 text-gray-500 text-sm">Select X axis</div>;
-    if (!chartConfig.yAxis) return <div className="text-center py-12 text-gray-500 text-sm">Select Y axis</div>;
+    if (!chartConfig.xAxis) return <div className="text-center py-12 text-gray-500 text-sm">{chartConfig.chartType?.value === 'pie' ? 'Select Category' : 'Select X axis'}</div>;
+    if (!chartConfig.yAxis) return <div className="text-center py-12 text-gray-500 text-sm">{chartConfig.chartType?.value === 'pie' ? 'Select Value' : 'Select Y axis'}</div>;
     if (!chartConfig.aggregation) return <div className="text-center py-12 text-gray-500 text-sm">Select aggregation type</div>;
     if (!chartData.length) return <div className="text-center py-12 text-gray-500 text-sm">No data available</div>;
 
@@ -161,6 +228,10 @@ const ChartRenderer = ({ chartConfig, fetchChartData }) => {
             return renderBarChart(chartData, yAxisLabel);
         case 'line':
             return renderLineChart(chartData, yAxisLabel);
+        case 'heatmap':
+            return renderHeatmapChart(chartData, yAxisLabel);
+        case 'number':
+            return renderNumberChart(chartData, yAxisLabel);
         default:
             return null;
     }
@@ -177,7 +248,9 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
     const chartTypes = [
         { value: 'pie', label: 'Pie Chart' },
         { value: 'bar', label: 'Bar Chart' },
-        { value: 'line', label: 'Line Chart' }
+        { value: 'line', label: 'Line Chart' },
+        { value: 'heatmap', label: 'Heat Map' },
+        { value: 'number', label: 'Number' }
     ];
 
     // Helper to format field names
@@ -569,7 +642,9 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                     </Combobox>
                 </div>
                 <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">X Axis</label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                        {chartConfig.chartType?.value === 'pie' ? 'Category' : 'X Axis'}
+                    </label>
                     <Combobox
                         value={chartConfig.xAxis}
                         onChange={(val) => updateChartConfig(chartConfig.id, 'xAxis', val)}
@@ -584,7 +659,9 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                     </Combobox>
                 </div>
                 <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Y Axis</label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                        {chartConfig.chartType?.value === 'pie' ? 'Value' : 'Y Axis'}
+                    </label>
                     <Combobox
                         value={chartConfig.yAxis}
                         onChange={(val) => updateChartConfig(chartConfig.id, 'yAxis', val)}
