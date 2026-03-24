@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
 import { useAccount } from '../context/AccountContext';
 import AdminTab from './settings/AdminTab';
@@ -41,7 +42,7 @@ const AdminPage = () => {
                     <div className="flex items-center gap-4">
                         {/* Logo */}
                         <div className="py-2">
-                            <img src="/botamation_logo.jpg" alt="Botamation Logo" className="w-10 h-10 object-contain rounded-lg shadow-lg" />
+                            <BrandLogo />
                         </div>
 
                         {/* Menu items */}

@@ -1,0 +1,37 @@
+import React, { useState } from 'react';
+import { BRAND_NAME, getBrandLogoSrc } from '../utils/brandAssets';
+
+/**
+ * Renders the brand logo image.
+ * Falls back to a text-initial avatar if the URL is empty or the image fails to load.
+ */
+const BrandLogo = ({ className = 'w-10 h-10 object-contain rounded-lg shadow-lg' }) => {
+    const src = getBrandLogoSrc();
+    const [failed, setFailed] = useState(false);
+
+    if (src && !failed) {
+        return (
+            <img
+                src={src}
+                alt={`${BRAND_NAME} Logo`}
+                className={className}
+                onError={() => {
+                    console.error('[BrandLogo] Failed to load logo from:', src);
+                    setFailed(true);
+                }}
+            />
+        );
+    }
+
+    // Fallback: brand name initial in a styled box
+    return (
+        <div
+            className="w-10 h-10 rounded-lg shadow-lg flex items-center justify-center bg-gray-700 text-white font-bold text-lg select-none flex-shrink-0"
+            title={BRAND_NAME}
+        >
+            {BRAND_NAME.charAt(0).toUpperCase()}
+        </div>
+    );
+};
+
+export default BrandLogo;

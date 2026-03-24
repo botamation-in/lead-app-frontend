@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import BrandLogo from './BrandLogo';
 import * as XLSX from 'xlsx';
 import api from '../api/axiosConfig';
 import { useAuth } from '../context/AuthContext';
@@ -439,7 +440,7 @@ const LeadsGrid = () => {
                     <div className="flex items-center gap-4">
                         {/* Logo */}
                         <div className="py-2">
-                            <img src="/botamation_logo.jpg" alt="Botamation Logo" className="w-10 h-10 object-contain rounded-lg shadow-lg" />
+                            <BrandLogo />
                         </div>
 
                         {/* Menu Items */}

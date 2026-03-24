@@ -65,7 +65,8 @@ const AnalyticsDashboardPage = () => {
         chartHeight: 320,
         chartWidthPx: null,
         chartName: '',
-        barOrientation: 'vertical'
+        barOrientation: 'vertical',
+        chartColor: null
     };
 
     const getStorageKey = (acctId) =>
@@ -112,7 +113,8 @@ const AnalyticsDashboardPage = () => {
                 chartHeight: chart.chartHeight,
                 chartWidthPx: chart.chartWidthPx ?? null,
                 chartName: chart.chartName || '',
-                barOrientation: chart.barOrientation || 'vertical'
+                barOrientation: chart.barOrientation || 'vertical',
+                chartColor: chart.chartColor || null
             }));
             const idx = all.findIndex(e => e.category === catKey);
             if (idx >= 0) {
@@ -146,6 +148,41 @@ const AnalyticsDashboardPage = () => {
     const isResizingRef = React.useRef(false);
     const [dragHeights, setDragHeights] = useState({});
     const [dragWidths, setDragWidths] = useState({});
+
+    // Filter panel visibility — per-chart, proximity-based
+    const [filterVisible, setFilterVisible] = useState({});
+    const filterLockedRef = React.useRef({});
+    const pendingHideRef = React.useRef({});
+    const cardRefs = React.useRef({});
+
+    const hideFilter = (chartId) => {
+        if (!filterLockedRef.current[chartId]) {
+            setFilterVisible(prev => { const n = { ...prev }; delete n[chartId]; return n; });
+        } else {
+            // Mark for hide-after-unlock (e.g. mouse left while combobox dropdown was open)
+            pendingHideRef.current[chartId] = true;
+        }
+    };
+
+    // Release all locks on document mouseup (covers combobox portal selections)
+    React.useEffect(() => {
+        const onDocMouseUp = () => {
+            setTimeout(() => {
+                const pending = Object.keys(pendingHideRef.current);
+                filterLockedRef.current = {};
+                if (pending.length) {
+                    pendingHideRef.current = {};
+                    setFilterVisible(prev => {
+                        const n = { ...prev };
+                        pending.forEach(id => delete n[id]);
+                        return n;
+                    });
+                }
+            }, 200);
+        };
+        document.addEventListener('mouseup', onDocMouseUp);
+        return () => document.removeEventListener('mouseup', onDocMouseUp);
+    }, []);
 
     // direction: 'y' | 'x' | 'both'
     const startResize = (e, id, currentHeight, currentWidth, direction = 'y') => {
@@ -414,6 +451,11 @@ const AnalyticsDashboardPage = () => {
         '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4',
         '#84cc16', '#a855f7', '#22c55e', '#eab308', '#ef4444'
     ];
+    const DEFAULT_CHART_COLOR = '#6366f1';
+    const COLOR_OPTIONS = [
+        '#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#3b82f6',
+        '#ec4899', '#14b8a6', '#f97316', '#8b5cf6', '#22c55e', '#1a1a1a'
+    ];
 
     // Shared attractive tooltip style
     const tooltipStyle = {
@@ -530,13 +572,13 @@ const AnalyticsDashboardPage = () => {
     };
 
     // Render Line Chart — area chart with gradient fill
-    const renderLineChart = (chartData, yAxisLabel) => (
+    const renderLineChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR) => (
         <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 40 }}>
                 <defs>
                     <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                        <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+                        <stop offset="95%" stopColor={color} stopOpacity={0} />
                     </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -558,7 +600,7 @@ const AnalyticsDashboardPage = () => {
                     contentStyle={tooltipStyle.contentStyle}
                     labelStyle={tooltipStyle.labelStyle}
                     itemStyle={tooltipStyle.itemStyle}
-                    cursor={{ stroke: '#6366f1', strokeWidth: 1, strokeDasharray: '4 4' }}
+                    cursor={{ stroke: color, strokeWidth: 1, strokeDasharray: '4 4' }}
                     formatter={(value) => [value, yAxisLabel]}
                 />
                 <Legend iconType="circle" iconSize={10} />
@@ -566,28 +608,31 @@ const AnalyticsDashboardPage = () => {
                     type="monotone"
                     dataKey="value"
                     name={yAxisLabel}
-                    stroke="#6366f1"
+                    stroke={color}
                     strokeWidth={3}
                     fill="url(#areaGrad)"
-                    dot={{ fill: '#6366f1', stroke: 'white', strokeWidth: 2, r: 5 }}
-                    activeDot={{ r: 7, fill: '#4f46e5', stroke: 'white', strokeWidth: 2 }}
+                    dot={{ fill: color, stroke: 'white', strokeWidth: 2, r: 5 }}
+                    activeDot={{ r: 7, fill: color, stroke: 'white', strokeWidth: 2 }}
                 />
             </AreaChart>
         </ResponsiveContainer>
     );
 
     // Render Heat Map — colored tile grid, intensity proportional to value
-    const renderHeatmapChart = (chartData, yAxisLabel) => {
+    const renderHeatmapChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR) => {
         const max = Math.max(...chartData.map(d => d.value));
         const min = Math.min(...chartData.map(d => d.value));
         const range = max - min || 1;
+        const r = parseInt(color.slice(1, 3), 16);
+        const g = parseInt(color.slice(3, 5), 16);
+        const b = parseInt(color.slice(5, 7), 16);
         return (
             <div className="w-full h-full overflow-auto p-4">
                 <div className="flex items-center gap-3 mb-3 flex-wrap">
                     <span className="text-xs text-gray-500 font-medium">Scale:</span>
                     {[0, 0.25, 0.5, 0.75, 1].map(i => (
                         <div key={i} className="flex items-center gap-1">
-                            <div className="w-4 h-4 rounded" style={{ backgroundColor: `rgba(99,102,241,${0.1 + i * 0.9})` }} />
+                            <div className="w-4 h-4 rounded" style={{ backgroundColor: `rgba(${r},${g},${b},${0.1 + i * 0.9})` }} />
                             <span className="text-[10px] text-gray-500">{Math.round(min + i * range).toLocaleString()}</span>
                         </div>
                     ))}
@@ -599,7 +644,7 @@ const AnalyticsDashboardPage = () => {
                             <div
                                 key={index}
                                 title={`${entry.name}: ${entry.value.toLocaleString()} ${yAxisLabel}`}
-                                style={{ backgroundColor: `rgba(99,102,241,${0.1 + intensity * 0.9})` }}
+                                style={{ backgroundColor: `rgba(${r},${g},${b},${0.1 + intensity * 0.9})` }}
                                 className="flex flex-col items-center justify-center rounded-xl p-3 min-w-[72px] cursor-default transition-transform duration-150 hover:scale-110 hover:shadow-md"
                             >
                                 <span className="text-sm font-black leading-none" style={{ color: intensity > 0.55 ? 'white' : '#1e293b' }}>
@@ -617,14 +662,14 @@ const AnalyticsDashboardPage = () => {
     };
 
     // Render Number Chart — large KPI total with top-N breakdown
-    const renderNumberChart = (chartData, yAxisLabel) => {
+    const renderNumberChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR) => {
         const total = chartData.reduce((sum, d) => sum + (d.value || 0), 0);
         const fmt = (n) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : n.toLocaleString();
         const topItems = [...chartData].sort((a, b) => b.value - a.value).slice(0, 4);
         return (
             <div className="w-full h-full flex flex-col items-center justify-center gap-4 p-6">
                 <div className="text-center">
-                    <div className="text-7xl font-black tracking-tighter text-gray-900 leading-none">
+                    <div className="text-7xl font-black tracking-tighter leading-none" style={{ color }}>
                         {fmt(total)}
                     </div>
                     <div className="text-sm text-gray-500 mt-3 font-medium uppercase tracking-widest">{yAxisLabel}</div>
@@ -632,8 +677,8 @@ const AnalyticsDashboardPage = () => {
                 {topItems.length > 1 && (
                     <div className="flex flex-wrap justify-center gap-3 mt-2">
                         {topItems.map((item, i) => (
-                            <div key={i} className="text-center bg-gray-50 rounded-xl px-4 py-2 border border-gray-100 min-w-[80px]">
-                                <div className="text-lg font-bold text-gray-800">{item.value.toLocaleString()}</div>
+                            <div key={i} className="text-center rounded-xl px-4 py-2 border min-w-[80px]" style={{ backgroundColor: `${color}10`, borderColor: `${color}30` }}>
+                                <div className="text-lg font-bold" style={{ color }}>{item.value.toLocaleString()}</div>
                                 <div className="text-[11px] text-gray-500 truncate max-w-[100px]">{item.name}</div>
                             </div>
                         ))}
@@ -661,17 +706,18 @@ const AnalyticsDashboardPage = () => {
         if (!chartConfig.aggregation) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">Select aggregation type</div>;
         if (!chartData.length) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">No data available</div>;
 
+        const chartColor = chartConfig.chartColor || DEFAULT_CHART_COLOR;
         switch (chartConfig.chartType.value) {
             case 'pie':
                 return renderPieChart(chartData, yAxisLabel);
             case 'bar':
                 return renderBarChart(chartData, yAxisLabel, chartConfig.barOrientation || 'vertical');
             case 'line':
-                return renderLineChart(chartData, yAxisLabel);
+                return renderLineChart(chartData, yAxisLabel, chartColor);
             case 'heatmap':
-                return renderHeatmapChart(chartData, yAxisLabel);
+                return renderHeatmapChart(chartData, yAxisLabel, chartColor);
             case 'number':
-                return renderNumberChart(chartData, yAxisLabel);
+                return renderNumberChart(chartData, yAxisLabel, chartColor);
             default:
                 return null;
         }
@@ -700,6 +746,7 @@ const AnalyticsDashboardPage = () => {
 
         const hasCustomDate = !isToday && !isYesterday && !isLastN && (chartConfig.dateFilterFrom || chartConfig.dateFilterTo);
         const showCustomInputs = hasCustomDate || chartConfig._showCustom;
+        const filterIsVisible = !!filterVisible[chartConfig.id];
 
         const applyLastN = (n) => {
             const d = new Date(today); d.setDate(d.getDate() - n);
@@ -735,7 +782,18 @@ const AnalyticsDashboardPage = () => {
                     setIsDraggingAny(false);
                 }}
                 onDragEnd={() => { setDragOverId(null); draggedIdRef.current = null; stopAutoScroll(); setIsDraggingAny(false); }}
-                className={`group bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 animate-scale-in flex flex-col border-2 relative ${dragOverId === chartConfig.id ? 'border-indigo-400 shadow-indigo-100' : 'border-gray-200'
+                ref={(el) => { cardRefs.current[chartConfig.id] = el; }}
+                onMouseMove={(e) => {
+                    if (isResizingRef.current || isDraggingAny) return;
+                    const card = cardRefs.current[chartConfig.id];
+                    if (!card) return;
+                    const rect = card.getBoundingClientRect();
+                    if (e.clientY - rect.top < 80) {
+                        setFilterVisible(prev => ({ ...prev, [chartConfig.id]: true }));
+                    }
+                }}
+                onMouseLeave={() => hideFilter(chartConfig.id)}
+                className={`bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 animate-scale-in flex flex-col border-2 relative ${dragOverId === chartConfig.id ? 'border-gray-700 shadow-gray-200' : 'border-gray-200'
                     }`}
                 style={{
                     height: dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400,
@@ -749,8 +807,8 @@ const AnalyticsDashboardPage = () => {
                 }}
             >
                 {/* ── Always-visible name bar with drag handle ── */}
-                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-100 cursor-grab active:cursor-grabbing select-none">
-                    <svg className="w-4 h-4 text-gray-400 shrink-0" fill="currentColor" viewBox="0 0 16 16">
+                <div className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-b border-gray-800 cursor-grab active:cursor-grabbing select-none">
+                    <svg className="w-4 h-4 text-gray-500 shrink-0" fill="currentColor" viewBox="0 0 16 16">
                         <circle cx="5" cy="4" r="1.2" /><circle cx="11" cy="4" r="1.2" />
                         <circle cx="5" cy="8" r="1.2" /><circle cx="11" cy="8" r="1.2" />
                         <circle cx="5" cy="12" r="1.2" /><circle cx="11" cy="12" r="1.2" />
@@ -762,12 +820,23 @@ const AnalyticsDashboardPage = () => {
                         onChange={(e) => updateChartConfig(chartConfig.id, 'chartName', e.target.value)}
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => e.stopPropagation()}
-                        className="flex-1 text-sm font-semibold text-gray-800 bg-transparent outline-none border-none cursor-text placeholder:text-gray-400 min-w-0"
+                        className="flex-1 text-sm font-semibold text-white bg-transparent outline-none border-none cursor-text placeholder:text-gray-500 min-w-0"
                     />
                 </div>
 
-                {/* ── All controls — hidden until hover ── */}
-                <div className="overflow-hidden transition-all duration-700 ease-in-out max-h-0 opacity-0 group-hover:max-h-[900px] group-hover:opacity-100">
+                {/* ── All controls — slides in when near top ── */}
+                <div
+                    className={`absolute left-0 right-0 bg-white z-40 border-b border-gray-200 shadow-lg
+                        transition-all duration-200 ease-out origin-top
+                        ${filterIsVisible
+                            ? 'opacity-100 translate-y-0 pointer-events-auto'
+                            : 'opacity-0 -translate-y-3 pointer-events-none'
+                        }`}
+                    style={{ top: 36 }}
+                    onMouseLeave={() => hideFilter(chartConfig.id)}
+                    onMouseDown={() => { filterLockedRef.current[chartConfig.id] = true; }}
+                    onMouseUp={() => { setTimeout(() => { delete filterLockedRef.current[chartConfig.id]; }, 200); }}
+                >
 
                     {/* ── Action buttons bar ── */}
                     <div className="flex items-center justify-end px-5 pt-3 pb-1 gap-1.5">
@@ -937,6 +1006,29 @@ const AnalyticsDashboardPage = () => {
                         )}
                     </div>
 
+                    {/* Color picker — for line, heatmap, number charts */}
+                    {['line', 'heatmap', 'number'].includes(chartConfig.chartType?.value) && (
+                        <div className="flex items-center gap-2 mb-3 px-5">
+                            <span className="text-xs font-semibold text-gray-700 shrink-0">Color:</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                {COLOR_OPTIONS.map(c => (
+                                    <button
+                                        key={c}
+                                        title={c}
+                                        onClick={() => updateChartConfig(chartConfig.id, 'chartColor', c)}
+                                        className="w-5 h-5 rounded-full transition-transform hover:scale-110 focus:outline-none"
+                                        style={{
+                                            backgroundColor: c,
+                                            boxShadow: (chartConfig.chartColor || DEFAULT_CHART_COLOR) === c
+                                                ? `0 0 0 2px white, 0 0 0 4px ${c}`
+                                                : 'none'
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Bar orientation toggle — only for bar charts */}
                     {chartConfig.chartType?.value === 'bar' && (
                         <div className="flex items-center gap-2 mb-3 px-5">
@@ -984,6 +1076,7 @@ const AnalyticsDashboardPage = () => {
                                 onChange={(val) => updateChartConfig(chartConfig.id, 'chartType', val)}
                                 displayValue={(option) => option?.label || 'Select...'}
                                 options={chartTypes}
+                                dropdownClassName="z-50"
                             >
                                 {(option) => (
                                     <ComboboxOption key={`chart-type-${chartConfig.id}-${option.value}`} value={option}>
@@ -1001,6 +1094,7 @@ const AnalyticsDashboardPage = () => {
                                 onChange={(val) => updateChartConfig(chartConfig.id, 'xAxis', val)}
                                 displayValue={(option) => option?.label || 'Select...'}
                                 options={columns}
+                                dropdownClassName="z-50"
                             >
                                 {(option) => (
                                     <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
@@ -1018,6 +1112,7 @@ const AnalyticsDashboardPage = () => {
                                 onChange={(val) => updateChartConfig(chartConfig.id, 'yAxis', val)}
                                 displayValue={(option) => option?.label || 'Select...'}
                                 options={columns}
+                                dropdownClassName="z-50"
                             >
                                 {(option) => (
                                     <ComboboxOption key={`y-axis-${chartConfig.id}-${option.value}`} value={option}>
@@ -1033,6 +1128,7 @@ const AnalyticsDashboardPage = () => {
                                 onChange={(val) => updateChartConfig(chartConfig.id, 'aggregation', val)}
                                 displayValue={(option) => option?.label || 'Select...'}
                                 options={aggregationTypes}
+                                dropdownClassName="z-50"
                             >
                                 {(option) => (
                                     <ComboboxOption key={`agg-${chartConfig.id}-${option.value}`} value={option}>
@@ -1042,7 +1138,7 @@ const AnalyticsDashboardPage = () => {
                             </Combobox>
                         </div>
                     </div>
-                    {/* end collapsible controls */}
+                    {/* end filter controls */}
                     <div className="pb-4"></div>
                 </div>
 
@@ -1062,17 +1158,17 @@ const AnalyticsDashboardPage = () => {
                     )}
                     {/* Right edge — horizontal resize */}
                     <div
-                        className="absolute top-0 right-0 bottom-0 w-3 cursor-ew-resize z-10 flex items-center justify-end pr-0.5 group/rh hover:bg-indigo-50 transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-3 cursor-ew-resize z-10 flex items-center justify-end pr-0.5 group/rh hover:bg-gray-100 transition-colors"
                         onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, dragWidths[chartConfig.id] ?? chartConfig.chartWidthPx ?? 500, 'x')}
                     >
-                        <div className="h-10 w-1 rounded-full bg-gray-300 group-hover/rh:bg-indigo-400 transition-colors" />
+                        <div className="h-10 w-1 rounded-full bg-gray-300 group-hover/rh:bg-gray-700 transition-colors" />
                     </div>
                     {/* Bottom-right corner — both directions */}
                     <div
                         className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-30"
                         onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, dragWidths[chartConfig.id] ?? chartConfig.chartWidthPx ?? 500, 'both')}
                     >
-                        <svg className="w-4 h-4 text-gray-400 hover:text-indigo-400 transition-colors" viewBox="0 0 16 16" fill="currentColor">
+                        <svg className="w-4 h-4 text-gray-400 hover:text-gray-700 transition-colors" viewBox="0 0 16 16" fill="currentColor">
                             <circle cx="5" cy="11" r="1.2" />
                             <circle cx="9" cy="11" r="1.2" />
                             <circle cx="13" cy="11" r="1.2" />
@@ -1085,10 +1181,10 @@ const AnalyticsDashboardPage = () => {
 
                 {/* Bottom edge — vertical resize */}
                 <div
-                    className="h-3 cursor-ns-resize flex items-center justify-center bg-white border-t border-gray-100 group/resize hover:bg-indigo-50 transition-colors shrink-0 z-10"
+                    className="h-3 cursor-ns-resize flex items-center justify-center bg-white border-t border-gray-100 group/resize hover:bg-gray-100 transition-colors shrink-0 z-10"
                     onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, 0, 'y')}
                 >
-                    <div className="w-12 h-1 rounded-full bg-gray-300 group-hover/resize:bg-indigo-400 transition-colors" />
+                    <div className="w-12 h-1 rounded-full bg-gray-300 group-hover/resize:bg-gray-700 transition-colors" />
                 </div>
             </div>
         );
@@ -1101,7 +1197,7 @@ const AnalyticsDashboardPage = () => {
                 <div className="flex flex-col items-center space-y-4 p-8 bg-white rounded-2xl shadow-2xl border border-gray-200">
                     <div className="relative">
                         <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-200"></div>
-                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent absolute top-0"></div>
+                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-900 border-t-transparent absolute top-0"></div>
                     </div>
                     <div className="text-center">
                         <span className="text-lg font-semibold text-gray-900">Loading Dashboard</span>
@@ -1119,7 +1215,7 @@ const AnalyticsDashboardPage = () => {
                 <div className="container mx-auto px-4 py-4">
                     <div className="flex justify-between items-center">
                         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-                            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+                            <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
                                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                 </svg>
@@ -1175,7 +1271,7 @@ const AnalyticsDashboardPage = () => {
                         <p className="text-xs text-gray-400 mb-5">Add a chart to start visualizing your data</p>
                         <button
                             onClick={addChart}
-                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5"
+                            className="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5"
                         >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
