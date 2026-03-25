@@ -303,14 +303,16 @@ const AnalyticsDashboardPage = () => {
     // Fetch chart data from backend API
     // silent=true skips the per-chart loading mask (used by auto-refresh)
     const fetchChartDataFromBackend = async (chartId, chartConfig, silent = false) => {
-        if (!chartConfig.xAxis || !chartConfig.yAxis || !chartConfig.aggregation) {
+        const isNumber = chartConfig.chartType?.value === 'number';
+        if (isNumber ? (!chartConfig.yAxis || !chartConfig.aggregation) : (!chartConfig.xAxis || !chartConfig.yAxis || !chartConfig.aggregation)) {
             return;
         }
 
         if (!silent) setChartLoadingState(prev => ({ ...prev, [chartId]: true }));
         try {
+            const xAxisValue = isNumber ? chartConfig.yAxis.value : chartConfig.xAxis.value;
             const params = {
-                xAxis: chartConfig.xAxis.value,
+                xAxis: xAxisValue,
                 yAxis: chartConfig.yAxis.value,
                 aggregation: chartConfig.aggregation.value,
                 ...(acctId && { acctId }),
@@ -319,7 +321,7 @@ const AnalyticsDashboardPage = () => {
                 ...(chartConfig.dateFilterTo && { dateTo: chartConfig.dateFilterTo })
             };
 
-            const response = await api.get('/api/ui/analytics/chart-data', { params });
+            const response = await api.post('/api/ui/analytics/chart-data', params);
             setChartDataCache(prev => ({
                 ...prev,
                 [chartId]: response.data.data || []
@@ -353,7 +355,7 @@ const AnalyticsDashboardPage = () => {
     // Refresh all charts — re-fetches live data for every configured chart
     const [globalRefreshing, setGlobalRefreshing] = useState(false);
     const refreshAllCharts = async () => {
-        const configured = charts.filter(c => c.xAxis && c.yAxis && c.aggregation);
+        const configured = charts.filter(c => c.chartType?.value === 'number' ? (c.yAxis && c.aggregation) : (c.xAxis && c.yAxis && c.aggregation));
         if (!configured.length) return;
         setGlobalRefreshing(true);
         await Promise.all(configured.map(c => fetchChartDataFromBackend(c.id, c)));
@@ -404,7 +406,8 @@ const AnalyticsDashboardPage = () => {
                     if (remaining <= 0) {
                         // Trigger refresh using latest chart state from ref
                         const latestChart = chartsForTimerRef.current.find(c => c.id === chart.id);
-                        if (latestChart && latestChart.xAxis && latestChart.yAxis && latestChart.aggregation) {
+                        const isNumberChart = latestChart?.chartType?.value === 'number';
+                        if (latestChart && (isNumberChart ? (latestChart.yAxis && latestChart.aggregation) : (latestChart.xAxis && latestChart.yAxis && latestChart.aggregation))) {
                             fetchChartDataFromBackend(latestChart.id, latestChart, true);
                         }
                         autoRefreshIntervalsRef.current[`${chart.id}_total`] = totalSecs;
@@ -506,7 +509,8 @@ const AnalyticsDashboardPage = () => {
             // Fetch chart data once — use chartsRef so we always get the correct category's charts
             if (displayFields.length > 0) {
                 chartsRef.current.forEach(chart => {
-                    if (chart.xAxis && chart.yAxis && chart.aggregation) {
+                    const isNum = chart.chartType?.value === 'number';
+                    if (isNum ? (chart.yAxis && chart.aggregation) : (chart.xAxis && chart.yAxis && chart.aggregation)) {
                         fetchChartDataFromBackend(chart.id, chart);
                     }
                 });
@@ -783,8 +787,8 @@ const AnalyticsDashboardPage = () => {
         );
 
         if (!chartConfig.chartType) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">Select chart type to begin</div>;
-        if (!chartConfig.xAxis) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">{chartConfig.chartType?.value === 'pie' ? 'Select Category' : 'Select X axis'}</div>;
-        if (!chartConfig.yAxis) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">{chartConfig.chartType?.value === 'pie' ? 'Select Value' : 'Select Y axis'}</div>;
+        if (chartConfig.chartType?.value !== 'number' && !chartConfig.xAxis) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">{chartConfig.chartType?.value === 'pie' ? 'Select Category' : 'Select X axis'}</div>;
+        if (!chartConfig.yAxis) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">{chartConfig.chartType?.value === 'pie' ? 'Select Value' : chartConfig.chartType?.value === 'number' ? 'Select Value' : 'Select Y axis'}</div>;
         if (!chartConfig.aggregation) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">Select aggregation type</div>;
         if (!chartData.length) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">No data available</div>;
 
@@ -1206,7 +1210,7 @@ const AnalyticsDashboardPage = () => {
                         </div>
                     )}
                     {/* Chart Controls */}
-                    <div className="grid grid-cols-4 gap-3 mb-4 px-5">
+                    <div className={`grid gap-3 mb-4 px-5 ${chartConfig.chartType?.value === 'number' ? 'grid-cols-3' : 'grid-cols-4'}`}>
                         <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
                             <Combobox
@@ -1223,27 +1227,29 @@ const AnalyticsDashboardPage = () => {
                                 )}
                             </Combobox>
                         </div>
+                        {chartConfig.chartType?.value !== 'number' && (
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                    {chartConfig.chartType?.value === 'pie' ? 'Category' : 'X Axis'}
+                                </label>
+                                <Combobox
+                                    value={chartConfig.xAxis}
+                                    onChange={(val) => updateChartConfig(chartConfig.id, 'xAxis', val)}
+                                    displayValue={(option) => option?.label || 'Select...'}
+                                    options={columns}
+                                    dropdownClassName="z-50"
+                                >
+                                    {(option) => (
+                                        <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                            <ComboboxLabel>{option.label}</ComboboxLabel>
+                                        </ComboboxOption>
+                                    )}
+                                </Combobox>
+                            </div>
+                        )}
                         <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                {chartConfig.chartType?.value === 'pie' ? 'Category' : 'X Axis'}
-                            </label>
-                            <Combobox
-                                value={chartConfig.xAxis}
-                                onChange={(val) => updateChartConfig(chartConfig.id, 'xAxis', val)}
-                                displayValue={(option) => option?.label || 'Select...'}
-                                options={columns}
-                                dropdownClassName="z-50"
-                            >
-                                {(option) => (
-                                    <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                        <ComboboxLabel>{option.label}</ComboboxLabel>
-                                    </ComboboxOption>
-                                )}
-                            </Combobox>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                {chartConfig.chartType?.value === 'pie' ? 'Value' : 'Y Axis'}
+                                {chartConfig.chartType?.value === 'pie' ? 'Value' : chartConfig.chartType?.value === 'number' ? 'Value' : 'Y Axis'}
                             </label>
                             <Combobox
                                 value={chartConfig.yAxis}
