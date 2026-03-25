@@ -9,6 +9,7 @@ import {
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import LoadingMask from '../components/LoadingMask';
+import DeleteConfirmation from '../components/DeleteConfirmation';
 
 const AnalyticsDashboardPage = () => {
     const navigate = useNavigate();
@@ -67,7 +68,7 @@ const AnalyticsDashboardPage = () => {
         chartName: '',
         barOrientation: 'vertical',
         chartColor: null,
-        autoRefreshMins: 5
+        autoRefreshMins: null
     };
 
     const STORAGE_KEY = 'analyticsDashboard_charts';
@@ -134,7 +135,7 @@ const AnalyticsDashboardPage = () => {
                 chartName: chart.chartName || '',
                 barOrientation: chart.barOrientation || 'vertical',
                 chartColor: chart.chartColor || null,
-                autoRefreshMins: chart.autoRefreshMins ?? 5
+                autoRefreshMins: chart.autoRefreshMins ?? null
             }));
             store[acctKey] = store[acctKey] || {};
             store[acctKey][catKey] = { filters: chartsToSave };
@@ -164,6 +165,7 @@ const AnalyticsDashboardPage = () => {
     const draggedIdRef = React.useRef(null);
     const [dragOverId, setDragOverId] = useState(null);
     const [isDraggingAny, setIsDraggingAny] = useState(false);
+    const [pendingDeleteId, setPendingDeleteId] = useState(null);
     const scrollIntervalRef = React.useRef(null);
     const isResizingRef = React.useRef(false);
     const [dragHeights, setDragHeights] = useState({});
@@ -373,28 +375,44 @@ const AnalyticsDashboardPage = () => {
     }, [charts]);
 
     // Auto-refresh timer manager — starts/restarts a countdown for each chart
+    // No cleanup on dep change: each chart's timer is managed individually inside the body.
     useEffect(() => {
         const activeIds = new Set(charts.map(c => c.id));
 
-        // Clear intervals for removed charts
-        Object.keys(autoRefreshIntervalsRef.current).forEach(id => {
-            if (!activeIds.has(Number(id))) {
-                clearInterval(autoRefreshIntervalsRef.current[id]);
-                delete autoRefreshIntervalsRef.current[id];
-                setAutoRefreshCountdown(prev => { const n = { ...prev }; delete n[id]; return n; });
-            }
-        });
+        // Clear intervals for removed charts (skip _total keys)
+        Object.keys(autoRefreshIntervalsRef.current)
+            .filter(k => !k.includes('_total'))
+            .forEach(idStr => {
+                const id = Number(idStr);
+                if (!activeIds.has(id)) {
+                    clearInterval(autoRefreshIntervalsRef.current[idStr]);
+                    delete autoRefreshIntervalsRef.current[idStr];
+                    delete autoRefreshIntervalsRef.current[`${idStr}_total`];
+                    setAutoRefreshCountdown(prev => { const n = { ...prev }; delete n[id]; return n; });
+                }
+            });
 
         charts.forEach(chart => {
-            const mins = chart.autoRefreshMins ?? 5;
+            // Auto-refresh disabled for this chart — clear any running timer
+            if (!chart.autoRefreshMins) {
+                if (autoRefreshIntervalsRef.current[chart.id]) {
+                    clearInterval(autoRefreshIntervalsRef.current[chart.id]);
+                    delete autoRefreshIntervalsRef.current[chart.id];
+                    delete autoRefreshIntervalsRef.current[`${chart.id}_total`];
+                    setAutoRefreshCountdown(prev => { const n = { ...prev }; delete n[chart.id]; return n; });
+                }
+                return;
+            }
+
+            const mins = chart.autoRefreshMins;
             const totalSecs = mins * 60;
             const existingInterval = autoRefreshIntervalsRef.current[chart.id];
 
-            // Reset timer if interval changed or not yet started
+            // Skip if this chart's interval is already running with the same timing
             const currentCountdown = autoRefreshIntervalsRef.current[`${chart.id}_total`];
             if (existingInterval && currentCountdown === totalSecs) return;
 
-            // Clear old interval
+            // Timing changed — clear only this chart's old interval
             if (existingInterval) clearInterval(existingInterval);
 
             autoRefreshIntervalsRef.current[`${chart.id}_total`] = totalSecs;
@@ -417,13 +435,18 @@ const AnalyticsDashboardPage = () => {
                 });
             }, 1000);
         });
+        // No return/cleanup here — we handle per-chart cleanup above
+        // Global cleanup on unmount is handled by the effect below
+    }, [charts.map(c => `${c.id}:${c.autoRefreshMins ?? 'off'}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Clear all auto-refresh intervals on component unmount only
+    useEffect(() => {
         return () => {
-            Object.values(autoRefreshIntervalsRef.current).forEach(v => {
-                if (typeof v === 'number') clearInterval(v);
-            });
+            Object.keys(autoRefreshIntervalsRef.current)
+                .filter(k => !k.includes('_total'))
+                .forEach(k => clearInterval(autoRefreshIntervalsRef.current[k]));
         };
-    }, [charts.map(c => `${c.id}:${c.autoRefreshMins}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, []);
 
     // Load charts for the active category whenever account or category changes
     useEffect(() => {
@@ -874,7 +897,9 @@ const AnalyticsDashboardPage = () => {
                     const card = cardRefs.current[chartConfig.id];
                     if (!card) return;
                     const rect = card.getBoundingClientRect();
-                    if (e.clientY - rect.top < 80) {
+                    // Only trigger inside the chart body (below the 36px header), near the top
+                    const relY = e.clientY - rect.top;
+                    if (relY > 36 && relY < 96) {
                         setFilterVisible(prev => ({ ...prev, [chartConfig.id]: true }));
                     }
                 }}
@@ -908,9 +933,33 @@ const AnalyticsDashboardPage = () => {
                         onClick={(e) => e.stopPropagation()}
                         className="flex-1 text-sm font-semibold text-white bg-transparent outline-none border-none cursor-text placeholder:text-gray-500 min-w-0"
                     />
-                    {/* Auto-refresh countdown arc */}
-                    {(() => {
-                        const mins = chartConfig.autoRefreshMins ?? 5;
+                    {/* Manual refresh button */}
+                    <button
+                        title="Refresh chart"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); fetchChartDataFromBackend(chartConfig.id, chartConfig); }}
+                        className="p-1 text-gray-400 hover:text-white transition-colors shrink-0 cursor-pointer"
+                    >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
+
+                    {/* Delete button */}
+                    <button
+                        title="Delete chart"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); setPendingDeleteId(chartConfig.id); }}
+                        className="p-1 text-gray-400 hover:text-red-400 transition-colors shrink-0 cursor-pointer"
+                    >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+
+                    {/* Auto-refresh countdown arc — only shown when auto-refresh is enabled */}
+                    {chartConfig.autoRefreshMins && (() => {
+                        const mins = chartConfig.autoRefreshMins;
                         const totalSecs = mins * 60;
                         const remaining = autoRefreshCountdown[chartConfig.id] ?? totalSecs;
                         const progress = remaining / totalSecs; // 1 = full, 0 = trigger
@@ -1005,21 +1054,11 @@ const AnalyticsDashboardPage = () => {
                                 className="px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 font-bold text-sm transition-all"
                             >+</button>
                         </div>
-
-                        {/* Delete */}
-                        <button
-                            onClick={() => removeChart(chartConfig.id)}
-                            title="Delete chart"
-                            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                        </button>
                     </div>
 
                     {/* ── Date filter row (can wrap freely) ── */}
                     <div className="flex items-center gap-2 mb-4 flex-wrap px-5">
+                        <span className="text-xs font-semibold text-gray-700 shrink-0">Filter:</span>
                         {/* Today */}
                         <button
                             onClick={() => {
@@ -1157,11 +1196,20 @@ const AnalyticsDashboardPage = () => {
                     <div className="flex items-center gap-2 mb-3 px-5">
                         <span className="text-xs font-semibold text-gray-700 shrink-0">Auto Refresh:</span>
                         <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                            <button
+                                onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', null)}
+                                className={`px-2 py-1 transition-all ${!chartConfig.autoRefreshMins
+                                    ? 'bg-gray-900 text-white'
+                                    : 'bg-white text-gray-500 hover:bg-gray-100'
+                                    }`}
+                            >
+                                Off
+                            </button>
                             {[1, 2, 5, 10, 15, 30, 60].map(mins => (
                                 <button
                                     key={mins}
                                     onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', mins)}
-                                    className={`px-2 py-1 transition-all ${(chartConfig.autoRefreshMins ?? 5) === mins
+                                    className={`px-2 py-1 transition-all ${chartConfig.autoRefreshMins === mins
                                         ? 'bg-gray-900 text-white'
                                         : 'bg-white text-gray-500 hover:bg-gray-100'
                                         }`}
@@ -1353,98 +1401,110 @@ const AnalyticsDashboardPage = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 relative">
-            <LoadingMask loading={loading} title="Loading..." message="Please wait while we fetch your data" />
-            <div className="bg-white border-b border-gray-200 shadow-sm">
-                <div className="container mx-auto px-4 py-4">
-                    <div className="flex justify-between items-center">
-                        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-                            <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
-                                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                </svg>
+        <>
+            <div className="min-h-screen bg-gray-50 relative">
+                <LoadingMask loading={loading} title="Loading..." message="Please wait while we fetch your data" />
+                <div className="bg-white border-b border-gray-200 shadow-sm">
+                    <div className="container mx-auto px-4 py-4">
+                        <div className="flex justify-between items-center">
+                            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+                                <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                    </svg>
+                                </div>
+                                Analytics Dashboard
+                            </h1>
+                            <div className="flex items-center gap-2">
+                                {/* Category Combobox */}
+                                <Combobox
+                                    value={
+                                        (selectedCategory ? categories.find(c => c._id === selectedCategory) : null)
+                                        ?? { _id: '', categoryName: 'All Categories' }
+                                    }
+                                    onChange={(val) => handleCategoryChange(val?._id || '')}
+                                    displayValue={(option) => option?.categoryName || 'All Categories'}
+                                    options={[{ _id: '', categoryName: 'All Categories' }, ...categories]}
+                                    disabled={categoryLoading || !acctId}
+                                    placeholder="All Categories"
+                                    className="w-44"
+                                    dropdownClassName="!min-w-0"
+                                >
+                                    {(option) => (
+                                        <ComboboxOption key={option._id || 'all'} value={option}>
+                                            <ComboboxLabel>{option.categoryName}</ComboboxLabel>
+                                        </ComboboxOption>
+                                    )}
+                                </Combobox>
+                                <button
+                                    onClick={refreshAllCharts}
+                                    disabled={globalRefreshing}
+                                    title="Refresh all charts"
+                                    className="w-8 h-8 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all flex items-center justify-center disabled:opacity-50"
+                                >
+                                    <svg className={`w-4 h-4 ${globalRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                </button>
                             </div>
-                            Analytics Dashboard
-                        </h1>
-                        <div className="flex items-center gap-2">
-                            {/* Category Combobox */}
-                            <Combobox
-                                value={
-                                    (selectedCategory ? categories.find(c => c._id === selectedCategory) : null)
-                                    ?? { _id: '', categoryName: 'All Categories' }
-                                }
-                                onChange={(val) => handleCategoryChange(val?._id || '')}
-                                displayValue={(option) => option?.categoryName || 'All Categories'}
-                                options={[{ _id: '', categoryName: 'All Categories' }, ...categories]}
-                                disabled={categoryLoading || !acctId}
-                                placeholder="All Categories"
-                                className="w-44"
-                                dropdownClassName="!min-w-0"
-                            >
-                                {(option) => (
-                                    <ComboboxOption key={option._id || 'all'} value={option}>
-                                        <ComboboxLabel>{option.categoryName}</ComboboxLabel>
-                                    </ComboboxOption>
-                                )}
-                            </Combobox>
-                            <button
-                                onClick={refreshAllCharts}
-                                disabled={globalRefreshing}
-                                title="Refresh all charts"
-                                className="w-8 h-8 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all flex items-center justify-center disabled:opacity-50"
-                            >
-                                <svg className={`w-4 h-4 ${globalRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                            </button>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Content */}
-            <div className="container mx-auto px-4 py-6">
-                {charts.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-16 animate-fade-in">
-                        <div className="w-12 h-12 mb-4 bg-gray-100 rounded-xl flex items-center justify-center border border-gray-200">
-                            <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                            </svg>
-                        </div>
-                        <h3 className="text-sm font-semibold text-gray-700 mb-1">No Charts Yet</h3>
-                        <p className="text-xs text-gray-400 mb-5">Add a chart to start visualizing your data</p>
-                        <button
-                            onClick={addChart}
-                            className="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5"
-                        >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                            </svg>
-                            Add Your First Chart
-                        </button>
-                    </div>
-                ) : (
-                    <>
-                        <div className="flex flex-wrap gap-6 mb-6 items-start">
-                            {charts.map(chart => renderChartCard(chart))}
-                        </div>
-
-                        {/* Floating Add Chart Button */}
-                        <div className="flex justify-center mt-6">
+                {/* Content */}
+                <div className="container mx-auto px-4 py-6">
+                    {charts.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 animate-fade-in">
+                            <div className="w-12 h-12 mb-4 bg-gray-100 rounded-xl flex items-center justify-center border border-gray-200">
+                                <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-sm font-semibold text-gray-700 mb-1">No Charts Yet</h3>
+                            <p className="text-xs text-gray-400 mb-5">Add a chart to start visualizing your data</p>
                             <button
                                 onClick={addChart}
-                                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5 hover:scale-105"
+                                className="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5"
                             >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                 </svg>
-                                Add Another Chart
+                                Add Your First Chart
                             </button>
                         </div>
-                    </>
-                )}
+                    ) : (
+                        <>
+                            <div className="flex flex-wrap gap-6 mb-6 items-start">
+                                {charts.map(chart => renderChartCard(chart))}
+                            </div>
+
+                            {/* Floating Add Chart Button */}
+                            <div className="flex justify-center mt-6">
+                                <button
+                                    onClick={addChart}
+                                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5 hover:scale-105"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    Add Another Chart
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
-        </div>
+
+            {/* Delete confirmation dialog */}
+            <DeleteConfirmation
+                isOpen={pendingDeleteId !== null}
+                onClose={() => setPendingDeleteId(null)}
+                onConfirm={() => { removeChart(pendingDeleteId); setPendingDeleteId(null); }}
+                title="Delete Chart"
+                message="Are you sure you want to delete this chart? This action cannot be undone."
+                confirmLabel="Delete"
+            />
+        </>
     );
 };
 
