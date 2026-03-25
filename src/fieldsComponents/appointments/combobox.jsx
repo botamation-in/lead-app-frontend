@@ -31,8 +31,8 @@ export function Combobox({
       <span
         data-slot="control"
         className={clsx([
+          'relative block',
           className,
-          'relative block w-full',
           // Removed after ring and focus-within ring to prevent outer layer selection
           'has-data-disabled:opacity-50',
         ])}
@@ -45,7 +45,6 @@ export function Combobox({
           onChange={(event) => setQuery(event.target.value)}
           placeholder={placeholder}
           className={clsx([
-            className,
             'combobox-padding-margin',
             'relative block w-full appearance-none rounded-lg py-1.5',
             'pr-9 pl-3',
@@ -81,7 +80,7 @@ export function Combobox({
           'bg-white dark:bg-zinc-800',
           'shadow-lg ring-1 ring-zinc-950/10 dark:ring-white/10 dark:ring-inset',
           'transition-opacity duration-100 ease-in data-closed:data-leave:opacity-0 data-transition:pointer-events-none',
-          'min-w-[200px] w-max max-w-md',
+          'min-w-[var(--input-width)] w-[var(--input-width)]',
           dropdownClassName
         )}
       >

@@ -769,7 +769,7 @@ const LeadsGrid = () => {
                                     disabled={categoryLoading || !acctId}
                                     placeholder="All Categories"
                                     className="w-40"
-                                    dropdownClassName="!min-w-0 !w-[160px]"
+                                    dropdownClassName="!min-w-0"
                                 >
                                     {(option) => (
                                         <ComboboxOption key={option._id || 'all'} value={option}>

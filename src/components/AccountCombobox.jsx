@@ -65,7 +65,7 @@ const AccountCombobox = ({
                             value={inputValue}
                             onFocus={handleFocus}
                             onChange={handleChange}
-                            className="w-32 md:w-44 text-xs font-medium text-white bg-transparent outline-none placeholder-gray-500 truncate"
+                            className="w-[15vw] min-w-[7rem] max-w-[11rem] text-xs font-medium text-white bg-transparent outline-none placeholder-gray-500 truncate"
                             placeholder="Search account..."
                             autoComplete="off"
                         />

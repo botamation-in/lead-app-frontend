@@ -1373,7 +1373,7 @@ const AnalyticsDashboardPage = () => {
                                 disabled={categoryLoading || !acctId}
                                 placeholder="All Categories"
                                 className="w-44"
-                                dropdownClassName="!min-w-0 !w-[176px]"
+                                dropdownClassName="!min-w-0"
                             >
                                 {(option) => (
                                     <ComboboxOption key={option._id || 'all'} value={option}>
