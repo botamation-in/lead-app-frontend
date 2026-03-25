@@ -66,37 +66,56 @@ const AnalyticsDashboardPage = () => {
         chartWidthPx: null,
         chartName: '',
         barOrientation: 'vertical',
-        chartColor: null
+        chartColor: null,
+        autoRefreshMins: 5
     };
 
-    const getStorageKey = (acctId) =>
-        `analyticsDashboard_charts_${acctId || 'default'}`;
+    const STORAGE_KEY = 'analyticsDashboard_charts';
 
-    // Returns the full array: [{ category, filter: [...charts] }]
-    const loadAllCategoryData = (acct) => {
+    // Read the full nested store: { acctId: { catId: { filters: [...] } } }
+    const readStore = () => {
         try {
-            const raw = localStorage.getItem(getStorageKey(acct));
-            if (!raw) return [];
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return {};
             const parsed = JSON.parse(raw);
-            // Migrate: old format was a plain array of charts without a category key
-            if (Array.isArray(parsed) && parsed.length > 0 && !Object.prototype.hasOwnProperty.call(parsed[0], 'category')) {
-                return [{ category: '', filter: parsed }];
+            return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+        } catch {
+            return {};
+        }
+    };
+
+    const loadChartsForCategory = (acct, categoryId) => {
+        try {
+            // Migrate old per-account keys into the new format on first read
+            const oldKey = `analyticsDashboard_charts_${acct || 'default'}`;
+            const oldRaw = localStorage.getItem(oldKey);
+            if (oldRaw) {
+                const oldParsed = JSON.parse(oldRaw);
+                if (Array.isArray(oldParsed)) {
+                    const store = readStore();
+                    const acctKey = acct || 'default';
+                    store[acctKey] = store[acctKey] || {};
+                    oldParsed.forEach(entry => {
+                        const catKey = entry.category || '';
+                        store[acctKey][catKey] = { filters: entry.filter || [] };
+                    });
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+                    localStorage.removeItem(oldKey);
+                }
             }
-            return Array.isArray(parsed) ? parsed : [];
+            const store = readStore();
+            const acctKey = acct || 'default';
+            const catKey = categoryId || '';
+            return store[acctKey]?.[catKey]?.filters || [];
         } catch {
             return [];
         }
     };
 
-    const loadChartsForCategory = (acct, categoryId) => {
-        const all = loadAllCategoryData(acct);
-        const entry = all.find(e => e.category === (categoryId || ''));
-        return entry?.filter || [];
-    };
-
     const saveChartsForCategory = (acct, categoryId, chartsData) => {
         try {
-            const all = loadAllCategoryData(acct);
+            const store = readStore();
+            const acctKey = acct || 'default';
             const catKey = categoryId || '';
             const chartsToSave = chartsData.map(chart => ({
                 id: chart.id,
@@ -114,15 +133,12 @@ const AnalyticsDashboardPage = () => {
                 chartWidthPx: chart.chartWidthPx ?? null,
                 chartName: chart.chartName || '',
                 barOrientation: chart.barOrientation || 'vertical',
-                chartColor: chart.chartColor || null
+                chartColor: chart.chartColor || null,
+                autoRefreshMins: chart.autoRefreshMins ?? 5
             }));
-            const idx = all.findIndex(e => e.category === catKey);
-            if (idx >= 0) {
-                all[idx] = { category: catKey, filter: chartsToSave };
-            } else {
-                all.push({ category: catKey, filter: chartsToSave });
-            }
-            localStorage.setItem(getStorageKey(acct), JSON.stringify(all));
+            store[acctKey] = store[acctKey] || {};
+            store[acctKey][catKey] = { filters: chartsToSave };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
         } catch {
             // ignore storage errors
         }
@@ -141,6 +157,10 @@ const AnalyticsDashboardPage = () => {
     });
     const [chartDataCache, setChartDataCache] = useState({});
     const [chartLoadingState, setChartLoadingState] = useState({});
+    // Auto-refresh: per-chart countdown seconds remaining
+    const [autoRefreshCountdown, setAutoRefreshCountdown] = useState({});
+    const autoRefreshIntervalsRef = React.useRef({});
+    const chartsForTimerRef = React.useRef([]);
     const draggedIdRef = React.useRef(null);
     const [dragOverId, setDragOverId] = useState(null);
     const [isDraggingAny, setIsDraggingAny] = useState(false);
@@ -281,12 +301,13 @@ const AnalyticsDashboardPage = () => {
     };
 
     // Fetch chart data from backend API
-    const fetchChartDataFromBackend = async (chartId, chartConfig) => {
+    // silent=true skips the per-chart loading mask (used by auto-refresh)
+    const fetchChartDataFromBackend = async (chartId, chartConfig, silent = false) => {
         if (!chartConfig.xAxis || !chartConfig.yAxis || !chartConfig.aggregation) {
             return;
         }
 
-        setChartLoadingState(prev => ({ ...prev, [chartId]: true }));
+        if (!silent) setChartLoadingState(prev => ({ ...prev, [chartId]: true }));
         try {
             const params = {
                 xAxis: chartConfig.xAxis.value,
@@ -310,7 +331,7 @@ const AnalyticsDashboardPage = () => {
                 [chartId]: []
             }));
         } finally {
-            setChartLoadingState(prev => ({ ...prev, [chartId]: false }));
+            if (!silent) setChartLoadingState(prev => ({ ...prev, [chartId]: false }));
         }
     };
 
@@ -343,6 +364,63 @@ const AnalyticsDashboardPage = () => {
     useEffect(() => {
         selectedCategoryRef.current = selectedCategory;
     }, [selectedCategory]);
+
+    // Keep chartsForTimerRef current so the interval callbacks always use latest chart state
+    useEffect(() => {
+        chartsForTimerRef.current = charts;
+    }, [charts]);
+
+    // Auto-refresh timer manager — starts/restarts a countdown for each chart
+    useEffect(() => {
+        const activeIds = new Set(charts.map(c => c.id));
+
+        // Clear intervals for removed charts
+        Object.keys(autoRefreshIntervalsRef.current).forEach(id => {
+            if (!activeIds.has(Number(id))) {
+                clearInterval(autoRefreshIntervalsRef.current[id]);
+                delete autoRefreshIntervalsRef.current[id];
+                setAutoRefreshCountdown(prev => { const n = { ...prev }; delete n[id]; return n; });
+            }
+        });
+
+        charts.forEach(chart => {
+            const mins = chart.autoRefreshMins ?? 5;
+            const totalSecs = mins * 60;
+            const existingInterval = autoRefreshIntervalsRef.current[chart.id];
+
+            // Reset timer if interval changed or not yet started
+            const currentCountdown = autoRefreshIntervalsRef.current[`${chart.id}_total`];
+            if (existingInterval && currentCountdown === totalSecs) return;
+
+            // Clear old interval
+            if (existingInterval) clearInterval(existingInterval);
+
+            autoRefreshIntervalsRef.current[`${chart.id}_total`] = totalSecs;
+            setAutoRefreshCountdown(prev => ({ ...prev, [chart.id]: totalSecs }));
+
+            autoRefreshIntervalsRef.current[chart.id] = setInterval(() => {
+                setAutoRefreshCountdown(prev => {
+                    const remaining = (prev[chart.id] ?? totalSecs) - 1;
+                    if (remaining <= 0) {
+                        // Trigger refresh using latest chart state from ref
+                        const latestChart = chartsForTimerRef.current.find(c => c.id === chart.id);
+                        if (latestChart && latestChart.xAxis && latestChart.yAxis && latestChart.aggregation) {
+                            fetchChartDataFromBackend(latestChart.id, latestChart, true);
+                        }
+                        autoRefreshIntervalsRef.current[`${chart.id}_total`] = totalSecs;
+                        return { ...prev, [chart.id]: totalSecs };
+                    }
+                    return { ...prev, [chart.id]: remaining };
+                });
+            }, 1000);
+        });
+
+        return () => {
+            Object.values(autoRefreshIntervalsRef.current).forEach(v => {
+                if (typeof v === 'number') clearInterval(v);
+            });
+        };
+    }, [charts.map(c => `${c.id}:${c.autoRefreshMins}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Load charts for the active category whenever account or category changes
     useEffect(() => {
@@ -695,8 +773,12 @@ const AnalyticsDashboardPage = () => {
         const height = chartConfig.chartHeight || 320;
 
         if (isLoading) return (
-            <div className="relative w-full h-full">
-                <LoadingMask loading={true} title="Loading chart data..." message="Please wait..." />
+            <div className="flex flex-col items-center justify-center w-full h-full gap-2">
+                <div className="relative">
+                    <div className="animate-spin rounded-full h-7 w-7 border-2 border-gray-200"></div>
+                    <div className="animate-spin rounded-full h-7 w-7 border-2 border-gray-800 border-t-transparent absolute top-0"></div>
+                </div>
+                <span className="text-[11px] text-gray-400 font-medium">Loading chart...</span>
             </div>
         );
 
@@ -822,6 +904,44 @@ const AnalyticsDashboardPage = () => {
                         onClick={(e) => e.stopPropagation()}
                         className="flex-1 text-sm font-semibold text-white bg-transparent outline-none border-none cursor-text placeholder:text-gray-500 min-w-0"
                     />
+                    {/* Auto-refresh countdown arc */}
+                    {(() => {
+                        const mins = chartConfig.autoRefreshMins ?? 5;
+                        const totalSecs = mins * 60;
+                        const remaining = autoRefreshCountdown[chartConfig.id] ?? totalSecs;
+                        const progress = remaining / totalSecs; // 1 = full, 0 = trigger
+                        const r = 8;
+                        const circ = 2 * Math.PI * r;
+                        const dash = circ * progress;
+                        const fmt = remaining >= 60
+                            ? `${Math.floor(remaining / 60)}m${remaining % 60 > 0 ? String(remaining % 60).padStart(2, '0') + 's' : ''}`
+                            : `${remaining}s`;
+                        return (
+                            <div
+                                className="flex items-center gap-1 shrink-0 select-none"
+                                title={`Auto-refresh in ${fmt} (every ${mins} min${mins !== 1 ? 's' : ''})`}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); fetchChartDataFromBackend(chartConfig.id, chartConfig); }}
+                            >
+                                <svg width="20" height="20" viewBox="0 0 20 20" className="cursor-pointer">
+                                    {/* Track */}
+                                    <circle cx="10" cy="10" r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2" />
+                                    {/* Progress arc */}
+                                    <circle
+                                        cx="10" cy="10" r={r}
+                                        fill="none"
+                                        stroke={progress > 0.25 ? '#6ee7b7' : '#f87171'}
+                                        strokeWidth="2"
+                                        strokeDasharray={`${dash} ${circ}`}
+                                        strokeLinecap="round"
+                                        transform="rotate(-90 10 10)"
+                                        style={{ transition: 'stroke-dasharray 0.9s linear' }}
+                                    />
+                                </svg>
+                                <span className="text-[9px] font-mono text-gray-400 min-w-[22px]">{fmt}</span>
+                            </div>
+                        );
+                    })()}
                 </div>
 
                 {/* ── All controls — slides in when near top ── */}
@@ -1029,6 +1149,24 @@ const AnalyticsDashboardPage = () => {
                         </div>
                     )}
 
+                    {/* Auto-refresh interval control */}
+                    <div className="flex items-center gap-2 mb-3 px-5">
+                        <span className="text-xs font-semibold text-gray-700 shrink-0">Auto Refresh:</span>
+                        <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                            {[1, 2, 5, 10, 15, 30, 60].map(mins => (
+                                <button
+                                    key={mins}
+                                    onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', mins)}
+                                    className={`px-2 py-1 transition-all ${(chartConfig.autoRefreshMins ?? 5) === mins
+                                        ? 'bg-gray-900 text-white'
+                                        : 'bg-white text-gray-500 hover:bg-gray-100'
+                                        }`}
+                                >
+                                    {mins < 60 ? `${mins}m` : '1h'}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                     {/* Bar orientation toggle — only for bar charts */}
                     {chartConfig.chartType?.value === 'bar' && (
                         <div className="flex items-center gap-2 mb-3 px-5">

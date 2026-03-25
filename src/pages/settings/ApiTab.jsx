@@ -1,34 +1,69 @@
 /**
  * API Key Management Tab
  * Fetch (masked/real), copy, and regenerate the account API key.
+ * Masking is done server-side — only last 4 chars are visible when hidden.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../../api/axiosConfig';
 import { useNotifications } from '../../components/Notifications';
 import ConfirmationDialog from '../../components/ConfirmationDialog';
-
-// Mask all characters except the last 4 (fixed-width mask so last 4 stay visible)
-const maskToken = (t) => {
-    if (!t || t.length <= 4) return t;
-    return '•'.repeat(24) + t.slice(-4);
-};
 
 const ApiTab = ({ acctId: acctIdProp }) => {
     const resolvedAcctId = acctIdProp || localStorage.getItem('acctId') || '';
     const { showSuccess, showError, NotificationComponent } = useNotifications();
 
-    const [token, setToken] = useState('');      // always stores real token
+    const [token, setToken] = useState('');      // stores masked or real token depending on state
     const [loading, setLoading] = useState(false);
     const [showToken, setShowToken] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [copySuccess, setCopySuccess] = useState(false);
+    const inputRef = useRef(null);
 
-    // ── Fetch real token on mount ──────────────────────────────────────────────
+    // Scroll input to end so the recognisable suffix is always visible
     useEffect(() => {
-        if (resolvedAcctId) fetchToken();
+        if (inputRef.current && token) {
+            inputRef.current.scrollLeft = inputRef.current.scrollWidth;
+        }
+    }, [token]);
+
+    // Normalize masked token: server returns "****...****....cfb7"
+    // Extract the real suffix after the dots and render a clean display value.
+    const displayToken = (rawToken) => {
+        if (!rawToken) return '';
+        // Match trailing suffix after one or more dots at end of masked string
+        const match = rawToken.match(/[.*]+\.{2,}([A-Za-z0-9]+)$/);
+        if (match) {
+            const suffix = match[1];
+            return '•'.repeat(24) + suffix;
+        }
+        return rawToken;
+    };
+
+    // ── Fetch masked token on mount ────────────────────────────────────────────
+    useEffect(() => {
+        if (resolvedAcctId) fetchMaskedToken();
     }, [resolvedAcctId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const fetchToken = async () => {
+    // Fetch masked token from backend (last 4 visible, rest are *)
+    const fetchMaskedToken = async () => {
+        if (!resolvedAcctId) { showError('No account ID available.'); return; }
+        setLoading(true);
+        try {
+            const response = await api.post('/api/ui/accounts/token', {
+                acctId: resolvedAcctId,
+                masked: true,
+            });
+            setToken(response.data.apiKey || '');
+            setShowToken(false);
+        } catch (err) {
+            showError(err.message || 'Error fetching token.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Fetch real token from backend (full key visible)
+    const fetchRealToken = async () => {
         if (!resolvedAcctId) { showError('No account ID available.'); return; }
         setLoading(true);
         try {
@@ -37,6 +72,7 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                 masked: false,
             });
             setToken(response.data.apiKey || '');
+            setShowToken(true);
         } catch (err) {
             showError(err.message || 'Error fetching token.');
         } finally {
@@ -44,12 +80,26 @@ const ApiTab = ({ acctId: acctIdProp }) => {
         }
     };
 
-    const handleShowHide = () => setShowToken(v => !v);
+    // Toggle show/hide by fetching the appropriate version from backend
+    const handleShowHide = async () => {
+        if (showToken) {
+            await fetchMaskedToken();
+        } else {
+            await fetchRealToken();
+        }
+    };
 
+    // Copy always uses the real token fetched fresh from backend
     const handleCopy = async () => {
+        if (!resolvedAcctId) { showError('No account ID available.'); return; }
         try {
-            if (!token) return;
-            await navigator.clipboard.writeText(token);
+            const response = await api.post('/api/ui/accounts/token', {
+                acctId: resolvedAcctId,
+                masked: false,
+            });
+            const realToken = response.data.apiKey || '';
+            if (!realToken) return;
+            await navigator.clipboard.writeText(realToken);
             setCopySuccess(true);
             setTimeout(() => setCopySuccess(false), 2000);
         } catch (err) {
@@ -66,7 +116,8 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                 acctId: resolvedAcctId,
             });
             if (response.status !== 200) throw new Error('Failed to regenerate token.');
-            await fetchToken();
+            // After regeneration, show the real new key
+            await fetchRealToken();
             showSuccess('API key regenerated successfully.');
         } catch (err) {
             showError(err.message || 'Error regenerating token.');
@@ -87,9 +138,10 @@ const ApiTab = ({ acctId: acctIdProp }) => {
             <div className="flex items-center gap-2 mb-2">
                 <div className="relative flex-1">
                     <input
+                        ref={inputRef}
                         type="text"
                         readOnly
-                        value={loading ? 'Loading...' : (showToken ? token : maskToken(token))}
+                        value={loading ? 'Loading...' : (showToken ? token : displayToken(token))}
                         placeholder="No API key found"
                         className="w-full px-3 py-2 pr-8 text-sm font-mono border border-gray-300 rounded-lg bg-gray-50 text-gray-700 select-all focus:outline-none"
                     />
@@ -137,8 +189,6 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                     )}
                 </button>
             </div>
-
-            {/* Inline error */}
 
             {/* Regenerate button */}
             <button

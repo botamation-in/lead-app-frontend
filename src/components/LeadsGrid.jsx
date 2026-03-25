@@ -46,16 +46,53 @@ const LeadsGrid = () => {
     const [visibleFields, setVisibleFields] = useState(null);
     const [showColumnSelector, setShowColumnSelector] = useState(false);
 
-    // localStorage key scoped per account + category
-    const getColVisKey = (acctId, categoryId) => `colVis_${acctId}_${categoryId || 'all'}`;
+    // localStorage key scoped per account + category — nested format
+    const COL_VIS_KEY = 'colVis';
     const getFiltersKey = (acctId, categoryId) => `filters_${acctId}_${categoryId || 'all'}`;
+
+    const readColVisStore = () => {
+        try {
+            const raw = localStorage.getItem(COL_VIS_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+        } catch { return {}; }
+    };
+
+    const loadColVis = (acctId, categoryId) => {
+        try {
+            // Migrate old flat keys on first read
+            const oldKey = `colVis_${acctId}_${categoryId || 'all'}`;
+            const oldRaw = localStorage.getItem(oldKey);
+            if (oldRaw) {
+                const store = readColVisStore();
+                store[acctId] = store[acctId] || {};
+                store[acctId][categoryId || ''] = JSON.parse(oldRaw);
+                localStorage.setItem(COL_VIS_KEY, JSON.stringify(store));
+                localStorage.removeItem(oldKey);
+            }
+            const store = readColVisStore();
+            return store[acctId]?.[categoryId || ''] ?? null;
+        } catch { return null; }
+    };
+
+    const saveColVis = (acctId, categoryId, value) => {
+        try {
+            const store = readColVisStore();
+            store[acctId] = store[acctId] || {};
+            if (value === null) {
+                delete store[acctId][categoryId || ''];
+            } else {
+                store[acctId][categoryId || ''] = value;
+            }
+            localStorage.setItem(COL_VIS_KEY, JSON.stringify(store));
+        } catch { /* ignore */ }
+    };
 
     // Save + set column visibility
     const updateVisibleFields = (newVal) => {
         setVisibleFields(newVal);
-        const key = getColVisKey(acctId, selectedCategory);
-        if (newVal === null) localStorage.removeItem(key);
-        else localStorage.setItem(key, JSON.stringify(newVal));
+        saveColVis(acctId, selectedCategory, newVal);
     };
 
     // Close dropdowns when clicking outside
@@ -201,10 +238,9 @@ const LeadsGrid = () => {
                 setFields(displayFields);
                 // Restore saved column visibility for this account + category
                 try {
-                    const saved = localStorage.getItem(getColVisKey(acctId, selectedCategory));
+                    const saved = loadColVis(acctId, selectedCategory);
                     if (saved) {
-                        const parsed = JSON.parse(saved);
-                        const valid = parsed.filter(f => displayFields.includes(f));
+                        const valid = saved.filter(f => displayFields.includes(f));
                         setVisibleFields(valid.length > 0 ? valid : null);
                     } else {
                         setVisibleFields(null);
