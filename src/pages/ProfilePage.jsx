@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAccount } from '../context/AccountContext';
 import { authApi } from '../api/axiosConfig';
 import { compressImage } from '../utils/imageCompression';
+import { validateImageFile } from '../utils/fileValidation';
 import AccountCombobox from '../components/AccountCombobox';
 import { useNotifications } from '../components/Notifications';
 
@@ -179,8 +180,15 @@ const ProfilePage = () => {
     const handleAvatarChange = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (!['image/jpeg', 'image/png'].includes(file.type)) {
-            showError('Only JPEG or PNG files are allowed!');
+        // Multi-layer security validation: extension allowlist, file size cap,
+        // MIME type check, and magic byte verification to reject executables
+        // or other malicious files regardless of how they are named.
+        try {
+            await validateImageFile(file);
+        } catch (err) {
+            showError(err.message);
+            // Reset the input so the same file cannot be re-submitted silently
+            e.target.value = '';
             return;
         }
         // Preview the original immediately (before compression)
