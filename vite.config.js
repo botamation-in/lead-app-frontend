@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '')
-    
+
     const serverPort = parseInt(env.VITE_DEV_SERVER_PORT || '3001')
     const serverHost = env.VITE_DEV_SERVER_HOST || 'localhost'
     const apiTarget = env.VITE_API_TARGET || 'http://localhost:8081'
@@ -37,6 +37,9 @@ export default defineConfig(({ mode }) => {
                     },
                 },
             },
+        },
+        build: {
+            outDir: 'build',
         },
     }
 })
