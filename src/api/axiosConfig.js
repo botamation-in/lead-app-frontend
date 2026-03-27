@@ -36,7 +36,12 @@ export const authApi = axios.create({
 });
 
 // ─── 401 Interceptor for Main API ─────────────────────────────────────────────
-// When any request returns 401, auto-redirect to SSO login
+// When any request to this app's backend returns 401, redirect to SSO login.
+// NOTE: We always build the redirect URL on the client side using
+// window.location.href (the page the user is on). The backend's 401 response
+// includes an `authUrl` whose `redirect` parameter is the API path
+// (req.originalUrl), NOT the frontend page URL — using it would redirect the
+// user back to a JSON endpoint after login.
 api.interceptors.response.use(
     (response) => response,
     async (error) => {
@@ -45,14 +50,6 @@ api.interceptors.response.use(
         if (error.response?.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true;
 
-            // If backend provides an authUrl, use it directly
-            const authUrl = error.response?.data?.authUrl;
-            if (authUrl) {
-                window.location.href = authUrl;
-                return Promise.reject(error);
-            }
-
-            // Fallback: build the SSO login URL manually
             if (AUTH_SERVICE_URL) {
                 const currentUrl = window.location.href;
                 window.location.href = `${AUTH_SERVICE_URL}/login?redirect=${encodeURIComponent(currentUrl)}`;
@@ -64,20 +61,13 @@ api.interceptors.response.use(
 );
 
 // ─── 401 Interceptor for Auth API ─────────────────────────────────────────────
+// NOTE: Do NOT auto-redirect on 401 from auth backend.
+// The profile fetch is optional — if it fails, AuthContext catches the error
+// and continues with the SSO-validated user data. Redirecting here would
+// cause a login loop when the auth backend rejects the cross-origin cookie.
 authApi.interceptors.response.use(
     (response) => response,
     async (error) => {
-        const originalRequest = error.config;
-
-        if (error.response?.status === 401 && !originalRequest._retry) {
-            originalRequest._retry = true;
-
-            if (AUTH_SERVICE_URL) {
-                const currentUrl = window.location.href;
-                window.location.href = `${AUTH_SERVICE_URL}/login?redirect=${encodeURIComponent(currentUrl)}`;
-            }
-        }
-
         return Promise.reject(error);
     }
 );

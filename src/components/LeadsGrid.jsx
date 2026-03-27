@@ -157,6 +157,9 @@ const LeadsGrid = () => {
             setCategoriesReady(true);
         } catch (err) {
             console.error('Error fetching categories:', err);
+            // Still mark as ready so the page isn't stuck on the loading spinner.
+            // The user can retry or will see an empty categories list.
+            setCategoriesReady(true);
         } finally {
             setCategoryLoading(false);
         }
@@ -440,8 +443,9 @@ const LeadsGrid = () => {
         return value;
     };
 
-    // Block the entire page until accounts + categories are resolved
-    if (!accountsLoaded || !categoriesReady) {
+    // Block the entire page until accounts are resolved AND (categories loaded
+    // OR no account linked — in which case categories can't load anyway)
+    if (!accountsLoaded || (isAccountLinked && !categoriesReady)) {
         return (
             <div className="h-screen flex items-center justify-center bg-gray-50">
                 <div className="flex flex-col items-center space-y-4 p-8 bg-white rounded-2xl shadow-2xl border border-gray-200">
