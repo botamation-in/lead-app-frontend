@@ -1,17 +1,22 @@
 import React, { useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useAuth } from './context/AuthContext';
+import { AUTH_SERVICE_URL } from './api/axiosConfig';
 
 const ProtectedRoute = ({ children, roles }) => {
-    const { user, authenticated, loading, redirectToLogin } = useAuth();
+    const { user, authenticated, loading } = useAuth();
 
-    // Redirect to SSO login only after auth check is complete and user is not authenticated
+    // Redirect to SSO login when auth check is complete and user is not authenticated.
+    // Uses window.location.href (the actual page URL) so that after login the user
+    // returns to the correct page — not the base service URL.
     useEffect(() => {
         if (!loading && !authenticated) {
             console.log('[SSO] Auth check complete, user not authenticated — redirecting to login');
-            redirectToLogin();
+            if (AUTH_SERVICE_URL) {
+                window.location.href = `${AUTH_SERVICE_URL}/login?redirect=${encodeURIComponent(window.location.href)}`;
+            }
         }
-    }, [loading, authenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [loading, authenticated]);
 
     // Show loading state while checking authentication
     if (loading) {

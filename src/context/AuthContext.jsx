@@ -28,6 +28,7 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     const checkAuth = async () => {
+        let redirectingTo401 = false;
         try {
             setLoading(true);
 
@@ -69,14 +70,21 @@ export const AuthProvider = ({ children }) => {
                 setUser(null);
             }
         } catch (error) {
-            // 401 is handled by the axios interceptor (auto-redirect to SSO login)
-            // Any other error: mark as unauthenticated
-            if (error.response?.status !== 401) {
+            if (error.response?.status === 401) {
+                // 401 → the axios interceptor is already redirecting to SSO login.
+                // Keep loading=true so ProtectedRoute shows the spinner instead
+                // of also triggering a competing redirect with a different URL.
+                console.log('[SSO] Auth check returned 401 — interceptor is redirecting');
+                redirectingTo401 = true;
+            } else {
+                // Any other error: mark as unauthenticated
                 setAuthenticated(false);
                 setUser(null);
             }
         } finally {
-            setLoading(false);
+            if (!redirectingTo401) {
+                setLoading(false);
+            }
             authCheckingRef.current = false;
         }
     };
