@@ -92,6 +92,11 @@ export const AccountProvider = ({ children }) => {
         } catch (err) {
             console.warn('[AccountContext] Failed to fetch accounts:', err.message);
             setIsAccountLinked(false);
+            setAcctNo('');
+            setAcctId('');
+            setAcctName('');
+            setSelectedAccount(null);
+            setTimeout(() => setIsLinkDialogOpen(true), 400);
         } finally {
             setAccountsLoading(false);
             setAccountsLoaded(true);
