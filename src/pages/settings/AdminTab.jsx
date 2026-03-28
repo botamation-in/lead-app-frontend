@@ -193,9 +193,9 @@ const AdminTab = ({ acctId }) => {
                         <thead className="bg-black">
                             <tr>
                                 {columns.map((col) => (
-                                    <th key={col} className="px-3 py-2 text-center">
+                                    <th key={col} className={`px-3 py-2 ${isNameKey(col) ? 'text-left' : 'text-center'}`}>
                                         <div
-                                            className="flex items-center justify-center gap-1 cursor-pointer hover:text-gray-300 mb-1.5 transition-colors"
+                                            className={`flex items-center ${isNameKey(col) ? 'justify-start' : 'justify-center'} gap-1 cursor-pointer hover:text-gray-300 mb-1.5 transition-colors`}
                                             onClick={() => handleSort(col)}
                                         >
                                             <span className="text-[10px] font-bold text-white uppercase tracking-wider">
@@ -209,7 +209,7 @@ const AdminTab = ({ acctId }) => {
                                             value={filters[col] || ''}
                                             onChange={(e) => handleFilterChange(col, e.target.value)}
                                             onClick={(e) => e.stopPropagation()}
-                                            className="w-full px-2 py-1 text-[10px] border border-gray-700 bg-gray-900 text-white rounded focus:ring-1 focus:ring-gray-500 focus:border-transparent placeholder-gray-500 transition-all text-center"
+                                            className={`w-full px-2 py-1 text-[10px] border border-gray-700 bg-gray-900 text-white rounded focus:ring-1 focus:ring-gray-500 focus:border-transparent placeholder-gray-500 transition-all ${isNameKey(col) ? 'text-left' : 'text-center'}`}
                                         />
                                     </th>
                                 ))}
@@ -259,8 +259,8 @@ const AdminTab = ({ acctId }) => {
                                                         return match ? admin[match] : null;
                                                     }, null);
                                                     return (
-                                                        <td key={col} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">
-                                                            <div className="flex items-center justify-center gap-1.5">
+                                                        <td key={col} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-left">
+                                                            <div className="flex items-center justify-start gap-1.5">
                                                                 {imgUrl ? (
                                                                     <img src={imgUrl} alt={value} className="w-5 h-5 rounded-full object-cover border border-gray-200 flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
                                                                 ) : (
