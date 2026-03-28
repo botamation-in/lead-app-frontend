@@ -1430,19 +1430,18 @@ const AnalyticsDashboardPage = () => {
                                 {/* Category Combobox */}
                                 <Combobox
                                     value={
-                                        (selectedCategory ? categories.find(c => c._id === selectedCategory) : null)
-                                        ?? { _id: '', categoryName: 'All Categories' }
+                                        (selectedCategory ? categories.find(c => c._id === selectedCategory) : null) ?? null
                                     }
                                     onChange={(val) => handleCategoryChange(val?._id || '')}
-                                    displayValue={(option) => option?.categoryName || 'All Categories'}
-                                    options={[{ _id: '', categoryName: 'All Categories' }, ...categories]}
+                                    displayValue={(option) => option?.categoryName || ''}
+                                    options={categories}
                                     disabled={categoryLoading || !acctId}
-                                    placeholder="All Categories"
+                                    placeholder="Select category..."
                                     className="w-44"
                                     dropdownClassName="!min-w-0"
                                 >
                                     {(option) => (
-                                        <ComboboxOption key={option._id || 'all'} value={option}>
+                                        <ComboboxOption key={option._id} value={option}>
                                             <ComboboxLabel>{option.categoryName}</ComboboxLabel>
                                         </ComboboxOption>
                                     )}
