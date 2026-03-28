@@ -465,7 +465,6 @@ const LeadsGrid = () => {
     return (
         <div className="h-screen flex flex-col bg-gray-50 overflow-hidden relative">
             <LoadingMask loading={isExporting} title="Exporting..." message="Please wait while we export your leads to Excel" />
-            <LoadingMask loading={loading} title="Loading Leads..." message="Please wait while we fetch your data" />
             <NotificationComponent />
             <DeleteConfirmation
                 isOpen={deleteDialogOpen}
