@@ -436,7 +436,7 @@ const LeadsGrid = () => {
     const formatFieldValue = (field, value) => {
         if (!value) return '-';
 
-        if (field === 'createdAt' || field.includes('Date') || field.includes('date')) {
+        if (field === 'createdAt' || field === 'updatedAt' || field.includes('Date') || field.includes('date')) {
             return new Date(value).toLocaleDateString();
         }
 

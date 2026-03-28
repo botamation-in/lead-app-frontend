@@ -1,8 +1,8 @@
 ﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../api/axiosConfig';
 
-const EXCLUDE_KEYS = ['__v', 'updatedAt', '_id', 'id', 'adminId', 'acctNo', 'acctno'];
-const COLUMN_ORDER = ['firstName', 'lastName', 'phone', 'email', 'createdAt'];
+const EXCLUDE_KEYS = ['__v', '_id', 'id', 'adminId', 'acctNo', 'acctno'];
+const COLUMN_ORDER = ['firstName', 'lastName', 'phone', 'email', 'createdAt', 'updatedAt'];
 const IMAGE_KEYS = ['profileImage', 'profileImageUrl', 'avatar', 'photo', 'image'];
 const NAME_KEYS = ['firstName', 'firstname', 'name', 'fullName', 'fullname', 'username', 'displayName', 'displayname'];
 
@@ -18,6 +18,7 @@ const getAvatarColor = (str) =>
 
 const formatFieldName = (key) => {
     if (key === 'createdAt') return 'Created Date';
+    if (key === 'updatedAt') return 'Updated Date';
     return key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()
         .replace(/\b\w/g, (c) => c.toUpperCase());
 };
@@ -247,7 +248,7 @@ const AdminTab = ({ acctId }) => {
                                             {columns.map((col) => {
                                                 const rawVal = admin[col];
                                                 const displayValue = rawVal != null && rawVal !== ''
-                                                    ? (col === 'createdAt'
+                                                    ? (col === 'createdAt' || col === 'updatedAt'
                                                         ? new Date(rawVal).toLocaleDateString()
                                                         : String(rawVal))
                                                     : '-';
