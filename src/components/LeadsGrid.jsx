@@ -293,27 +293,35 @@ const LeadsGrid = () => {
         setCurrentPage(1);
     };
 
-    // Handle filter input change — auto-debounce server-side apply
+    // Handle filter input change — only updates local display state
     const handleFilterChange = (field, value) => {
         setFilters(prev => ({ ...prev, [field]: value }));
+    };
+
+    // Apply filter for a field — called on Enter key press
+    const applyFilter = (field, value) => {
         if (filterTimerRef.current) clearTimeout(filterTimerRef.current);
-        filterTimerRef.current = setTimeout(() => {
-            setAppliedFilters(prev => {
-                const updated = { ...prev };
-                if (value) updated[field] = value;
-                else delete updated[field];
-                // Persist field filters (exclude categoryId) to localStorage
-                const { categoryId: _cat, ...fieldFilters } = updated;
-                const key = getFiltersKey(acctId, selectedCategory);
-                if (Object.keys(fieldFilters).length > 0) {
-                    localStorage.setItem(key, JSON.stringify(fieldFilters));
-                } else {
-                    localStorage.removeItem(key);
-                }
-                return updated;
-            });
-            setCurrentPage(1);
-        }, 600);
+        setAppliedFilters(prev => {
+            const updated = { ...prev };
+            if (value) updated[field] = value;
+            else delete updated[field];
+            // Persist field filters (exclude categoryId) to localStorage
+            const { categoryId: _cat, ...fieldFilters } = updated;
+            const key = getFiltersKey(acctId, selectedCategory);
+            if (Object.keys(fieldFilters).length > 0) {
+                localStorage.setItem(key, JSON.stringify(fieldFilters));
+            } else {
+                localStorage.removeItem(key);
+            }
+            return updated;
+        });
+        setCurrentPage(1);
+    };
+
+    const handleFilterKeyDown = (e, field) => {
+        if (e.key === 'Enter') {
+            applyFilter(field, filters[field] || '');
+        }
     };
 
     // Handle delete lead button click
@@ -856,6 +864,7 @@ const LeadsGrid = () => {
                                                         placeholder="Filter..."
                                                         value={filters[field] || ''}
                                                         onChange={(e) => handleFilterChange(field, e.target.value)}
+                                                        onKeyDown={(e) => handleFilterKeyDown(e, field)}
                                                         onClick={(e) => e.stopPropagation()}
                                                         className="w-full px-2 py-1 text-[10px] border border-gray-700 bg-gray-900 text-white rounded focus:ring-1 focus:ring-gray-500 focus:border-transparent placeholder-gray-500 transition-all text-center"
                                                     />
