@@ -189,6 +189,63 @@ const renderNumberChart = (chartData, yAxisLabel) => {
     );
 };
 
+// ── Render multi-series grouped/stacked bar chart ─────────────────────
+const renderMultiSeriesBarChartD = (chartData, yAxisLabel, stacked = false) => {
+    const hasZKey = chartData.length > 0 && chartData[0].zKey !== undefined;
+    if (!hasZKey) return renderBarChart(chartData, yAxisLabel, 'vertical');
+    const names = [...new Set(chartData.map(d => d.name))];
+    const zKeys = [...new Set(chartData.map(d => d.zKey))];
+    const data = names.map(name => {
+        const entry = { name };
+        zKeys.forEach(zKey => {
+            const found = chartData.find(d => d.name === name && d.zKey === zKey);
+            entry[zKey] = found ? found.value : 0;
+        });
+        return entry;
+    });
+    const DCOLORS = ['#1a1a1a', '#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#f97316'];
+    return (
+        <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={data} margin={{ top: 16, right: 30, left: 10, bottom: 40 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} angle={-35} textAnchor="end" height={55} />
+                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
+                <Tooltip contentStyle={{ backgroundColor: '#fff', border: '2px solid #e0e0e0', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} />
+                <Legend />
+                {zKeys.map((zKey, i) => (
+                    <Bar key={zKey} dataKey={zKey} name={zKey} fill={DCOLORS[i % DCOLORS.length]} stackId={stacked ? 'a' : undefined} maxBarSize={50} />
+                ))}
+            </BarChart>
+        </ResponsiveContainer>
+    );
+};
+
+// ── Render nested (grouped/stacked) pie chart ──────────────────────────
+const renderNestedPieChartD = (chartData, yAxisLabel) => {
+    const hasZKey = chartData.length > 0 && chartData[0].zKey !== undefined;
+    if (!hasZKey) return renderPieChart(chartData, yAxisLabel);
+    const DCOLORS = ['#1a1a1a', '#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#f97316'];
+    const innerMap = {};
+    chartData.forEach(({ name, value }) => { innerMap[name] = (innerMap[name] || 0) + value; });
+    const innerData = Object.entries(innerMap).map(([name, value]) => ({ name, value }));
+    const outerData = chartData.map(d => ({ name: `${d.name} › ${d.zKey}`, value: d.value }));
+    const renderLabel = ({ name, percent }) => percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : '';
+    return (
+        <ResponsiveContainer width="100%" height={320}>
+            <PieChart>
+                <Pie data={innerData} dataKey="value" cx="50%" cy="50%" outerRadius={80} label={renderLabel} labelLine={false}>
+                    {innerData.map((_, i) => <Cell key={i} fill={DCOLORS[i % DCOLORS.length]} />)}
+                </Pie>
+                <Pie data={outerData} dataKey="value" cx="50%" cy="50%" innerRadius={90} outerRadius={130} label={({ name, percent }) => percent > 0.04 ? name.split(' › ')[1] : ''} labelLine={true}>
+                    {outerData.map((_, i) => <Cell key={i} fill={DCOLORS[i % DCOLORS.length]} opacity={0.7} />)}
+                </Pie>
+                <Tooltip contentStyle={{ backgroundColor: '#fff', border: '2px solid #e0e0e0', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} />
+                <Legend />
+            </PieChart>
+        </ResponsiveContainer>
+    );
+};
+
 // Chart Renderer Component
 const ChartRenderer = ({ chartConfig, fetchChartData }) => {
     const [chartData, setChartData] = useState([]);
@@ -205,7 +262,7 @@ const ChartRenderer = ({ chartConfig, fetchChartData }) => {
         };
 
         loadChartData();
-    }, [chartConfig.xAxis, chartConfig.yAxis, chartConfig.aggregation, chartConfig.dateFilterFrom, chartConfig.dateFilterTo, chartConfig._refreshKey]);
+    }, [chartConfig.xAxis, chartConfig.yAxis, chartConfig.zAxis, chartConfig.aggregation, chartConfig.chartMode, chartConfig.dateFilterFrom, chartConfig.dateFilterTo, chartConfig._refreshKey]);
 
     const yAxisLabel = chartConfig.yAxis?.label || 'Value';
 
@@ -221,11 +278,16 @@ const ChartRenderer = ({ chartConfig, fetchChartData }) => {
     if (!chartConfig.aggregation) return <div className="text-center py-12 text-gray-500 text-sm">Select aggregation type</div>;
     if (!chartData.length) return <div className="text-center py-12 text-gray-500 text-sm">No data available</div>;
 
+    const mode = chartConfig.chartMode;
     switch (chartConfig.chartType.value) {
         case 'pie':
-            return renderPieChart(chartData, yAxisLabel);
+            return (mode === 'grouped' || mode === 'stacked')
+                ? renderNestedPieChartD(chartData, yAxisLabel)
+                : renderPieChart(chartData, yAxisLabel);
         case 'bar':
-            return renderBarChart(chartData, yAxisLabel);
+            return (mode === 'grouped' || mode === 'stacked')
+                ? renderMultiSeriesBarChartD(chartData, yAxisLabel, mode === 'stacked')
+                : renderBarChart(chartData, yAxisLabel);
         case 'line':
             return renderLineChart(chartData, yAxisLabel);
         case 'heatmap':
@@ -278,7 +340,9 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
         chartType: null,
         xAxis: null,
         yAxis: null,
+        zAxis: null,
         aggregation: null,
+        chartMode: null,
         dateFilterFrom: '',
         dateFilterTo: '',
         _refreshKey: 0
@@ -359,6 +423,8 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                 chartType: chart.chartType,
                 xAxis: chart.xAxis,
                 yAxis: chart.yAxis,
+                zAxis: chart.zAxis || null,
+                chartMode: chart.chartMode || null,
                 aggregation: chart.aggregation,
                 dateFilterFrom: chart.dateFilterFrom,
                 dateFilterTo: chart.dateFilterTo
@@ -402,7 +468,9 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
             aggregation: chartConfig.aggregation.value,
             dateFilterFrom: chartConfig.dateFilterFrom || '',
             dateFilterTo: chartConfig.dateFilterTo || '',
-            categoryId: categoryId || ''
+            categoryId: categoryId || '',
+            zAxis: (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && chartConfig.zAxis ? chartConfig.zAxis.value : '',
+            chartMode: chartConfig.chartMode || ''
         });
 
         // Return cached data if available
@@ -417,6 +485,7 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                 aggregation: chartConfig.aggregation.value,
                 ...(acctId && { acctId }),
                 ...(categoryId && { categoryId }),
+                ...((chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && chartConfig.zAxis ? { zAxis: chartConfig.zAxis.value } : {}),
             };
 
             if (chartConfig.dateFilterFrom) {
@@ -623,9 +692,30 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                 </div>
             </div>
 
+            {/* Mode toggle for pie/bar charts */}
+            {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (
+                <div className="flex items-center gap-2 mb-3">
+                    <span className="text-xs font-semibold text-gray-700">Mode:</span>
+                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                        {[{ v: null, label: 'Simple' }, { v: 'grouped', label: 'Grouped' }, { v: 'stacked', label: 'Stacked' }].map(({ v, label }) => (
+                            <button
+                                key={label}
+                                onClick={() => updateChartConfig(chartConfig.id, 'chartMode', v)}
+                                className={chartConfig.chartMode === v
+                                    ? 'px-2.5 py-1 bg-gray-900 text-white'
+                                    : 'px-2.5 py-1 bg-white text-gray-700 hover:bg-gray-50'}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Chart Controls */}
-            <div className="grid grid-cols-4 gap-3 mb-4">
+            <div className={`grid gap-3 mb-4 ${((chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') &&
+                    (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked')) ? 'grid-cols-5' : 'grid-cols-4'
+                }`}>
                 <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
                     <Combobox
@@ -675,6 +765,25 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                         )}
                     </Combobox>
                 </div>
+                {/* Group By — only for grouped/stacked modes */}
+                {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') &&
+                    (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && (
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Group By</label>
+                            <Combobox
+                                value={chartConfig.zAxis}
+                                onChange={(val) => updateChartConfig(chartConfig.id, 'zAxis', val)}
+                                displayValue={(option) => option?.label || 'None'}
+                                options={columns}
+                            >
+                                {(option) => (
+                                    <ComboboxOption key={option.value} value={option}>
+                                        <ComboboxLabel>{option.label}</ComboboxLabel>
+                                    </ComboboxOption>
+                                )}
+                            </Combobox>
+                        </div>
+                    )}
                 <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Aggregation</label>
                     <Combobox

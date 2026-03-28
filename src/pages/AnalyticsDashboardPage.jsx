@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axiosConfig';
 import { useAccount } from '../context/AccountContext';
@@ -24,6 +24,57 @@ const AnalyticsDashboardPage = () => {
     const [categoryLoading, setCategoryLoading] = useState(false);
     // True once fetchCategories has resolved for the current account
     const [categoriesChecked, setCategoriesChecked] = useState(false);
+
+    // Header smart-hide state
+    const [headerVisible, setHeaderVisible] = useState(true);
+    const lastScrollY = useRef(0);
+    const inactivityTimer = useRef(null);
+
+    useEffect(() => {
+        const resetInactivityTimer = () => {
+            if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+            inactivityTimer.current = setTimeout(() => setHeaderVisible(false), 3000);
+        };
+
+        const handleScroll = () => {
+            const currentY = window.scrollY;
+            if (currentY <= 0) {
+                setHeaderVisible(true);
+                if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+                lastScrollY.current = 0;
+                return;
+            }
+            if (currentY < lastScrollY.current) {
+                // scrolling up — show header and arm inactivity timer
+                setHeaderVisible(true);
+                resetInactivityTimer();
+            } else {
+                // scrolling down — hide header immediately
+                setHeaderVisible(false);
+                if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+            }
+            lastScrollY.current = currentY;
+        };
+
+        const handleScrollEnd = () => resetInactivityTimer();
+
+        const handleMouseMove = (e) => {
+            if (e.clientY < 60) {
+                setHeaderVisible(true);
+                if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+            }
+        };
+
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        window.addEventListener('scrollend', handleScrollEnd, { passive: true });
+        window.addEventListener('mousemove', handleMouseMove, { passive: true });
+        return () => {
+            window.removeEventListener('scroll', handleScroll);
+            window.removeEventListener('scrollend', handleScrollEnd);
+            window.removeEventListener('mousemove', handleMouseMove);
+            if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+        };
+    }, []);
 
     // Chart types
     const chartTypes = [
@@ -59,7 +110,9 @@ const AnalyticsDashboardPage = () => {
         chartType: null,
         xAxis: null,
         yAxis: null,
+        zAxis: null,
         aggregation: null,
+        chartMode: null,
         dateFilterFrom: '',
         dateFilterTo: '',
         chartWidth: 'half',
@@ -135,7 +188,9 @@ const AnalyticsDashboardPage = () => {
                 chartName: chart.chartName || '',
                 barOrientation: chart.barOrientation || 'vertical',
                 chartColor: chart.chartColor || null,
-                autoRefreshMins: chart.autoRefreshMins ?? null
+                autoRefreshMins: chart.autoRefreshMins ?? null,
+                zAxis: chart.zAxis || null,
+                chartMode: chart.chartMode || null
             }));
             store[acctKey] = store[acctKey] || {};
             store[acctKey][catKey] = { filters: chartsToSave };
@@ -275,8 +330,8 @@ const AnalyticsDashboardPage = () => {
         setCharts(prev => prev.map(chart => {
             if (chart.id === chartId) {
                 const updatedChart = { ...chart, [field]: value };
-                // Fetch data when X, Y, aggregation, or date filters change
-                if (['xAxis', 'yAxis', 'aggregation', 'dateFilterFrom', 'dateFilterTo'].includes(field)) {
+                // Fetch data when X, Y, Z, mode, aggregation, or date filters change
+                if (['xAxis', 'yAxis', 'zAxis', 'aggregation', 'chartMode', 'dateFilterFrom', 'dateFilterTo'].includes(field)) {
                     fetchChartDataFromBackend(chartId, updatedChart);
                 }
                 return updatedChart;
@@ -291,7 +346,7 @@ const AnalyticsDashboardPage = () => {
             if (chart.id === chartId) {
                 const updatedChart = { ...chart, ...updates };
                 const hasDataTrigger = Object.keys(updates).some(f =>
-                    ['xAxis', 'yAxis', 'aggregation', 'dateFilterFrom', 'dateFilterTo'].includes(f)
+                    ['xAxis', 'yAxis', 'zAxis', 'aggregation', 'chartMode', 'dateFilterFrom', 'dateFilterTo'].includes(f)
                 );
                 if (hasDataTrigger) {
                     fetchChartDataFromBackend(chartId, updatedChart);
@@ -319,6 +374,7 @@ const AnalyticsDashboardPage = () => {
                 aggregation: chartConfig.aggregation.value,
                 ...(acctId && { acctId }),
                 ...(selectedCategory && { categoryId: selectedCategory }),
+                ...((chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && chartConfig.zAxis ? { zAxis: chartConfig.zAxis.value } : {}),
                 ...(chartConfig.dateFilterFrom && { dateFrom: chartConfig.dateFilterFrom }),
                 ...(chartConfig.dateFilterTo && { dateTo: chartConfig.dateFilterTo })
             };
@@ -793,6 +849,126 @@ const AnalyticsDashboardPage = () => {
         );
     };
 
+    // ── Grouped / Stacked Bar ─────────────────────────────────────────────
+    const renderMultiSeriesBarChart = (chartData, yAxisLabel, orientation = 'vertical', stacked = false) => {
+        const hasZKey = chartData.length > 0 && chartData[0].zKey !== undefined;
+        if (!hasZKey) return renderBarChart(chartData, yAxisLabel, orientation);
+        const isHorizontal = orientation === 'horizontal';
+        const names = [...new Set(chartData.map(d => d.name))];
+        const zKeys = [...new Set(chartData.map(d => d.zKey))];
+        const data = names.map(name => {
+            const entry = { name };
+            zKeys.forEach(zKey => {
+                const found = chartData.find(d => d.name === name && d.zKey === zKey);
+                entry[zKey] = found ? found.value : 0;
+            });
+            return entry;
+        });
+        return (
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                    data={data}
+                    layout={isHorizontal ? 'vertical' : 'horizontal'}
+                    margin={isHorizontal ? { top: 10, right: 30, left: 80, bottom: 10 } : { top: 10, right: 20, left: 10, bottom: 40 }}
+                >
+                    <defs>
+                        {COLORS.map((color, i) => (
+                            <linearGradient key={i} id={`msBarGrad-${i}`} x1="0" y1="0" x2={isHorizontal ? '1' : '0'} y2={isHorizontal ? '0' : '1'}>
+                                <stop offset="0%" stopColor={color} stopOpacity={1} />
+                                <stop offset="100%" stopColor={color} stopOpacity={0.5} />
+                            </linearGradient>
+                        ))}
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={!isHorizontal} vertical={isHorizontal} />
+                    {isHorizontal ? (
+                        <>
+                            <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                            <YAxis type="category" dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} width={75} />
+                        </>
+                    ) : (
+                        <>
+                            <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} angle={-35} textAnchor="end" height={55} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
+                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                        </>
+                    )}
+                    <Tooltip
+                        contentStyle={tooltipStyle.contentStyle}
+                        labelStyle={tooltipStyle.labelStyle}
+                        itemStyle={tooltipStyle.itemStyle}
+                        cursor={tooltipStyle.cursor}
+                    />
+                    <Legend iconType="circle" iconSize={10} />
+                    {zKeys.map((zKey, i) => (
+                        <Bar
+                            key={zKey}
+                            dataKey={zKey}
+                            name={zKey}
+                            fill={`url(#msBarGrad-${i % COLORS.length})`}
+                            stackId={stacked ? 'a' : undefined}
+                            radius={stacked
+                                ? (i === zKeys.length - 1 ? (isHorizontal ? [0, 8, 8, 0] : [8, 8, 0, 0]) : [0, 0, 0, 0])
+                                : (isHorizontal ? [0, 6, 6, 0] : [6, 6, 0, 0])
+                            }
+                            maxBarSize={stacked ? 80 : 50}
+                        />
+                    ))}
+                </BarChart>
+            </ResponsiveContainer>
+        );
+    };
+
+    // ── Nested Pie (Grouped — inner=X-axis, outer=Z-axis breakdown) ────────
+    const renderNestedPieChart = (chartData, yAxisLabel) => {
+        const hasZKey = chartData.length > 0 && chartData[0].zKey !== undefined;
+        if (!hasZKey) return renderPieChart(chartData, yAxisLabel);
+        const innerMap = {};
+        chartData.forEach(d => { innerMap[d.name] = (innerMap[d.name] || 0) + d.value; });
+        const innerData = Object.entries(innerMap).map(([name, value]) => ({ name, value }));
+        const outerData = chartData.map(d => ({ name: `${d.name} › ${d.zKey}`, value: d.value }));
+        return (
+            <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                    <defs>
+                        {COLORS.map((color, i) => (
+                            <radialGradient key={i} id={`nPieIn-${i}`} cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stopColor={color} stopOpacity={1} />
+                                <stop offset="100%" stopColor={color} stopOpacity={0.75} />
+                            </radialGradient>
+                        ))}
+                        {COLORS.map((color, i) => (
+                            <radialGradient key={`o${i}`} id={`nPieOut-${i}`} cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stopColor={color} stopOpacity={0.85} />
+                                <stop offset="100%" stopColor={color} stopOpacity={0.5} />
+                            </radialGradient>
+                        ))}
+                    </defs>
+                    <Pie data={innerData} cx="50%" cy="50%" innerRadius={40} outerRadius={72} paddingAngle={2} dataKey="value" labelLine={false} label={({ percent }) => percent > 0.06 ? `${(percent * 100).toFixed(0)}%` : ''}>
+                        {innerData.map((_, i) => <Cell key={`in-${i}`} fill={`url(#nPieIn-${i % COLORS.length})`} stroke="white" strokeWidth={2} />)}
+                    </Pie>
+                    <Pie data={outerData} cx="50%" cy="50%" innerRadius={78} outerRadius={115} paddingAngle={1} dataKey="value">
+                        {outerData.map((_, i) => <Cell key={`out-${i}`} fill={`url(#nPieOut-${i % COLORS.length})`} stroke="white" strokeWidth={1} />)}
+                    </Pie>
+                    <Tooltip
+                        contentStyle={tooltipStyle.contentStyle}
+                        labelStyle={tooltipStyle.labelStyle}
+                        itemStyle={tooltipStyle.itemStyle}
+                        formatter={(value, name) => [value, name]}
+                    />
+                    <Legend iconType="circle" iconSize={10} />
+                </PieChart>
+            </ResponsiveContainer>
+        );
+    };
+
+    // ── placeholder so darkenHex reference doesn't break (unused) ──────────
+    const darkenHex = (hex, f = 0.55) => {
+        const n = parseInt((hex || '#6366f1').replace('#', ''), 16);
+        const r = Math.round(((n >> 16) & 0xff) * f);
+        const g = Math.round(((n >> 8) & 0xff) * f);
+        const b = Math.round((n & 0xff) * f);
+        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    };
+
     const renderChart = (chartConfig) => {
         const isLoading = chartLoadingState[chartConfig.id];
         const chartData = getChartData(chartConfig, chartConfig.id);
@@ -816,11 +992,18 @@ const AnalyticsDashboardPage = () => {
         if (!chartData.length) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">No data available</div>;
 
         const chartColor = chartConfig.chartColor || DEFAULT_CHART_COLOR;
+        const mode = chartConfig.chartMode;
         switch (chartConfig.chartType.value) {
             case 'pie':
-                return renderPieChart(chartData, yAxisLabel);
+                return (mode === 'grouped' || mode === 'stacked')
+                    ? renderNestedPieChart(chartData, yAxisLabel)
+                    : renderPieChart(chartData, yAxisLabel);
             case 'bar':
-                return renderBarChart(chartData, yAxisLabel, chartConfig.barOrientation || 'vertical');
+                return mode === 'grouped'
+                    ? renderMultiSeriesBarChart(chartData, yAxisLabel, chartConfig.barOrientation || 'vertical', false)
+                    : mode === 'stacked'
+                        ? renderMultiSeriesBarChart(chartData, yAxisLabel, chartConfig.barOrientation || 'vertical', true)
+                        : renderBarChart(chartData, yAxisLabel, chartConfig.barOrientation || 'vertical');
             case 'line':
                 return renderLineChart(chartData, yAxisLabel, chartColor);
             case 'heatmap':
@@ -1230,7 +1413,28 @@ const AnalyticsDashboardPage = () => {
                             ))}
                         </div>
                     </div>
-                    {/* Bar orientation toggle — only for bar charts */}
+                    {/* Chart Mode toggle — Simple / Grouped / Stacked */}
+                    {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (
+                        <div className="flex items-center gap-2 mb-3 px-5">
+                            <span className="text-xs font-semibold text-gray-700 shrink-0">Mode:</span>
+                            <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                {[
+                                    { v: null, label: 'Simple' },
+                                    { v: 'grouped', label: 'Grouped' },
+                                    { v: 'stacked', label: 'Stacked' }
+                                ].map(({ v, label }) => (
+                                    <button
+                                        key={label}
+                                        onClick={() => updateChartConfig(chartConfig.id, 'chartMode', v)}
+                                        className={`px-2.5 py-1 transition-all ${chartConfig.chartMode === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {/* Bar orientation toggle — bar only */}
                     {chartConfig.chartType?.value === 'bar' && (
                         <div className="flex items-center gap-2 mb-3 px-5">
                             <span className="text-xs font-semibold text-gray-700">Orientation:</span>
@@ -1269,7 +1473,10 @@ const AnalyticsDashboardPage = () => {
                         </div>
                     )}
                     {/* Chart Controls */}
-                    <div className={`grid gap-3 mb-4 px-5 ${chartConfig.chartType?.value === 'number' ? 'grid-cols-3' : 'grid-cols-4'}`}>
+                    <div className={`grid gap-3 mb-4 px-5 ${chartConfig.chartType?.value === 'number' ? 'grid-cols-3' :
+                        ((chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked')) ? 'grid-cols-5' :
+                            'grid-cols-4'
+                        }`}>
                         <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
                             <Combobox
@@ -1324,6 +1531,27 @@ const AnalyticsDashboardPage = () => {
                                 )}
                             </Combobox>
                         </div>
+                        {/* Z Axis — for Grouped / Stacked modes */}
+                        {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && (
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                    Group By
+                                </label>
+                                <Combobox
+                                    value={chartConfig.zAxis}
+                                    onChange={(val) => updateChartConfig(chartConfig.id, 'zAxis', val)}
+                                    displayValue={(option) => option?.label || 'None'}
+                                    options={columns}
+                                    dropdownClassName="z-50"
+                                >
+                                    {(option) => (
+                                        <ComboboxOption key={`z-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                            <ComboboxLabel>{option.label}</ComboboxLabel>
+                                        </ComboboxOption>
+                                    )}
+                                </Combobox>
+                            </div>
+                        )}
                         <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Aggregation</label>
                             <Combobox
@@ -1415,12 +1643,18 @@ const AnalyticsDashboardPage = () => {
         <>
             <div className="min-h-screen bg-gray-50 relative">
                 <LoadingMask loading={loading} title="Loading..." message="Please wait while we fetch your data" />
-                <div className="bg-white border-b border-gray-200 shadow-sm">
-                    <div className="container mx-auto px-4 py-4">
+                <div
+                    className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-30"
+                    style={{
+                        transform: headerVisible ? 'translateY(0)' : 'translateY(-110%)',
+                        transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                    }}
+                >
+                    <div className="container mx-auto px-4 py-2">
                         <div className="flex justify-between items-center">
-                            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-                                <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
-                                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                <div className="w-6 h-6 bg-gray-900 rounded-md flex items-center justify-center">
+                                    <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                     </svg>
                                 </div>
