@@ -125,7 +125,7 @@ const SettingsPage = () => {
                                                 {user?.name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
                                             </div>;
                                     })()}
-                                    <span className="text-xs font-medium text-white hidden md:block">{user?.email || user?.name || 'User'}</span>
+                                    <span className="text-xs font-medium text-white hidden md:block">{userDetails?.name || user?.name || user?.email || 'User'}</span>
                                     <svg className={`w-3 h-3 text-gray-400 transition-transform duration-300 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                     </svg>
