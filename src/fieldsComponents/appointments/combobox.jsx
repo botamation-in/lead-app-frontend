@@ -104,7 +104,7 @@ export function ComboboxOption({ children, className, ...props }) {
 
   const optionClassName = clsx(
     'combobox-padding-margin',
-    'group/option grid w-full cursor-pointer grid-cols-[1fr_1.25rem] items-baseline gap-x-2 rounded-lg py-1',
+    'group/option grid w-full cursor-pointer grid-cols-[1fr_1.25rem] items-baseline gap-x-2 rounded-lg py-2 px-3',
     'text-sm/6 text-zinc-950 dark:text-white forced-colors:text-[CanvasText]',
     'outline-hidden data-focus:bg-black data-focus:text-white hover:bg-black hover:text-white dark:hover:bg-black dark:hover:text-white',
     'forced-color-adjust-none forced-colors:data-focus:bg-[Highlight] forced-colors:data-focus:text-[HighlightText]',
