@@ -8,7 +8,6 @@ import { useAccount } from '../context/AccountContext';
 import AccountCombobox from './AccountCombobox';
 import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
 import { useNotifications } from './Notifications';
-import DeleteConfirmation from './DeleteConfirmation';
 import LoadingMask from './LoadingMask';
 
 const LeadsGrid = () => {
@@ -33,10 +32,6 @@ const LeadsGrid = () => {
 
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
-
-    // Delete confirmation state
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-    const [leadToDelete, setLeadToDelete] = useState(null);
 
     const userMenuRef = useRef(null);
     const filterTimerRef = useRef(null);
@@ -324,26 +319,6 @@ const LeadsGrid = () => {
         }
     };
 
-    // Handle delete lead button click
-    const handleDeleteClick = (lead) => {
-        setLeadToDelete(lead);
-        setDeleteDialogOpen(true);
-    };
-
-    // Handle delete confirmation
-    const handleDeleteConfirm = async () => {
-        setDeleteDialogOpen(false);
-        // TODO: wire up delete API call, e.g.:
-        // try {
-        //     await api.delete(`/api/leads/${leadToDelete._id}`);
-        //     showSuccess('Lead deleted successfully.');
-        //     fetchLeads();
-        // } catch (err) {
-        //     showError(err.message || 'Failed to delete lead.');
-        // }
-        setLeadToDelete(null);
-    };
-
     // Export to Excel with current filters
     const handleExportExcel = async () => {
         setIsExporting(true);
@@ -474,13 +449,6 @@ const LeadsGrid = () => {
         <div className="h-screen flex flex-col bg-gray-50 overflow-hidden relative">
             <LoadingMask loading={isExporting} title="Exporting..." message="Please wait while we export your leads to Excel" />
             <NotificationComponent />
-            <DeleteConfirmation
-                isOpen={deleteDialogOpen}
-                onClose={() => { setDeleteDialogOpen(false); setLeadToDelete(null); }}
-                onConfirm={handleDeleteConfirm}
-                title="Delete Lead"
-                message="Are you sure you want to delete this lead? This action cannot be undone."
-            />
             {/* Navigation Menu */}
             <nav className="bg-black border-b border-gray-800 animate-fade-in shadow-lg flex-shrink-0">
                 <div className="container mx-auto px-4">
@@ -869,15 +837,12 @@ const LeadsGrid = () => {
                                                     />
                                                 </th>
                                             ))}
-                                            <th className="px-3 py-2 text-center text-[10px] font-bold text-white uppercase tracking-wider">
-                                                Actions
-                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-100">
                                         {loading ? (
                                             <tr>
-                                                <td colSpan={(visibleFields ?? fields).length + 1} className="px-3 py-6 text-center">
+                                                <td colSpan={(visibleFields ?? fields).length} className="px-3 py-6 text-center">
                                                     <div className="flex flex-col justify-center items-center gap-2">
                                                         <div className="relative">
                                                             <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-300"></div>
@@ -889,7 +854,7 @@ const LeadsGrid = () => {
                                             </tr>
                                         ) : leads.length === 0 ? (
                                             <tr>
-                                                <td colSpan={(visibleFields ?? fields).length + 1} className="px-3 py-6 text-center">
+                                                <td colSpan={(visibleFields ?? fields).length} className="px-3 py-6 text-center">
                                                     <div className="flex flex-col items-center gap-2">
                                                         <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
@@ -943,27 +908,6 @@ const LeadsGrid = () => {
                                                             </td>
                                                         );
                                                     })}
-                                                    <td className="px-3 py-2 whitespace-nowrap text-xs text-center">
-                                                        <div className="flex gap-1.5 justify-center">
-                                                            <button
-                                                                className="p-1 text-gray-700 hover:bg-gray-100 rounded transition-all duration-200 hover:scale-110 border border-gray-200"
-                                                                title="Edit"
-                                                            >
-                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                                </svg>
-                                                            </button>
-                                                            <button
-                                                                className="p-1 text-gray-900 hover:bg-gray-100 rounded transition-all duration-200 hover:scale-110 border border-gray-200"
-                                                                title="Delete"
-                                                                onClick={() => handleDeleteClick(lead)}
-                                                            >
-                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                                </svg>
-                                                            </button>
-                                                        </div>
-                                                    </td>
                                                 </tr>
                                             ))
                                         )}
