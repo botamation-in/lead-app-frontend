@@ -3,13 +3,46 @@
  * Fetch (masked/real), copy, and regenerate the account API key.
  * Masking is done server-side — only last 4 chars are visible when hidden.
  */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../../api/axiosConfig';
 import { useNotifications } from '../../components/Notifications';
 import ConfirmationDialog from '../../components/ConfirmationDialog';
 
+// ── Reusable copy-to-clipboard button ──────────────────────────────────────────
+const CopyButton = ({ text }) => {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch { /* ignore */ }
+    };
+    return (
+        <button
+            onClick={handleCopy}
+            title="Copy"
+            className={`p-1 rounded transition-colors ${copied ? 'text-green-600' : 'text-gray-400 hover:text-gray-600'}`}
+        >
+            {copied ? (
+                <span className="flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-[10px] font-medium">Copied</span>
+                </span>
+            ) : (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+            )}
+        </button>
+    );
+};
+
 const ApiTab = ({ acctId: acctIdProp }) => {
     const resolvedAcctId = acctIdProp || localStorage.getItem('acctId') || '';
+    const resolvedAcctNo = localStorage.getItem('acctNo') || 'your-account-number';
     const { showSuccess, showError, NotificationComponent } = useNotifications();
 
     const [token, setToken] = useState('');      // stores masked or real token depending on state
@@ -17,7 +50,11 @@ const ApiTab = ({ acctId: acctIdProp }) => {
     const [showToken, setShowToken] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [copySuccess, setCopySuccess] = useState(false);
+    const [apiRefOpen, setApiRefOpen] = useState(false);
     const inputRef = useRef(null);
+
+    // Keep a ref to the last-fetched real token so copy can be instant
+    const cachedRealToken = useRef('');
 
     // Scroll input to end so the recognisable suffix is always visible
     useEffect(() => {
@@ -71,8 +108,10 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                 acctId: resolvedAcctId,
                 masked: false,
             });
-            setToken(response.data.apiKey || '');
+            const real = response.data.apiKey || '';
+            setToken(real);
             setShowToken(true);
+            cachedRealToken.current = real;
         } catch (err) {
             showError(err.message || 'Error fetching token.');
         } finally {
@@ -89,23 +128,37 @@ const ApiTab = ({ acctId: acctIdProp }) => {
         }
     };
 
-    // Copy always uses the real token fetched fresh from backend
-    const handleCopy = async () => {
+    // ── Optimistic copy: use cached token if available, fetch in background ────
+    const handleCopy = useCallback(async () => {
         if (!resolvedAcctId) { showError('No account ID available.'); return; }
+
+        // Show success immediately for responsiveness
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+
         try {
-            const response = await api.post('/api/ui/accounts/token', {
-                acctId: resolvedAcctId,
-                masked: false,
-            });
-            const realToken = response.data.apiKey || '';
-            if (!realToken) return;
-            await navigator.clipboard.writeText(realToken);
-            setCopySuccess(true);
-            setTimeout(() => setCopySuccess(false), 2000);
+            // If we already have the real token cached, copy instantly
+            if (cachedRealToken.current) {
+                await navigator.clipboard.writeText(cachedRealToken.current);
+                // Also refresh in the background to keep cache fresh
+                api.post('/api/ui/accounts/token', { acctId: resolvedAcctId, masked: false })
+                    .then(r => { cachedRealToken.current = r.data.apiKey || cachedRealToken.current; })
+                    .catch(() => {});
+            } else {
+                // No cache yet — fetch then copy
+                const response = await api.post('/api/ui/accounts/token', {
+                    acctId: resolvedAcctId,
+                    masked: false,
+                });
+                const realToken = response.data.apiKey || '';
+                cachedRealToken.current = realToken;
+                if (realToken) await navigator.clipboard.writeText(realToken);
+            }
         } catch (err) {
+            setCopySuccess(false);
             showError('Failed to copy token.');
         }
-    };
+    }, [resolvedAcctId, showError]);
 
     const handleRegenerate = async () => {
         if (!resolvedAcctId) { showError('No account ID available.'); return; }
@@ -124,6 +177,40 @@ const ApiTab = ({ acctId: acctIdProp }) => {
             setLoading(false);
         }
     };
+
+    // ── Snippet strings for the accordion ──────────────────────────────────────
+    const endpointText = 'POST /api/leads';
+    const headersText = `x-api-key: <your-api-key>\nx-page-id: ${resolvedAcctNo}\nContent-Type: application/json`;
+    const singleLeadText = `{
+  "data": {
+    "name": "John Doe",
+    "email": "john@example.com",
+    "phone": "+1-234-567-890"
+  }
+}`;
+    const singleLeadMergeText = `{
+  "config": {
+    "merge": {
+      "properties": ["email"]
+    }
+  },
+  "data": {
+    "name": "John Doe",
+    "email": "john@example.com",
+    "phone": "+1-234-567-890"
+  }
+}`;
+    const batchMergeText = `{
+  "config": {
+    "merge": {
+      "properties": ["email"]
+    }
+  },
+  "data": [
+    { "name": "John", "email": "john@example.com" },
+    { "name": "Jane", "email": "jane@example.com" }
+  ]
+}`;
 
     return (
         <div className="max-w-xl">
@@ -179,9 +266,12 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                         }`}
                 >
                     {copySuccess ? (
-                        <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
+                        <span className="flex items-center gap-1">
+                            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span className="text-[10px] font-medium text-green-600">Copied</span>
+                        </span>
                     ) : (
                         <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -201,6 +291,97 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                 </svg>
                 Regenerate API Key
             </button>
+
+            {/* ── Add Leads via API accordion ───────────────────────────── */}
+            <div className="mt-8 border border-gray-200 rounded-lg overflow-hidden">
+                <button
+                    onClick={() => setApiRefOpen(v => !v)}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                >
+                    <span className="text-xs font-bold text-gray-900">Add Leads via API</span>
+                    <svg
+                        className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${apiRefOpen ? 'rotate-180' : ''}`}
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+
+                {apiRefOpen && (
+                    <div className="px-4 py-4 space-y-4 text-xs text-gray-700 border-t border-gray-200">
+                        {/* Endpoint */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <p className="font-semibold text-gray-900">Endpoint</p>
+                                <CopyButton text={endpointText} />
+                            </div>
+                            <code className="block bg-gray-100 rounded-lg px-3 py-2 font-mono text-[11px] text-gray-800">
+                                {endpointText}
+                            </code>
+                            <p className="mt-1 text-[11px] text-gray-500">
+                                To assign a category: <code className="bg-gray-100 px-1 py-0.5 rounded font-mono">POST /api/leads/:category</code>
+                            </p>
+                        </div>
+
+                        {/* Headers */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <p className="font-semibold text-gray-900">Headers</p>
+                                <CopyButton text={headersText} />
+                            </div>
+                            <div className="bg-gray-100 rounded-lg px-3 py-2 font-mono text-[11px] text-gray-800 space-y-0.5">
+                                <p>x-api-key: <span className="text-gray-500">{'<your-api-key>'}</span></p>
+                                <p>x-page-id: <span className="text-gray-500">{resolvedAcctNo}</span></p>
+                                <p>Content-Type: application/json</p>
+                            </div>
+                        </div>
+
+                        {/* Single lead example */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <p className="font-semibold text-gray-900">Single Lead</p>
+                                <CopyButton text={singleLeadText} />
+                            </div>
+                            <pre className="bg-gray-100 rounded-lg px-3 py-2 font-mono text-[11px] text-gray-800 overflow-x-auto whitespace-pre">{singleLeadText}</pre>
+                        </div>
+
+                        {/* Single lead with merge example */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <p className="font-semibold text-gray-900">Single Lead with Merge (Upsert)</p>
+                                <CopyButton text={singleLeadMergeText} />
+                            </div>
+                            <pre className="bg-gray-100 rounded-lg px-3 py-2 font-mono text-[11px] text-gray-800 overflow-x-auto whitespace-pre">{singleLeadMergeText}</pre>
+                            <p className="mt-1 text-[11px] text-gray-500">
+                                If a lead with the same <code className="bg-gray-100 px-1 py-0.5 rounded font-mono">email</code> already exists, it will be updated instead of duplicated.
+                            </p>
+                        </div>
+
+                        {/* Batch with merge example */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <p className="font-semibold text-gray-900">Batch with Merge (Upsert)</p>
+                                <CopyButton text={batchMergeText} />
+                            </div>
+                            <pre className="bg-gray-100 rounded-lg px-3 py-2 font-mono text-[11px] text-gray-800 overflow-x-auto whitespace-pre">{batchMergeText}</pre>
+                            <p className="mt-1 text-[11px] text-gray-500">
+                                When <code className="bg-gray-100 px-1 py-0.5 rounded font-mono">merge.properties</code> is provided, existing leads matching those fields are updated instead of duplicated.
+                            </p>
+                        </div>
+
+                        {/* Notes */}
+                        <div>
+                            <p className="font-semibold text-gray-900 mb-1">Notes</p>
+                            <ul className="list-disc list-inside space-y-1 text-[11px] text-gray-600">
+                                <li><code className="bg-gray-100 px-1 py-0.5 rounded font-mono">data</code> is required &mdash; accepts a single object or an array of objects.</li>
+                                <li>The schema is flexible &mdash; any key/value pairs are accepted as lead fields.</li>
+                                <li>Category can be set via the URL path (<code className="bg-gray-100 px-1 py-0.5 rounded font-mono">/api/leads/enterprise</code>) or as a <code className="bg-gray-100 px-1 py-0.5 rounded font-mono">category</code> field inside <code className="bg-gray-100 px-1 py-0.5 rounded font-mono">data</code>. Defaults to <strong>default</strong>.</li>
+                                <li><code className="bg-gray-100 px-1 py-0.5 rounded font-mono">config.merge.properties</code> is optional &mdash; omit it to always create new leads.</li>
+                            </ul>
+                        </div>
+                    </div>
+                )}
+            </div>
 
             {/* Regenerate confirmation dialog */}
             <ConfirmationDialog
