@@ -972,7 +972,7 @@ const AnalyticsDashboardPage = () => {
                         return (
                             <div
                                 className="flex items-center gap-1 shrink-0 select-none"
-                                title={`Auto-refresh in ${fmt} (every ${mins} min${mins !== 1 ? 's' : ''})`}
+                                title={`Auto-refresh in ${fmt} (every ${totalSecs < 60 ? `${totalSecs}s` : totalSecs < 3600 ? `${Math.round(totalSecs / 60)}m` : '1h'})`}
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => { e.stopPropagation(); fetchChartDataFromBackend(chartConfig.id, chartConfig); }}
                             >
@@ -1205,16 +1205,27 @@ const AnalyticsDashboardPage = () => {
                             >
                                 Off
                             </button>
-                            {[1, 2, 5, 10, 15, 30, 60].map(mins => (
+                            {[
+                                { v: 10 / 60, label: '10s' },
+                                { v: 0.5, label: '30s' },
+                                { v: 1, label: '1m' },
+                                { v: 2, label: '2m' },
+                                { v: 3, label: '3m' },
+                                { v: 5, label: '5m' },
+                                { v: 10, label: '10m' },
+                                { v: 15, label: '15m' },
+                                { v: 30, label: '30m' },
+                                { v: 60, label: '1h' },
+                            ].map(({ v, label }) => (
                                 <button
-                                    key={mins}
-                                    onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', mins)}
-                                    className={`px-2 py-1 transition-all ${chartConfig.autoRefreshMins === mins
+                                    key={label}
+                                    onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', v)}
+                                    className={`px-2 py-1 transition-all ${chartConfig.autoRefreshMins === v
                                         ? 'bg-gray-900 text-white'
                                         : 'bg-white text-gray-500 hover:bg-gray-100'
                                         }`}
                                 >
-                                    {mins < 60 ? `${mins}m` : '1h'}
+                                    {label}
                                 </button>
                             ))}
                         </div>
