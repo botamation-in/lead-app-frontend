@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/axiosConfig';
 import { useAccount } from '../context/AccountContext';
 import { resolveActiveAcctNo, getAcctIdFromLocalStorage } from '../utils/accountHelpers';
@@ -13,6 +13,7 @@ import DeleteConfirmation from '../components/DeleteConfirmation';
 
 const AnalyticsDashboardPage = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { acctNo, acctId, accountsLoaded } = useAccount();
     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -534,10 +535,18 @@ const AnalyticsDashboardPage = () => {
             const raw = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : Array.isArray(d?.categories) ? d.categories : [];
             const filtered = raw.filter(item => item?._id && item?.categoryName);
             setCategories(filtered);
+            const urlCategoryId = new URLSearchParams(window.location.search).get('categoryId');
             const stored = localStorage.getItem(`selectedCategory_${acctId}`);
+            const urlCat = urlCategoryId && filtered.find(c => c._id === urlCategoryId);
             const storedCat = stored && filtered.find(c => c._id === stored);
-            const activeCat = storedCat || filtered.find(c => c.default === true);
-            if (activeCat) setSelectedCategory(activeCat._id);
+            const activeCat = urlCat || storedCat || filtered.find(c => c.default === true);
+            if (activeCat) {
+                setSelectedCategory(activeCat._id);
+                // Ensure URL reflects the active category
+                const params = new URLSearchParams(window.location.search);
+                params.set('categoryId', activeCat._id);
+                navigate(`${window.location.pathname}?${params.toString()}`, { replace: true });
+            }
         } catch (err) {
             console.error('Error fetching categories:', err);
         } finally {
@@ -550,6 +559,11 @@ const AnalyticsDashboardPage = () => {
         setSelectedCategory(value);
         if (value) localStorage.setItem(`selectedCategory_${acctId}`, value);
         else localStorage.removeItem(`selectedCategory_${acctId}`);
+
+        const params = new URLSearchParams(location.search);
+        if (value) params.set('categoryId', value);
+        else params.delete('categoryId');
+        navigate(`${location.pathname}?${params.toString()}`, { replace: true });
     };
 
     // Fetch categories when acctId changes — also resets the gate for the new account

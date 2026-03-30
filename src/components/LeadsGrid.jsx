@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import BrandLogo from './BrandLogo';
 import * as XLSX from 'xlsx';
 import api from '../api/axiosConfig';
@@ -12,6 +12,7 @@ import LoadingMask from './LoadingMask';
 
 const LeadsGrid = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { user, userDetails, logout } = useAuth();
     const {
         acctNo,
@@ -141,19 +142,23 @@ const LeadsGrid = () => {
                         : [];
             const filtered = raw.filter(item => item?._id && item?.categoryName);
             setCategories(filtered);
-            // Restore from localStorage (scoped per account), fallback to default from API
+            // Resolution priority: 1) URL ?categoryId= param, 2) localStorage, 3) API default
+            const urlCategoryId = new URLSearchParams(window.location.search).get('categoryId');
             const stored = localStorage.getItem(`selectedCategory_${acctId}`);
+            const urlCat = urlCategoryId && filtered.find(c => c._id === urlCategoryId);
             const storedCat = stored && filtered.find(c => c._id === stored);
-            const activeCat = storedCat || filtered.find(c => c.default === true);
+            const activeCat = urlCat || storedCat || filtered.find(c => c.default === true);
             if (activeCat) {
                 setSelectedCategory(activeCat._id);
                 setAppliedFilters(prev => ({ ...prev, categoryId: activeCat._id }));
+                // Ensure URL reflects the active category
+                const params = new URLSearchParams(window.location.search);
+                params.set('categoryId', activeCat._id);
+                navigate(`${window.location.pathname}?${params.toString()}`, { replace: true });
             }
             setCategoriesReady(true);
         } catch (err) {
             console.error('Error fetching categories:', err);
-            // Still mark as ready so the page isn't stuck on the loading spinner.
-            // The user can retry or will see an empty categories list.
             setCategoriesReady(true);
         } finally {
             setCategoryLoading(false);
@@ -166,8 +171,14 @@ const LeadsGrid = () => {
 
     const handleCategoryChange = (value) => {
         setSelectedCategory(value);
+        // Persist to localStorage
         if (value) localStorage.setItem(`selectedCategory_${acctId}`, value);
         else localStorage.removeItem(`selectedCategory_${acctId}`);
+        // Update URL: add or remove ?categoryId=
+        const params = new URLSearchParams(location.search);
+        if (value) params.set('categoryId', value);
+        else params.delete('categoryId');
+        navigate(`${location.pathname}?${params.toString()}`, { replace: true });
         // Restore saved field filters for the new category (or reset to empty)
         const savedFilters = (() => {
             try {

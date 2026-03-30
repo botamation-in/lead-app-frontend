@@ -1,13 +1,9 @@
 import axios from 'axios';
 
 // Build base URL from environment variables (Vite uses import.meta.env)
-// In production, leave empty so requests use relative paths (same-origin),
-// handled by the reverse proxy (e.g. Nginx). In dev, the Vite proxy handles /api/* routing.
-const API_HOST = import.meta.env.VITE_API_HOST !== undefined && import.meta.env.VITE_API_HOST !== ''
-    ? import.meta.env.VITE_API_HOST
-    : (import.meta.env.PROD ? '' : '');
-const API_PORT = import.meta.env.VITE_API_PORT || '';
-const BASE_URL = API_HOST && API_PORT ? `${API_HOST}:${API_PORT}` : API_HOST;
+const API_HOST = import.meta.env.VITE_API_HOST || 'http://localhost';
+const API_PORT = import.meta.env.VITE_API_PORT || '8081';
+const BASE_URL = API_PORT ? `${API_HOST}:${API_PORT}` : API_HOST;
 
 // Auth service URL (the SSO login page — auth frontend)
 export const AUTH_SERVICE_URL =
@@ -36,13 +32,35 @@ export const authApi = axios.create({
 });
 
 // ─── 401 Interceptor for Main API ─────────────────────────────────────────────
-// When any request to this app's backend returns 401, redirect to SSO login.
-// NOTE: We always build the redirect URL on the client side using
-// window.location.href (the page the user is on). The backend's 401 response
-// includes an `authUrl` whose `redirect` parameter is the API path
-// (req.originalUrl), NOT the frontend page URL — using it would redirect the
-// user back to a JSON endpoint after login.
+// When any request returns 401, auto-redirect to SSO login
 api.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+        const originalRequest = error.config;
+
+        if (error.response?.status === 401 && !originalRequest._retry) {
+            originalRequest._retry = true;
+
+            // If backend provides an authUrl, use it directly
+            const authUrl = error.response?.data?.authUrl;
+            if (authUrl) {
+                window.location.href = authUrl;
+                return Promise.reject(error);
+            }
+
+            // Fallback: build the SSO login URL manually
+            if (AUTH_SERVICE_URL) {
+                const currentUrl = window.location.href;
+                window.location.href = `${AUTH_SERVICE_URL}/login?redirect=${encodeURIComponent(currentUrl)}`;
+            }
+        }
+
+        return Promise.reject(error);
+    }
+);
+
+// ─── 401 Interceptor for Auth API ─────────────────────────────────────────────
+authApi.interceptors.response.use(
     (response) => response,
     async (error) => {
         const originalRequest = error.config;
@@ -56,18 +74,6 @@ api.interceptors.response.use(
             }
         }
 
-        return Promise.reject(error);
-    }
-);
-
-// ─── 401 Interceptor for Auth API ─────────────────────────────────────────────
-// NOTE: Do NOT auto-redirect on 401 from auth backend.
-// The profile fetch is optional — if it fails, AuthContext catches the error
-// and continues with the SSO-validated user data. Redirecting here would
-// cause a login loop when the auth backend rejects the cross-origin cookie.
-authApi.interceptors.response.use(
-    (response) => response,
-    async (error) => {
         return Promise.reject(error);
     }
 );

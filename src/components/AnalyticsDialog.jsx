@@ -714,7 +714,7 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
 
             {/* Chart Controls */}
             <div className={`grid gap-3 mb-4 ${((chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') &&
-                    (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked')) ? 'grid-cols-5' : 'grid-cols-4'
+                (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked')) ? 'grid-cols-5' : 'grid-cols-4'
                 }`}>
                 <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
