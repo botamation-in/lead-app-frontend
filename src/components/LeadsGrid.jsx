@@ -437,24 +437,7 @@ const LeadsGrid = () => {
         return value;
     };
 
-    // Block the entire page until accounts are resolved AND (categories loaded
-    // OR no account linked — in which case categories can't load anyway)
-    if (!accountsLoaded || (isAccountLinked && !categoriesReady)) {
-        return (
-            <div className="h-screen flex items-center justify-center bg-gray-50">
-                <div className="flex flex-col items-center space-y-4 p-8 bg-white rounded-2xl shadow-2xl border border-gray-200">
-                    <div className="relative">
-                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-200"></div>
-                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-black border-t-transparent absolute top-0"></div>
-                    </div>
-                    <div className="text-center">
-                        <span className="text-lg font-semibold text-gray-900">Loading Leads</span>
-                        <p className="text-sm text-gray-500 mt-1">Fetching your categories and leads...</p>
-                    </div>
-                </div>
-            </div>
-        );
-    }
+
 
     return (
         <div className="h-screen flex flex-col bg-gray-50 overflow-hidden relative">
