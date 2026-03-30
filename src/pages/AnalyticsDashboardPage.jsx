@@ -381,9 +381,13 @@ const AnalyticsDashboardPage = () => {
             };
 
             const response = await api.post('/api/ui/analytics/chart-data', params);
+            const data = response.data.data || [];
+            // Sort descending by value
+            data.sort((a, b) => b.value - a.value);
+
             setChartDataCache(prev => ({
                 ...prev,
-                [chartId]: response.data.data || []
+                [chartId]: data
             }));
         } catch (err) {
             console.error('Error fetching chart data:', err);

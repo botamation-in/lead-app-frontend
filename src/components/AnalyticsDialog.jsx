@@ -498,6 +498,9 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
             const response = await api.get('/api/ui/analytics/chart-data', { params });
             const data = response.data.data || [];
 
+            // Sort descending by value
+            data.sort((a, b) => b.value - a.value);
+
             // Cache the result
             setChartDataCache(prev => ({
                 ...prev,
