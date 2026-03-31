@@ -122,7 +122,8 @@ const AnalyticsDashboardPage = () => {
         chartName: '',
         barOrientation: 'vertical',
         chartColor: null,
-        autoRefreshMins: null
+        autoRefreshMins: null,
+        chartCategory: null
     };
 
     const STORAGE_KEY = 'analyticsDashboard_charts';
@@ -191,7 +192,8 @@ const AnalyticsDashboardPage = () => {
                 chartColor: chart.chartColor || null,
                 autoRefreshMins: chart.autoRefreshMins ?? null,
                 zAxis: chart.zAxis || null,
-                chartMode: chart.chartMode || null
+                chartMode: chart.chartMode || null,
+                chartCategory: chart.chartCategory || null
             }));
             store[acctKey] = store[acctKey] || {};
             store[acctKey][catKey] = { filters: chartsToSave };
@@ -332,7 +334,7 @@ const AnalyticsDashboardPage = () => {
             if (chart.id === chartId) {
                 const updatedChart = { ...chart, [field]: value };
                 // Fetch data when X, Y, Z, mode, aggregation, or date filters change
-                if (['xAxis', 'yAxis', 'zAxis', 'aggregation', 'chartMode', 'dateFilterFrom', 'dateFilterTo'].includes(field)) {
+                if (['xAxis', 'yAxis', 'zAxis', 'aggregation', 'chartMode', 'dateFilterFrom', 'dateFilterTo', 'chartCategory'].includes(field)) {
                     fetchChartDataFromBackend(chartId, updatedChart);
                 }
                 return updatedChart;
@@ -369,12 +371,14 @@ const AnalyticsDashboardPage = () => {
         if (!silent) setChartLoadingState(prev => ({ ...prev, [chartId]: true }));
         try {
             const xAxisValue = isNumber ? chartConfig.yAxis.value : chartConfig.xAxis.value;
+            // Use the chart's own category if set, otherwise fall back to the global selectedCategory
+            const effectiveCategoryId = chartConfig.chartCategory?._id || chartConfig.chartCategory || selectedCategory || null;
             const params = {
                 xAxis: xAxisValue,
                 yAxis: chartConfig.yAxis.value,
                 aggregation: chartConfig.aggregation.value,
                 ...(acctId && { acctId }),
-                ...(selectedCategory && { categoryId: selectedCategory }),
+                ...(effectiveCategoryId && { categoryId: effectiveCategoryId }),
                 ...((chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && chartConfig.zAxis ? { zAxis: chartConfig.zAxis.value } : {}),
                 ...(chartConfig.dateFilterFrom && { dateFrom: chartConfig.dateFilterFrom }),
                 ...(chartConfig.dateFilterTo && { dateTo: chartConfig.dateFilterTo })
@@ -1587,6 +1591,43 @@ const AnalyticsDashboardPage = () => {
                             </Combobox>
                         </div>
                     </div>
+                    {/* Per-chart Category filter */}
+                    {categories.length > 0 && (
+                        <div className="flex items-center gap-2 mb-4 px-5">
+                            <span className="text-xs font-semibold text-gray-700 shrink-0">Data Category:</span>
+                            <div className="w-48">
+                                <Combobox
+                                    value={
+                                        chartConfig.chartCategory
+                                            ? (typeof chartConfig.chartCategory === 'object'
+                                                ? chartConfig.chartCategory
+                                                : categories.find(c => c._id === chartConfig.chartCategory) || null)
+                                            : null
+                                    }
+                                    onChange={(val) => updateChartConfig(chartConfig.id, 'chartCategory', val || null)}
+                                    displayValue={(option) => option?.categoryName || ''}
+                                    options={categories}
+                                    placeholder="All categories"
+                                    dropdownClassName="z-50"
+                                >
+                                    {(option) => (
+                                        <ComboboxOption key={`cat-${chartConfig.id}-${option._id}`} value={option}>
+                                            <ComboboxLabel>{option.categoryName}</ComboboxLabel>
+                                        </ComboboxOption>
+                                    )}
+                                </Combobox>
+                            </div>
+                            {chartConfig.chartCategory && (
+                                <button
+                                    onClick={() => updateChartConfig(chartConfig.id, 'chartCategory', null)}
+                                    className="text-gray-400 hover:text-gray-700 transition-colors text-base leading-none px-1"
+                                    title="Clear category filter"
+                                >
+                                    ×
+                                </button>
+                            )}
+                        </div>
+                    )}
                     {/* end filter controls */}
                     <div className="pb-4"></div>
                 </div>
@@ -1679,25 +1720,6 @@ const AnalyticsDashboardPage = () => {
                                 Analytics Dashboard
                             </h1>
                             <div className="flex items-center gap-2">
-                                {/* Category Combobox */}
-                                <Combobox
-                                    value={
-                                        (selectedCategory ? categories.find(c => c._id === selectedCategory) : null) ?? null
-                                    }
-                                    onChange={(val) => handleCategoryChange(val?._id || '')}
-                                    displayValue={(option) => option?.categoryName || ''}
-                                    options={categories}
-                                    disabled={categoryLoading || !acctId}
-                                    placeholder="Select category..."
-                                    className="w-44"
-                                    dropdownClassName="!min-w-0"
-                                >
-                                    {(option) => (
-                                        <ComboboxOption key={option._id} value={option}>
-                                            <ComboboxLabel>{option.categoryName}</ComboboxLabel>
-                                        </ComboboxOption>
-                                    )}
-                                </Combobox>
                                 <button
                                     onClick={refreshAllCharts}
                                     disabled={globalRefreshing}
