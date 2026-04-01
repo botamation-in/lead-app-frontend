@@ -611,6 +611,8 @@ const AnalyticsDashboardPage = () => {
         setCharts(restored);
         setNextChartId(restored.length > 0 ? Math.max(...restored.map(c => c.id)) + 1 : 1);
         setChartDataCache({});
+        setCategoryFieldsCache({});
+        fieldsFetchPromisesRef.current = {};
 
         // Fetch field schemas for used categories
         const usedCategories = [...new Set(restored.map(c => c.chartCategory?._id || c.chartCategory).filter(Boolean))];
