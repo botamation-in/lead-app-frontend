@@ -17,14 +17,12 @@ const AnalyticsDashboardPage = () => {
     const { acctNo, acctId, accountsLoaded } = useAccount();
     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [fields, setFields] = useState([]);
+    const [categoryFieldsCache, setCategoryFieldsCache] = useState({});
+    const fieldsFetchPromisesRef = useRef({});
 
     // Category state
     const [categories, setCategories] = useState([]);
-    const [selectedCategory, setSelectedCategory] = useState('');
     const [categoryLoading, setCategoryLoading] = useState(false);
-    // True once fetchCategories has resolved for the current account
-    const [categoriesChecked, setCategoriesChecked] = useState(false);
 
     // Header smart-hide state
     const [headerVisible, setHeaderVisible] = useState(true);
@@ -94,16 +92,17 @@ const AnalyticsDashboardPage = () => {
             .trim();
     };
 
-    // Generate columns from fields
-    const columns = fields.map(field => ({
-        value: field,
-        label: formatFieldName(field)
-    }));
+    // Columns are derived dynamically per chart below
 
     // Aggregation types
     const aggregationTypes = [
         { value: 'count', label: 'Count' },
         { value: 'sum', label: 'Sum' }
+    ];
+    const aggregationTypesNumber = [
+        { value: 'count', label: 'Count' },
+        { value: 'sum', label: 'Sum' },
+        { value: 'avg', label: 'Average' }
     ];
 
     // Default chart configuration
@@ -140,7 +139,7 @@ const AnalyticsDashboardPage = () => {
         }
     };
 
-    const loadChartsForCategory = (acct, categoryId) => {
+    const loadCharts = (acct) => {
         try {
             // Migrate old per-account keys into the new format on first read
             const oldKey = `analyticsDashboard_charts_${acct || 'default'}`;
@@ -159,20 +158,37 @@ const AnalyticsDashboardPage = () => {
                     localStorage.removeItem(oldKey);
                 }
             }
+
             const store = readStore();
             const acctKey = acct || 'default';
-            const catKey = categoryId || '';
-            return store[acctKey]?.[catKey]?.filters || [];
+            const acctData = store[acctKey] || {};
+
+            let allCharts = [];
+            let needsMigration = false;
+
+            const keys = Object.keys(acctData);
+            if (keys.length > 0 && !(keys.length === 1 && keys[0] === '')) {
+                needsMigration = true;
+                keys.forEach(k => {
+                    allCharts.push(...(acctData[k].filters || []));
+                });
+                // Reassign IDs to avoid collisions
+                allCharts = allCharts.map((c, i) => ({ ...c, id: i + 1 }));
+                store[acctKey] = { '': { filters: allCharts } };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+            } else {
+                allCharts = acctData['']?.filters || [];
+            }
+            return allCharts;
         } catch {
             return [];
         }
     };
 
-    const saveChartsForCategory = (acct, categoryId, chartsData) => {
+    const saveCharts = (acct, chartsData) => {
         try {
             const store = readStore();
             const acctKey = acct || 'default';
-            const catKey = categoryId || '';
             const chartsToSave = chartsData.map(chart => ({
                 id: chart.id,
                 chartType: chart.chartType,
@@ -196,22 +212,42 @@ const AnalyticsDashboardPage = () => {
                 chartCategory: chart.chartCategory || null
             }));
             store[acctKey] = store[acctKey] || {};
-            store[acctKey][catKey] = { filters: chartsToSave };
+            store[acctKey][''] = { filters: chartsToSave };
+            // Ensure no other category keys remain
+            Object.keys(store[acctKey]).forEach(k => {
+                if (k !== '') delete store[acctKey][k];
+            });
             localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
         } catch {
             // ignore storage errors
         }
     };
 
-    // State for charts — per-category, reloaded whenever category or account changes
+    const getTodayISO = () => {
+        const d = new Date(); d.setHours(0, 0, 0, 0);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const normalizeChart = (entry) => {
+        const todayISO = getTodayISO();
+        return {
+            ...defaultChartConfig,
+            ...entry,
+            id: entry.id,
+            dateFilterFrom: entry.dateFilterFrom || todayISO,
+            dateFilterTo: entry.dateFilterTo || todayISO,
+        };
+    };
+
+    // State for charts — local to account
     const [charts, setCharts] = useState(() => {
         const initAcctId = getAcctIdFromLocalStorage();
-        const saved = loadChartsForCategory(initAcctId, '');
-        return saved.map(entry => ({ ...defaultChartConfig, ...entry, id: entry.id }));
+        const saved = loadCharts(initAcctId);
+        return saved.map(entry => normalizeChart(entry));
     });
     const [nextChartId, setNextChartId] = useState(() => {
         const initAcctId = getAcctIdFromLocalStorage();
-        const saved = loadChartsForCategory(initAcctId, '');
+        const saved = loadCharts(initAcctId);
         return saved.length > 0 ? Math.max(...saved.map(c => c.id)) + 1 : 1;
     });
     const [chartDataCache, setChartDataCache] = useState({});
@@ -320,21 +356,69 @@ const AnalyticsDashboardPage = () => {
         }
     };
 
-    // Refs to coordinate per-category save without spurious writes on load
+    // Refs to coordinate per-account save without spurious writes on load
     const skipSaveRef = React.useRef(false);
-    const selectedCategoryRef = React.useRef('');
     // chartsRef lets fetchFieldsData always see the latest charts without being a dep
     const chartsRef = React.useRef(charts);
     // fieldsFetchIdRef cancels stale fetchFieldsData completions
     const fieldsFetchIdRef = React.useRef(0);
 
+    // Reset all data-related fields when category changes
+    const resetChartDataFields = (chartId) => {
+        setCharts(prev => prev.map(chart => {
+            if (chart.id === chartId) {
+                return {
+                    ...chart,
+                    chartType: null,
+                    xAxis: null,
+                    yAxis: null,
+                    zAxis: null,
+                    aggregation: null,
+                    chartMode: null,
+                    dateFilterFrom: '',
+                    dateFilterTo: '',
+                    _showCustom: false,
+                    _showLastN: false,
+                    _lastNDays: 2,
+                    chartColor: null,
+                    autoRefreshMins: null,
+                    barOrientation: 'vertical',
+                };
+            }
+            return chart;
+        }));
+    };
+
     // Update individual chart config
     const updateChartConfig = (chartId, field, value) => {
         setCharts(prev => prev.map(chart => {
             if (chart.id === chartId) {
-                const updatedChart = { ...chart, [field]: value };
+                let updatedChart = { ...chart, [field]: value };
+                // When category changes: reset axis/aggregation fields and fetch new category fields
+                if (field === 'chartCategory') {
+                    const catId = value?._id || value;
+                    if (catId) fetchFieldsForCategory(catId);
+                    // Reset dependent fields so X/Y axis options reflect the new category
+                    updatedChart = {
+                        ...updatedChart,
+                        chartType: null,
+                        xAxis: null,
+                        yAxis: null,
+                        zAxis: null,
+                        aggregation: null,
+                        chartMode: null,
+                        dateFilterFrom: '',
+                        dateFilterTo: '',
+                        _showCustom: false,
+                        _showLastN: false,
+                        _lastNDays: 2,
+                        chartColor: null,
+                        autoRefreshMins: null,
+                        barOrientation: 'vertical',
+                    };
+                }
                 // Fetch data when X, Y, Z, mode, aggregation, or date filters change
-                if (['xAxis', 'yAxis', 'zAxis', 'aggregation', 'chartMode', 'dateFilterFrom', 'dateFilterTo', 'chartCategory'].includes(field)) {
+                if (['xAxis', 'yAxis', 'zAxis', 'aggregation', 'chartMode', 'dateFilterFrom', 'dateFilterTo'].includes(field)) {
                     fetchChartDataFromBackend(chartId, updatedChart);
                 }
                 return updatedChart;
@@ -371,12 +455,12 @@ const AnalyticsDashboardPage = () => {
         if (!silent) setChartLoadingState(prev => ({ ...prev, [chartId]: true }));
         try {
             const xAxisValue = isNumber ? chartConfig.yAxis.value : chartConfig.xAxis.value;
-            // Use the chart's own category if set, otherwise fall back to the global selectedCategory
-            const effectiveCategoryId = chartConfig.chartCategory?._id || chartConfig.chartCategory || selectedCategory || null;
+            // Use the chart's own category if set
+            const effectiveCategoryId = chartConfig.chartCategory?._id || chartConfig.chartCategory || null;
             const params = {
                 xAxis: xAxisValue,
                 yAxis: chartConfig.yAxis.value,
-                aggregation: chartConfig.aggregation.value,
+                aggregation: chartConfig.aggregation.value === 'average' ? 'avg' : chartConfig.aggregation.value,
                 ...(acctId && { acctId }),
                 ...(effectiveCategoryId && { categoryId: effectiveCategoryId }),
                 ...((chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && chartConfig.zAxis ? { zAxis: chartConfig.zAxis.value } : {}),
@@ -406,9 +490,17 @@ const AnalyticsDashboardPage = () => {
 
     // Add new chart
     const addChart = () => {
+        const todayDate = new Date();
+        todayDate.setHours(0, 0, 0, 0);
+        const y = todayDate.getFullYear();
+        const m = String(todayDate.getMonth() + 1).padStart(2, '0');
+        const d = String(todayDate.getDate()).padStart(2, '0');
+        const todayISO = `${y}-${m}-${d}`;
         const newChart = {
             ...defaultChartConfig,
-            id: nextChartId
+            id: nextChartId,
+            dateFilterFrom: todayISO,
+            dateFilterTo: todayISO
         };
         setCharts(prev => [...prev, newChart]);
         setNextChartId(prev => prev + 1);
@@ -429,10 +521,6 @@ const AnalyticsDashboardPage = () => {
         setGlobalRefreshing(false);
     };
 
-    // Keep selectedCategoryRef in sync so the save effect always writes to the right bucket
-    useEffect(() => {
-        selectedCategoryRef.current = selectedCategory;
-    }, [selectedCategory]);
 
     // Keep chartsForTimerRef current so the interval callbacks always use latest chart state
     useEffect(() => {
@@ -513,24 +601,36 @@ const AnalyticsDashboardPage = () => {
         };
     }, []);
 
-    // Load charts for the active category whenever account or category changes
+    // Load charts whenever account changes
     useEffect(() => {
         if (!acctId) return;
         skipSaveRef.current = true;
-        const saved = loadChartsForCategory(acctId, selectedCategory);
-        const restored = saved.map(entry => ({ ...defaultChartConfig, ...entry, id: entry.id }));
-        chartsRef.current = restored; // update ref immediately so fetchFieldsData sees correct charts
+        const saved = loadCharts(acctId);
+        const restored = saved.map(entry => normalizeChart(entry));
+        chartsRef.current = restored;
         setCharts(restored);
         setNextChartId(restored.length > 0 ? Math.max(...restored.map(c => c.id)) + 1 : 1);
         setChartDataCache({});
-    }, [acctId, selectedCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Persist charts for the active category whenever they change (skip on load)
+        // Fetch field schemas for used categories
+        const usedCategories = [...new Set(restored.map(c => c.chartCategory?._id || c.chartCategory).filter(Boolean))];
+        usedCategories.forEach(catId => fetchFieldsForCategory(catId));
+
+        // Fetch initial data
+        restored.forEach(chart => {
+            const isNum = chart.chartType?.value === 'number';
+            if (isNum ? (chart.yAxis && chart.aggregation) : (chart.xAxis && chart.yAxis && chart.aggregation)) {
+                fetchChartDataFromBackend(chart.id, chart, true);
+            }
+        });
+    }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Persist charts whenever they change (skip on load)
     useEffect(() => {
         chartsRef.current = charts; // always keep ref current
         if (skipSaveRef.current) { skipSaveRef.current = false; return; }
         if (!acctId) return;
-        saveChartsForCategory(acctId, selectedCategoryRef.current, charts);
+        saveCharts(acctId, charts);
     }, [charts, acctId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Fetch categories
@@ -543,84 +643,59 @@ const AnalyticsDashboardPage = () => {
             const raw = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : Array.isArray(d?.categories) ? d.categories : [];
             const filtered = raw.filter(item => item?._id && item?.categoryName);
             setCategories(filtered);
-            const urlCategoryId = new URLSearchParams(window.location.search).get('categoryId');
-            const stored = localStorage.getItem(`selectedCategory_${acctId}`);
-            const urlCat = urlCategoryId && filtered.find(c => c._id === urlCategoryId);
-            const storedCat = stored && filtered.find(c => c._id === stored);
-            const activeCat = urlCat || storedCat || filtered.find(c => c.default === true);
-            if (activeCat) {
-                setSelectedCategory(activeCat._id);
-                // Ensure URL reflects the active category
-                const params = new URLSearchParams(window.location.search);
-                params.set('categoryId', activeCat._id);
-                navigate(`${window.location.pathname}?${params.toString()}`, { replace: true });
-            }
         } catch (err) {
             console.error('Error fetching categories:', err);
         } finally {
             setCategoryLoading(false);
-            setCategoriesChecked(true); // unblock fetchFieldsData now that category is known
         }
     };
 
-    const handleCategoryChange = (value) => {
-        setSelectedCategory(value);
-        if (value) localStorage.setItem(`selectedCategory_${acctId}`, value);
-        else localStorage.removeItem(`selectedCategory_${acctId}`);
-
-        const params = new URLSearchParams(location.search);
-        if (value) params.set('categoryId', value);
-        else params.delete('categoryId');
-        navigate(`${location.pathname}?${params.toString()}`, { replace: true });
-    };
-
-    // Fetch categories when acctId changes — also resets the gate for the new account
+    // Fetch categories when acctId changes
     useEffect(() => {
-        setCategoriesChecked(false);
         fetchCategories();
     }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Fetch fields only after categories are resolved, then re-run if category changes
-    useEffect(() => {
-        if (!acctNo || !categoriesChecked) return;
-        fetchFieldsData();
-    }, [acctNo, selectedCategory, categoriesChecked]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    const fetchFieldsData = async () => {
-        fieldsFetchIdRef.current += 1;
-        const myId = fieldsFetchIdRef.current;
-        setLoading(true);
-        try {
-            const params = { ...(acctId && { acctId }), ...(selectedCategory && { categoryId: selectedCategory }) };
-            const response = await api.get('/api/ui/leads', { params });
-
-            // A newer call started — discard this result to avoid double chart fetch
-            if (myId !== fieldsFetchIdRef.current) return;
-
-            const excludeFields = ['__v', 'updatedAt', '_id'];
-            let displayFields = [];
-            if (response.data.fields && response.data.fields.length > 0) {
-                displayFields = response.data.fields.filter(field => !excludeFields.includes(field));
-            } else if ((response.data.data || []).length > 0) {
-                const firstLead = response.data.data[0];
-                displayFields = Object.keys(firstLead).filter(field => !excludeFields.includes(field));
-            }
-            setFields(displayFields);
-
-            // Fetch chart data once — use chartsRef so we always get the correct category's charts
-            if (displayFields.length > 0) {
-                chartsRef.current.forEach(chart => {
-                    const isNum = chart.chartType?.value === 'number';
-                    if (isNum ? (chart.yAxis && chart.aggregation) : (chart.xAxis && chart.yAxis && chart.aggregation)) {
-                        fetchChartDataFromBackend(chart.id, chart);
-                    }
-                });
-            }
-        } catch (err) {
-            console.error('Error fetching fields:', err);
-        } finally {
-            if (myId === fieldsFetchIdRef.current) setLoading(false);
+    const fetchFieldsForCategory = async (catId) => {
+        if (!catId || !acctId) return [];
+        if (categoryFieldsCache[catId]?.length > 0) return categoryFieldsCache[catId];
+        // Use a single shared promise key per acctId so concurrent calls share one request
+        const promiseKey = `__all__${acctId}`;
+        if (fieldsFetchPromisesRef.current[promiseKey]) {
+            const allResults = await fieldsFetchPromisesRef.current[promiseKey];
+            return allResults[catId] || [];
         }
+
+        const promise = (async () => {
+            try {
+                const response = await api.get('/api/ui/leads/fields', { params: { acctId } });
+                const excludeFields = ['__v', '_id'];
+                const raw = response.data;
+
+                // Cache ALL categories from the single response
+                const allResults = {};
+                if (Array.isArray(raw?.categories)) {
+                    raw.categories.forEach(cat => {
+                        if (cat.categoryId && Array.isArray(cat.fields)) {
+                            allResults[cat.categoryId] = cat.fields.filter(
+                                f => typeof f === 'string' && !excludeFields.includes(f)
+                            );
+                        }
+                    });
+                }
+
+                setCategoryFieldsCache(prev => ({ ...prev, ...allResults }));
+                return allResults;
+            } catch (err) {
+                console.error('Error fetching fields:', err);
+                return {};
+            } finally {
+                delete fieldsFetchPromisesRef.current[promiseKey];
+            }
+        })();
+
+        fieldsFetchPromisesRef.current[promiseKey] = promise;
+        const allResults = await promise;
+        return allResults[catId] || [];
     };
 
     // Get chart data from cache
@@ -1008,7 +1083,7 @@ const AnalyticsDashboardPage = () => {
         );
 
         if (!chartConfig.chartType) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">Select chart type to begin</div>;
-        if (chartConfig.chartType?.value !== 'number' && !chartConfig.xAxis) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">{chartConfig.chartType?.value === 'pie' ? 'Select Category' : 'Select X axis'}</div>;
+        if (chartConfig.chartType?.value !== 'number' && !chartConfig.xAxis) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">{chartConfig.chartType?.value === 'pie' ? 'Select Group By' : 'Select X axis'}</div>;
         if (!chartConfig.yAxis) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">{chartConfig.chartType?.value === 'pie' ? 'Select Value' : chartConfig.chartType?.value === 'number' ? 'Select Value' : 'Select Y axis'}</div>;
         if (!chartConfig.aggregation) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">Select aggregation type</div>;
         if (!chartData.length) return <div className="flex items-center justify-center h-full text-gray-500 text-sm">No data available</div>;
@@ -1039,6 +1114,13 @@ const AnalyticsDashboardPage = () => {
 
     // Render single chart card
     const renderChartCard = (chartConfig) => {
+        const catIdForFields = chartConfig.chartCategory?._id || chartConfig.chartCategory;
+        const chartFields = catIdForFields ? (categoryFieldsCache[catIdForFields] || []) : [];
+        const columns = chartFields.map(field => ({
+            value: field,
+            label: formatFieldName(field)
+        }));
+
         const toISO = (d) => {
             const y = d.getFullYear();
             const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -1216,385 +1298,10 @@ const AnalyticsDashboardPage = () => {
                     onMouseUp={() => { setTimeout(() => { delete filterLockedRef.current[chartConfig.id]; }, 200); }}
                 >
 
-                    {/* ── Action buttons bar ── */}
-                    <div className="flex items-center justify-end px-5 pt-3 pb-1 gap-1.5">
-
-                        {/* Width toggle: Half / Full */}
-                        <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                            <button
-                                onClick={() => updateChartConfigBatch(chartConfig.id, { chartWidth: 'half', chartWidthPx: null })}
-                                title="Half width"
-                                className={`px-2 py-1 transition-all ${(chartConfig.chartWidth || 'half') === 'half' && !chartConfig.chartWidthPx
-                                    ? 'bg-gray-900 text-white'
-                                    : 'bg-white text-gray-500 hover:bg-gray-100'
-                                    }`}
-                            >
-                                ½
-                            </button>
-                            <button
-                                onClick={() => updateChartConfigBatch(chartConfig.id, { chartWidth: 'full', chartWidthPx: null })}
-                                title="Full width"
-                                className={`px-2 py-1 transition-all ${chartConfig.chartWidth === 'full' && !chartConfig.chartWidthPx
-                                    ? 'bg-gray-900 text-white'
-                                    : 'bg-white text-gray-500 hover:bg-gray-100'
-                                    }`}
-                            >
-                                ▬
-                            </button>
-                        </div>
-
-                        {/* Height stepper */}
-                        <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-                            <button
-                                onClick={() => updateChartConfig(chartConfig.id, 'chartHeight', Math.max(180, (chartConfig.chartHeight || 320) - 40))}
-                                title="Decrease height"
-                                className="px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 font-bold text-sm transition-all"
-                            >−</button>
-                            <span className="px-1.5 text-[10px] font-semibold text-gray-600 min-w-[44px] text-center border-x border-gray-200">
-                                {chartConfig.chartHeight || 320}px
-                            </span>
-                            <button
-                                onClick={() => updateChartConfig(chartConfig.id, 'chartHeight', Math.min(800, (chartConfig.chartHeight || 320) + 40))}
-                                title="Increase height"
-                                className="px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 font-bold text-sm transition-all"
-                            >+</button>
-                        </div>
-                    </div>
-
-                    {/* ── Date filter row (can wrap freely) ── */}
-                    <div className="flex items-center gap-2 mb-4 flex-wrap px-5">
-                        <span className="text-xs font-semibold text-gray-700 shrink-0">Filter:</span>
-                        {/* Today */}
-                        <button
-                            onClick={() => {
-                                if (isToday) {
-                                    updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '' });
-                                } else {
-                                    updateChartConfigBatch(chartConfig.id, { dateFilterFrom: todayStr, dateFilterTo: todayStr, _showCustom: false, _showLastN: false });
-                                }
-                            }}
-                            className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${isToday ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
-                        >
-                            Today
-                        </button>
-
-                        {/* Yesterday */}
-                        <button
-                            onClick={() => {
-                                if (isYesterday) {
-                                    updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '' });
-                                } else {
-                                    updateChartConfigBatch(chartConfig.id, { dateFilterFrom: yesterdayStr, dateFilterTo: yesterdayStr, _showCustom: false, _showLastN: false });
-                                }
-                            }}
-                            className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${isYesterday ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
-                        >
-                            Yesterday
-                        </button>
-
-                        {/* Last N Days button + inline number input */}
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={() => {
-                                    if (isLastN) {
-                                        updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '', _showLastN: false });
-                                    } else {
-                                        updateChartConfigBatch(chartConfig.id, { _showLastN: true, _showCustom: false });
-                                        applyLastN(lastNDays);
-                                    }
-                                }}
-                                className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${isLastN ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
-                            >
-                                Last
-                            </button>
-                            {chartConfig._showLastN && (
-                                <>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        max="365"
-                                        value={lastNDays}
-                                        onChange={(e) => {
-                                            const n = Math.max(1, parseInt(e.target.value) || 1);
-                                            updateChartConfig(chartConfig.id, '_lastNDays', n);
-                                            applyLastN(n);
-                                        }}
-                                        className="w-12 px-1.5 py-0.5 text-[11px] text-center border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
-                                    />
-                                    <span className="text-[11px] text-gray-500">days</span>
-                                </>
-                            )}
-                        </div>
-
-                        {/* Custom date range button */}
-                        <button
-                            onClick={() => {
-                                updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '', _showLastN: false, _showCustom: !chartConfig._showCustom });
-                            }}
-                            className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${showCustomInputs ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
-                        >
-                            Custom
-                        </button>
-
-                        {/* From/To inputs — only shown in custom mode */}
-                        {showCustomInputs && (
-                            <>
-                                <div className="flex items-center gap-1 shrink-0">
-                                    <span className="text-[11px] text-gray-500">From:</span>
-                                    <input
-                                        type="date"
-                                        value={chartConfig.dateFilterFrom}
-                                        onChange={(e) => updateChartConfig(chartConfig.id, 'dateFilterFrom', e.target.value)}
-                                        className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
-                                    />
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                    <span className="text-[11px] text-gray-500">To:</span>
-                                    <input
-                                        type="date"
-                                        value={chartConfig.dateFilterTo}
-                                        onChange={(e) => updateChartConfig(chartConfig.id, 'dateFilterTo', e.target.value)}
-                                        className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
-                                    />
-                                </div>
-                            </>
-                        )}
-
-                        {/* Clear × — shown when any filter is active */}
-                        {(isToday || isYesterday || isLastN || chartConfig.dateFilterFrom || chartConfig.dateFilterTo) && (
-                            <button
-                                onClick={() => {
-                                    updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '', _showCustom: false, _showLastN: false });
-                                }}
-                                className="text-gray-400 hover:text-gray-700 transition-colors text-base leading-none px-1"
-                                title="Clear date filters"
-                            >
-                                ×
-                            </button>
-                        )}
-                    </div>
-
-                    {/* Color picker — for line, heatmap, number charts */}
-                    {['line', 'heatmap', 'number'].includes(chartConfig.chartType?.value) && (
-                        <div className="flex items-center gap-2 mb-3 px-5">
-                            <span className="text-xs font-semibold text-gray-700 shrink-0">Color:</span>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                                {COLOR_OPTIONS.map(c => (
-                                    <button
-                                        key={c}
-                                        title={c}
-                                        onClick={() => updateChartConfig(chartConfig.id, 'chartColor', c)}
-                                        className="w-5 h-5 rounded-full transition-transform hover:scale-110 focus:outline-none"
-                                        style={{
-                                            backgroundColor: c,
-                                            boxShadow: (chartConfig.chartColor || DEFAULT_CHART_COLOR) === c
-                                                ? `0 0 0 2px white, 0 0 0 4px ${c}`
-                                                : 'none'
-                                        }}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Auto-refresh interval control */}
-                    <div className="flex items-center gap-2 mb-3 px-5">
-                        <span className="text-xs font-semibold text-gray-700 shrink-0">Auto Refresh:</span>
-                        <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                            <button
-                                onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', null)}
-                                className={`px-2 py-1 transition-all ${!chartConfig.autoRefreshMins
-                                    ? 'bg-gray-900 text-white'
-                                    : 'bg-white text-gray-500 hover:bg-gray-100'
-                                    }`}
-                            >
-                                Off
-                            </button>
-                            {[
-                                { v: 10 / 60, label: '10s' },
-                                { v: 0.5, label: '30s' },
-                                { v: 1, label: '1m' },
-                                { v: 2, label: '2m' },
-                                { v: 3, label: '3m' },
-                                { v: 5, label: '5m' },
-                                { v: 10, label: '10m' },
-                                { v: 15, label: '15m' },
-                                { v: 30, label: '30m' },
-                                { v: 60, label: '1h' },
-                            ].map(({ v, label }) => (
-                                <button
-                                    key={label}
-                                    onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', v)}
-                                    className={`px-2 py-1 transition-all ${chartConfig.autoRefreshMins === v
-                                        ? 'bg-gray-900 text-white'
-                                        : 'bg-white text-gray-500 hover:bg-gray-100'
-                                        }`}
-                                >
-                                    {label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    {/* Chart Mode toggle — Simple / Grouped / Stacked */}
-                    {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (
-                        <div className="flex items-center gap-2 mb-3 px-5">
-                            <span className="text-xs font-semibold text-gray-700 shrink-0">Mode:</span>
-                            <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                {[
-                                    { v: null, label: 'Simple' },
-                                    { v: 'grouped', label: 'Grouped' },
-                                    { v: 'stacked', label: 'Stacked' }
-                                ].map(({ v, label }) => (
-                                    <button
-                                        key={label}
-                                        onClick={() => updateChartConfig(chartConfig.id, 'chartMode', v)}
-                                        className={`px-2.5 py-1 transition-all ${chartConfig.chartMode === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}
-                                    >
-                                        {label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                    {/* Bar orientation toggle — bar only */}
-                    {chartConfig.chartType?.value === 'bar' && (
-                        <div className="flex items-center gap-2 mb-3 px-5">
-                            <span className="text-xs font-semibold text-gray-700">Orientation:</span>
-                            <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                <button
-                                    onClick={() => updateChartConfig(chartConfig.id, 'barOrientation', 'vertical')}
-                                    title="Vertical bars"
-                                    className={`flex items-center gap-1 px-2.5 py-1 transition-all ${(chartConfig.barOrientation || 'vertical') === 'vertical'
-                                        ? 'bg-gray-900 text-white'
-                                        : 'bg-white text-gray-500 hover:bg-gray-100'
-                                        }`}
-                                >
-                                    <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-                                        <rect x="1" y="4" width="2.5" height="7" rx="0.5" />
-                                        <rect x="4.75" y="2" width="2.5" height="9" rx="0.5" />
-                                        <rect x="8.5" y="5.5" width="2.5" height="5.5" rx="0.5" />
-                                    </svg>
-                                    Vertical
-                                </button>
-                                <button
-                                    onClick={() => updateChartConfig(chartConfig.id, 'barOrientation', 'horizontal')}
-                                    title="Horizontal bars"
-                                    className={`flex items-center gap-1 px-2.5 py-1 transition-all ${chartConfig.barOrientation === 'horizontal'
-                                        ? 'bg-gray-900 text-white'
-                                        : 'bg-white text-gray-500 hover:bg-gray-100'
-                                        }`}
-                                >
-                                    <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-                                        <rect x="0" y="1" width="7" height="2.5" rx="0.5" />
-                                        <rect x="0" y="4.75" width="9" height="2.5" rx="0.5" />
-                                        <rect x="0" y="8.5" width="5.5" height="2.5" rx="0.5" />
-                                    </svg>
-                                    Horizontal
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                    {/* Chart Controls */}
-                    <div className={`grid gap-3 mb-4 px-5 ${chartConfig.chartType?.value === 'number' ? 'grid-cols-3' :
-                        ((chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked')) ? 'grid-cols-5' :
-                            'grid-cols-4'
-                        }`}>
-                        <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
-                            <Combobox
-                                value={chartConfig.chartType}
-                                onChange={(val) => updateChartConfig(chartConfig.id, 'chartType', val)}
-                                displayValue={(option) => option?.label || 'Select...'}
-                                options={chartTypes}
-                                dropdownClassName="z-50"
-                            >
-                                {(option) => (
-                                    <ComboboxOption key={`chart-type-${chartConfig.id}-${option.value}`} value={option}>
-                                        <ComboboxLabel>{option.label}</ComboboxLabel>
-                                    </ComboboxOption>
-                                )}
-                            </Combobox>
-                        </div>
-                        {chartConfig.chartType?.value !== 'number' && (
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                    {chartConfig.chartType?.value === 'pie' ? 'Category' : 'X Axis'}
-                                </label>
-                                <Combobox
-                                    value={chartConfig.xAxis}
-                                    onChange={(val) => updateChartConfig(chartConfig.id, 'xAxis', val)}
-                                    displayValue={(option) => option?.label || 'Select...'}
-                                    options={columns}
-                                    dropdownClassName="z-50"
-                                >
-                                    {(option) => (
-                                        <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                            <ComboboxLabel>{option.label}</ComboboxLabel>
-                                        </ComboboxOption>
-                                    )}
-                                </Combobox>
-                            </div>
-                        )}
-                        <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                {chartConfig.chartType?.value === 'pie' ? 'Value' : chartConfig.chartType?.value === 'number' ? 'Value' : 'Y Axis'}
-                            </label>
-                            <Combobox
-                                value={chartConfig.yAxis}
-                                onChange={(val) => updateChartConfig(chartConfig.id, 'yAxis', val)}
-                                displayValue={(option) => option?.label || 'Select...'}
-                                options={columns}
-                                dropdownClassName="z-50"
-                            >
-                                {(option) => (
-                                    <ComboboxOption key={`y-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                        <ComboboxLabel>{option.label}</ComboboxLabel>
-                                    </ComboboxOption>
-                                )}
-                            </Combobox>
-                        </div>
-                        {/* Z Axis — for Grouped / Stacked modes */}
-                        {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && (
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                    Group By
-                                </label>
-                                <Combobox
-                                    value={chartConfig.zAxis}
-                                    onChange={(val) => updateChartConfig(chartConfig.id, 'zAxis', val)}
-                                    displayValue={(option) => option?.label || 'None'}
-                                    options={columns}
-                                    dropdownClassName="z-50"
-                                >
-                                    {(option) => (
-                                        <ComboboxOption key={`z-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                            <ComboboxLabel>{option.label}</ComboboxLabel>
-                                        </ComboboxOption>
-                                    )}
-                                </Combobox>
-                            </div>
-                        )}
-                        <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Aggregation</label>
-                            <Combobox
-                                value={chartConfig.aggregation}
-                                onChange={(val) => updateChartConfig(chartConfig.id, 'aggregation', val)}
-                                displayValue={(option) => option?.label || 'Select...'}
-                                options={aggregationTypes}
-                                dropdownClassName="z-50"
-                            >
-                                {(option) => (
-                                    <ComboboxOption key={`agg-${chartConfig.id}-${option.value}`} value={option}>
-                                        <ComboboxLabel>{option.label}</ComboboxLabel>
-                                    </ComboboxOption>
-                                )}
-                            </Combobox>
-                        </div>
-                    </div>
-                    {/* Per-chart Category filter */}
+                    {/* ── Account Category — always shown first ── */}
                     {categories.length > 0 && (
-                        <div className="flex items-center gap-2 mb-4 px-5">
-                            <span className="text-xs font-semibold text-gray-700 shrink-0">Data Category:</span>
+                        <div className="flex items-center gap-2 px-5 pt-3 pb-3 border-b border-gray-100">
+                            <span className="text-xs font-semibold text-gray-700 shrink-0">Account Category:</span>
                             <div className="w-48">
                                 <Combobox
                                     value={
@@ -1604,10 +1311,13 @@ const AnalyticsDashboardPage = () => {
                                                 : categories.find(c => c._id === chartConfig.chartCategory) || null)
                                             : null
                                     }
-                                    onChange={(val) => updateChartConfig(chartConfig.id, 'chartCategory', val || null)}
+                                    onChange={(val) => {
+                                        // updateChartConfig handles reset + field fetch when chartCategory changes
+                                        updateChartConfig(chartConfig.id, 'chartCategory', val || null);
+                                    }}
                                     displayValue={(option) => option?.categoryName || ''}
                                     options={categories}
-                                    placeholder="All categories"
+                                    placeholder="Select category..."
                                     dropdownClassName="z-50"
                                 >
                                     {(option) => (
@@ -1628,8 +1338,404 @@ const AnalyticsDashboardPage = () => {
                             )}
                         </div>
                     )}
-                    {/* end filter controls */}
-                    <div className="pb-4"></div>
+
+                    {/* ── Rest of controls — only shown when category is selected (or no categories exist) ── */}
+                    {(categories.length === 0 || chartConfig.chartCategory) && (
+                        <>
+                            {/* ── Action buttons bar ── */}
+                            <div className="flex items-center justify-end px-5 pt-3 pb-1 gap-1.5">
+
+                                {/* Width toggle: Half / Full */}
+                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                    <button
+                                        onClick={() => updateChartConfigBatch(chartConfig.id, { chartWidth: 'half', chartWidthPx: null })}
+                                        title="Half width"
+                                        className={`px-2 py-1 transition-all ${(chartConfig.chartWidth || 'half') === 'half' && !chartConfig.chartWidthPx
+                                            ? 'bg-gray-900 text-white'
+                                            : 'bg-white text-gray-500 hover:bg-gray-100'
+                                            }`}
+                                    >
+                                        ½
+                                    </button>
+                                    <button
+                                        onClick={() => updateChartConfigBatch(chartConfig.id, { chartWidth: 'full', chartWidthPx: null })}
+                                        title="Full width"
+                                        className={`px-2 py-1 transition-all ${chartConfig.chartWidth === 'full' && !chartConfig.chartWidthPx
+                                            ? 'bg-gray-900 text-white'
+                                            : 'bg-white text-gray-500 hover:bg-gray-100'
+                                            }`}
+                                    >
+                                        ▬
+                                    </button>
+                                </div>
+
+                                {/* Height stepper */}
+                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                                    <button
+                                        onClick={() => updateChartConfig(chartConfig.id, 'chartHeight', Math.max(180, (chartConfig.chartHeight || 320) - 40))}
+                                        title="Decrease height"
+                                        className="px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 font-bold text-sm transition-all"
+                                    >−</button>
+                                    <span className="px-1.5 text-[10px] font-semibold text-gray-600 min-w-[44px] text-center border-x border-gray-200">
+                                        {chartConfig.chartHeight || 320}px
+                                    </span>
+                                    <button
+                                        onClick={() => updateChartConfig(chartConfig.id, 'chartHeight', Math.min(800, (chartConfig.chartHeight || 320) + 40))}
+                                        title="Increase height"
+                                        className="px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 font-bold text-sm transition-all"
+                                    >+</button>
+                                </div>
+                            </div>
+
+                            {/* ── Date filter row (can wrap freely) ── */}
+                            <div className="flex items-center gap-2 mb-4 flex-wrap px-5">
+                                <span className="text-xs font-semibold text-gray-700 shrink-0">Filter:</span>
+                                {/* Today */}
+                                <button
+                                    onClick={() => {
+                                        if (isToday) {
+                                            updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '' });
+                                        } else {
+                                            updateChartConfigBatch(chartConfig.id, { dateFilterFrom: todayStr, dateFilterTo: todayStr, _showCustom: false, _showLastN: false });
+                                        }
+                                    }}
+                                    className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${isToday ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
+                                >
+                                    Today
+                                </button>
+
+                                {/* Yesterday */}
+                                <button
+                                    onClick={() => {
+                                        if (isYesterday) {
+                                            updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '' });
+                                        } else {
+                                            updateChartConfigBatch(chartConfig.id, { dateFilterFrom: yesterdayStr, dateFilterTo: yesterdayStr, _showCustom: false, _showLastN: false });
+                                        }
+                                    }}
+                                    className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${isYesterday ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
+                                >
+                                    Yesterday
+                                </button>
+
+                                {/* Last N Days button + inline number input */}
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={() => {
+                                            if (isLastN) {
+                                                updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '', _showLastN: false });
+                                            } else {
+                                                updateChartConfigBatch(chartConfig.id, { _showLastN: true, _showCustom: false });
+                                                applyLastN(lastNDays);
+                                            }
+                                        }}
+                                        className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${isLastN ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
+                                    >
+                                        Last
+                                    </button>
+                                    {chartConfig._showLastN && (
+                                        <>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="365"
+                                                value={lastNDays}
+                                                onChange={(e) => {
+                                                    const n = Math.max(1, parseInt(e.target.value) || 1);
+                                                    updateChartConfig(chartConfig.id, '_lastNDays', n);
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') applyLastN(lastNDays);
+                                                }}
+                                                className="w-12 px-1.5 py-0.5 text-[11px] text-center border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                            />
+                                            <span className="text-[11px] text-gray-500">days</span>
+                                            <button
+                                                onClick={() => applyLastN(lastNDays)}
+                                                className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800 underline underline-offset-2 transition-colors"
+                                            >
+                                                Apply
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+
+                                {/* Custom date range button */}
+                                <button
+                                    onClick={() => {
+                                        updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '', _showLastN: false, _showCustom: !chartConfig._showCustom });
+                                    }}
+                                    className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${showCustomInputs ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
+                                >
+                                    Custom
+                                </button>
+
+                                {/* From/To inputs — only shown in custom mode */}
+                                {showCustomInputs && (
+                                    <>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <span className="text-[11px] text-gray-500">From:</span>
+                                            <input
+                                                type="date"
+                                                value={chartConfig.dateFilterFrom}
+                                                onChange={(e) => updateChartConfig(chartConfig.id, 'dateFilterFrom', e.target.value)}
+                                                className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <span className="text-[11px] text-gray-500">To:</span>
+                                            <input
+                                                type="date"
+                                                value={chartConfig.dateFilterTo}
+                                                onChange={(e) => updateChartConfig(chartConfig.id, 'dateFilterTo', e.target.value)}
+                                                className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                            />
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Clear × — shown when any filter is active */}
+                                {(isToday || isYesterday || isLastN || chartConfig.dateFilterFrom || chartConfig.dateFilterTo) && (
+                                    <button
+                                        onClick={() => {
+                                            updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '', _showCustom: false, _showLastN: false });
+                                        }}
+                                        className="text-gray-400 hover:text-gray-700 transition-colors text-base leading-none px-1"
+                                        title="Clear date filters"
+                                    >
+                                        ×
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Color picker — for line, heatmap, number charts */}
+                            {['line', 'heatmap', 'number'].includes(chartConfig.chartType?.value) && (
+                                <div className="flex items-center gap-2 mb-3 px-5">
+                                    <span className="text-xs font-semibold text-gray-700 shrink-0">Color:</span>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        {COLOR_OPTIONS.map(c => (
+                                            <button
+                                                key={c}
+                                                title={c}
+                                                onClick={() => updateChartConfig(chartConfig.id, 'chartColor', c)}
+                                                className="w-5 h-5 rounded-full transition-transform hover:scale-110 focus:outline-none"
+                                                style={{
+                                                    backgroundColor: c,
+                                                    boxShadow: (chartConfig.chartColor || DEFAULT_CHART_COLOR) === c
+                                                        ? `0 0 0 2px white, 0 0 0 4px ${c}`
+                                                        : 'none'
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Auto-refresh interval control */}
+                            <div className="flex items-center gap-2 mb-3 px-5">
+                                <span className="text-xs font-semibold text-gray-700 shrink-0">Auto Refresh:</span>
+                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                    <button
+                                        onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', null)}
+                                        className={`px-2 py-1 transition-all ${!chartConfig.autoRefreshMins
+                                            ? 'bg-gray-900 text-white'
+                                            : 'bg-white text-gray-500 hover:bg-gray-100'
+                                            }`}
+                                    >
+                                        Off
+                                    </button>
+                                    {[
+                                        { v: 10 / 60, label: '10s' },
+                                        { v: 0.5, label: '30s' },
+                                        { v: 1, label: '1m' },
+                                        { v: 2, label: '2m' },
+                                        { v: 3, label: '3m' },
+                                        { v: 5, label: '5m' },
+                                        { v: 10, label: '10m' },
+                                        { v: 15, label: '15m' },
+                                        { v: 30, label: '30m' },
+                                        { v: 60, label: '1h' },
+                                    ].map(({ v, label }) => (
+                                        <button
+                                            key={label}
+                                            onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', v)}
+                                            className={`px-2 py-1 transition-all ${chartConfig.autoRefreshMins === v
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-500 hover:bg-gray-100'
+                                                }`}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            {/* Chart Mode toggle — Simple / Grouped / Stacked */}
+                            {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (
+                                <div className="flex items-center gap-2 mb-3 px-5">
+                                    <span className="text-xs font-semibold text-gray-700 shrink-0">Mode:</span>
+                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                        {[
+                                            { v: null, label: 'Simple' },
+                                            { v: 'grouped', label: 'Grouped' },
+                                            { v: 'stacked', label: 'Stacked' }
+                                        ].map(({ v, label }) => (
+                                            <button
+                                                key={label}
+                                                onClick={() => updateChartConfig(chartConfig.id, 'chartMode', v)}
+                                                className={`px-2.5 py-1 transition-all ${chartConfig.chartMode === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {/* Bar orientation toggle — bar only */}
+                            {chartConfig.chartType?.value === 'bar' && (
+                                <div className="flex items-center gap-2 mb-3 px-5">
+                                    <span className="text-xs font-semibold text-gray-700">Orientation:</span>
+                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                        <button
+                                            onClick={() => updateChartConfig(chartConfig.id, 'barOrientation', 'vertical')}
+                                            title="Vertical bars"
+                                            className={`flex items-center gap-1 px-2.5 py-1 transition-all ${(chartConfig.barOrientation || 'vertical') === 'vertical'
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-500 hover:bg-gray-100'
+                                                }`}
+                                        >
+                                            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                                                <rect x="1" y="4" width="2.5" height="7" rx="0.5" />
+                                                <rect x="4.75" y="2" width="2.5" height="9" rx="0.5" />
+                                                <rect x="8.5" y="5.5" width="2.5" height="5.5" rx="0.5" />
+                                            </svg>
+                                            Vertical
+                                        </button>
+                                        <button
+                                            onClick={() => updateChartConfig(chartConfig.id, 'barOrientation', 'horizontal')}
+                                            title="Horizontal bars"
+                                            className={`flex items-center gap-1 px-2.5 py-1 transition-all ${chartConfig.barOrientation === 'horizontal'
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-500 hover:bg-gray-100'
+                                                }`}
+                                        >
+                                            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                                                <rect x="0" y="1" width="7" height="2.5" rx="0.5" />
+                                                <rect x="0" y="4.75" width="9" height="2.5" rx="0.5" />
+                                                <rect x="0" y="8.5" width="5.5" height="2.5" rx="0.5" />
+                                            </svg>
+                                            Horizontal
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            {/* Chart Controls */}
+                            <div className={`grid gap-3 mb-4 px-5 ${chartConfig.chartType?.value === 'number' ? 'grid-cols-3' :
+                                ((chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked')) ? 'grid-cols-5' :
+                                    'grid-cols-4'
+                                }`}>
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
+                                    <Combobox
+                                        value={chartConfig.chartType}
+                                        onChange={(val) => updateChartConfig(chartConfig.id, 'chartType', val)}
+                                        displayValue={(option) => option?.label || 'Select...'}
+                                        options={chartTypes}
+                                        dropdownClassName="z-50"
+                                    >
+                                        {(option) => (
+                                            <ComboboxOption key={`chart-type-${chartConfig.id}-${option.value}`} value={option}>
+                                                <ComboboxLabel>{option.label}</ComboboxLabel>
+                                            </ComboboxOption>
+                                        )}
+                                    </Combobox>
+                                </div>
+                                {chartConfig.chartType?.value !== 'number' && (
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                            {chartConfig.chartType?.value === 'pie' ? 'Group By' : 'X Axis'}
+                                        </label>
+                                        <Combobox
+                                            value={chartConfig.xAxis}
+                                            onChange={(val) => updateChartConfig(chartConfig.id, 'xAxis', val)}
+                                            displayValue={(option) => option?.label || 'Select...'}
+                                            options={columns}
+                                            dropdownClassName="z-50"
+                                        >
+                                            {(option) => (
+                                                <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                </ComboboxOption>
+                                            )}
+                                        </Combobox>
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                        {chartConfig.chartType?.value === 'pie' ? 'Value' : chartConfig.chartType?.value === 'number' ? 'Value' : 'Y Axis'}
+                                    </label>
+                                    <Combobox
+                                        value={chartConfig.yAxis}
+                                        onChange={(val) => updateChartConfig(chartConfig.id, 'yAxis', val)}
+                                        displayValue={(option) => option?.label || 'Select...'}
+                                        options={columns}
+                                        dropdownClassName="z-50"
+                                    >
+                                        {(option) => (
+                                            <ComboboxOption key={`y-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                                <ComboboxLabel>{option.label}</ComboboxLabel>
+                                            </ComboboxOption>
+                                        )}
+                                    </Combobox>
+                                </div>
+                                {/* Z Axis — for Grouped / Stacked modes */}
+                                {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && (
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                            Group By
+                                        </label>
+                                        <Combobox
+                                            value={chartConfig.zAxis}
+                                            onChange={(val) => updateChartConfig(chartConfig.id, 'zAxis', val)}
+                                            displayValue={(option) => option?.label || 'None'}
+                                            options={columns}
+                                            dropdownClassName="z-50"
+                                        >
+                                            {(option) => (
+                                                <ComboboxOption key={`z-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                </ComboboxOption>
+                                            )}
+                                        </Combobox>
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Aggregation</label>
+                                    <Combobox
+                                        value={chartConfig.aggregation}
+                                        onChange={(val) => updateChartConfig(chartConfig.id, 'aggregation', val)}
+                                        displayValue={(option) => option?.label || 'Select...'}
+                                        options={chartConfig.chartType?.value === 'number' ? aggregationTypesNumber : aggregationTypes}
+                                        dropdownClassName="z-50"
+                                    >
+                                        {(option) => (
+                                            <ComboboxOption key={`agg-${chartConfig.id}-${option.value}`} value={option}>
+                                                <ComboboxLabel>{option.label}</ComboboxLabel>
+                                            </ComboboxOption>
+                                        )}
+                                    </Combobox>
+                                </div>
+                            </div>
+                            {/* end filter controls */}
+                            <div className="pb-4"></div>
+                        </>
+                    )}
+
+                    {/* ── Hint when category not yet selected ── */}
+                    {categories.length > 0 && !chartConfig.chartCategory && (
+                        <div className="px-5 pb-4 pt-1">
+                            <p className="text-[11px] text-gray-400 italic">Select an account category above to configure this chart.</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Chart Display — fills remaining space */}
@@ -1680,8 +1786,8 @@ const AnalyticsDashboardPage = () => {
         );
     };
 
-    // Block the entire page until accounts + categories + initial fields are resolved
-    if (!accountsLoaded || !categoriesChecked) {
+    // Block the entire page until accounts are resolved
+    if (!accountsLoaded) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="flex flex-col items-center space-y-4 p-8 bg-white rounded-2xl shadow-2xl border border-gray-200">
