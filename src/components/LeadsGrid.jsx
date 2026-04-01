@@ -239,7 +239,7 @@ const LeadsGrid = () => {
             // Extract field names from the first lead object
             if ((response.data.data || []).length > 0) {
                 const firstLead = response.data.data[0];
-                const excludeFields = ['__v', 'updatedAt', '_id', 'acctId', 'categoryId'];
+                const excludeFields = ['__v', '_id', 'acctId', 'categoryId'];
                 const rawFields = Object.keys(firstLead).filter(field => !excludeFields.includes(field));
                 const displayFields = rawFields.includes('adminId')
                     ? ['adminId', ...rawFields.filter(f => f !== 'adminId')]
@@ -350,7 +350,7 @@ const LeadsGrid = () => {
             }
 
             // Build rows: exclude internal fields, resolve adminId -> name
-            const excludeFields = ['__v', 'updatedAt', '_id'];
+            const excludeFields = ['__v', '_id'];
             const exportFields = fields.length > 0
                 ? fields
                 : Object.keys(allLeads[0]).filter(f => !excludeFields.includes(f));

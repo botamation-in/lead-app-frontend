@@ -670,17 +670,14 @@ const AnalyticsDashboardPage = () => {
         const promise = (async () => {
             try {
                 const response = await api.get('/api/ui/leads/fields', { params: { acctId } });
-                const excludeFields = ['__v', '_id'];
                 const raw = response.data;
 
-                // Cache ALL categories from the single response
+                // Cache ALL categories' raw fields (no filtering here — filter at read time)
                 const allResults = {};
                 if (Array.isArray(raw?.categories)) {
                     raw.categories.forEach(cat => {
                         if (cat.categoryId && Array.isArray(cat.fields)) {
-                            allResults[cat.categoryId] = cat.fields.filter(
-                                f => typeof f === 'string' && !excludeFields.includes(f)
-                            );
+                            allResults[cat.categoryId] = cat.fields.filter(f => typeof f === 'string');
                         }
                     });
                 }
@@ -1117,7 +1114,10 @@ const AnalyticsDashboardPage = () => {
     // Render single chart card
     const renderChartCard = (chartConfig) => {
         const catIdForFields = chartConfig.chartCategory?._id || chartConfig.chartCategory;
-        const chartFields = catIdForFields ? (categoryFieldsCache[catIdForFields] || []) : [];
+        const excludeAxisFields = ['__v', '_id'];
+        const chartFields = catIdForFields
+            ? (categoryFieldsCache[catIdForFields] || []).filter(f => !excludeAxisFields.includes(f))
+            : [];
         const columns = chartFields.map(field => ({
             value: field,
             label: formatFieldName(field)
