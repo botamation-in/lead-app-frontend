@@ -105,6 +105,11 @@ const AnalyticsDashboardPage = () => {
         { value: 'avg', label: 'Average' }
     ];
 
+    const getTodayISO = () => {
+        const d = new Date(); d.setHours(0, 0, 0, 0);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
     // Default chart configuration
     const defaultChartConfig = {
         chartType: null,
@@ -113,8 +118,9 @@ const AnalyticsDashboardPage = () => {
         zAxis: null,
         aggregation: null,
         chartMode: null,
-        dateFilterFrom: '',
-        dateFilterTo: '',
+        dateFilterFrom: getTodayISO(),
+        dateFilterTo: getTodayISO(),
+        _datePreset: 'today',
         chartWidth: 'half',
         chartHeight: 320,
         chartWidthPx: null,
@@ -197,6 +203,7 @@ const AnalyticsDashboardPage = () => {
                 aggregation: chart.aggregation,
                 dateFilterFrom: chart.dateFilterFrom,
                 dateFilterTo: chart.dateFilterTo,
+                _datePreset: chart._datePreset || 'today',
                 _lastNDays: chart._lastNDays,
                 _showLastN: chart._showLastN,
                 _showCustom: chart._showCustom,
@@ -223,11 +230,6 @@ const AnalyticsDashboardPage = () => {
         }
     };
 
-    const getTodayISO = () => {
-        const d = new Date(); d.setHours(0, 0, 0, 0);
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    };
-
     const normalizeChart = (entry) => {
         const todayISO = getTodayISO();
         return {
@@ -236,6 +238,7 @@ const AnalyticsDashboardPage = () => {
             id: entry.id,
             dateFilterFrom: entry.dateFilterFrom || todayISO,
             dateFilterTo: entry.dateFilterTo || todayISO,
+            _datePreset: entry._datePreset || 'today',
         };
     };
 
@@ -245,6 +248,7 @@ const AnalyticsDashboardPage = () => {
         const saved = loadCharts(initAcctId);
         return saved.map(entry => normalizeChart(entry));
     });
+    const [chartRequestSignatures, setChartRequestSignatures] = useState({});
     const [nextChartId, setNextChartId] = useState(() => {
         const initAcctId = getAcctIdFromLocalStorage();
         const saved = loadCharts(initAcctId);
@@ -365,6 +369,7 @@ const AnalyticsDashboardPage = () => {
 
     // Reset all data-related fields when category changes
     const resetChartDataFields = (chartId) => {
+        const todayISO = getTodayISO();
         setCharts(prev => prev.map(chart => {
             if (chart.id === chartId) {
                 return {
@@ -375,8 +380,9 @@ const AnalyticsDashboardPage = () => {
                     zAxis: null,
                     aggregation: null,
                     chartMode: null,
-                    dateFilterFrom: '',
-                    dateFilterTo: '',
+                    dateFilterFrom: todayISO,
+                    dateFilterTo: todayISO,
+                    _datePreset: 'today',
                     _showCustom: false,
                     _showLastN: false,
                     _lastNDays: 2,
@@ -389,6 +395,45 @@ const AnalyticsDashboardPage = () => {
         }));
     };
 
+    const isChartConfigured = (chartConfig) => {
+        const isNumber = chartConfig.chartType?.value === 'number';
+        return isNumber
+            ? !!(chartConfig.yAxis && chartConfig.aggregation)
+            : !!(chartConfig.xAxis && chartConfig.yAxis && chartConfig.aggregation);
+    };
+
+    const getChartRequestPayload = (chartConfig) => {
+        if (!acctId || !isChartConfigured(chartConfig)) return null;
+
+        const isNumber = chartConfig.chartType?.value === 'number';
+        const payload = {
+            xAxis: isNumber ? chartConfig.yAxis.value : chartConfig.xAxis.value,
+            yAxis: chartConfig.yAxis.value,
+            aggregation: chartConfig.aggregation.value === 'average' ? 'avg' : chartConfig.aggregation.value,
+            acctId,
+            ...(chartConfig.chartCategory?._id || chartConfig.chartCategory
+                ? { categoryId: chartConfig.chartCategory?._id || chartConfig.chartCategory }
+                : {}),
+            ...((chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && chartConfig.zAxis
+                ? { zAxis: chartConfig.zAxis.value }
+                : {}),
+            ...(chartConfig.dateFilterFrom ? { dateFrom: chartConfig.dateFilterFrom } : {}),
+            ...(chartConfig.dateFilterTo ? { dateTo: chartConfig.dateFilterTo } : {})
+        };
+
+        return payload;
+    };
+
+    const getChartRequestSignature = (chartConfig) => {
+        const payload = getChartRequestPayload(chartConfig);
+        return payload ? JSON.stringify(payload) : null;
+    };
+
+    const isChartRequestDirty = (chartConfig) => {
+        const signature = getChartRequestSignature(chartConfig);
+        return !!signature && chartRequestSignatures[chartConfig.id] !== signature;
+    };
+
     // Update individual chart config
     const updateChartConfig = (chartId, field, value) => {
         setCharts(prev => prev.map(chart => {
@@ -396,6 +441,7 @@ const AnalyticsDashboardPage = () => {
                 let updatedChart = { ...chart, [field]: value };
                 // When category changes: reset axis/aggregation fields and fetch new category fields
                 if (field === 'chartCategory') {
+                    const todayISO = getTodayISO();
                     const catId = value?._id || value;
                     if (catId) fetchFieldsForCategory(catId);
                     // Reset dependent fields so X/Y axis options reflect the new category
@@ -407,8 +453,9 @@ const AnalyticsDashboardPage = () => {
                         zAxis: null,
                         aggregation: null,
                         chartMode: null,
-                        dateFilterFrom: '',
-                        dateFilterTo: '',
+                        dateFilterFrom: todayISO,
+                        dateFilterTo: todayISO,
+                        _datePreset: 'today',
                         _showCustom: false,
                         _showLastN: false,
                         _lastNDays: 2,
@@ -416,10 +463,6 @@ const AnalyticsDashboardPage = () => {
                         autoRefreshMins: null,
                         barOrientation: 'vertical',
                     };
-                }
-                // Fetch data when X, Y, Z, mode, aggregation, or date filters change
-                if (['xAxis', 'yAxis', 'zAxis', 'aggregation', 'chartMode', 'dateFilterFrom', 'dateFilterTo'].includes(field)) {
-                    fetchChartDataFromBackend(chartId, updatedChart);
                 }
                 return updatedChart;
             }
@@ -431,14 +474,7 @@ const AnalyticsDashboardPage = () => {
     const updateChartConfigBatch = (chartId, updates) => {
         setCharts(prev => prev.map(chart => {
             if (chart.id === chartId) {
-                const updatedChart = { ...chart, ...updates };
-                const hasDataTrigger = Object.keys(updates).some(f =>
-                    ['xAxis', 'yAxis', 'zAxis', 'aggregation', 'chartMode', 'dateFilterFrom', 'dateFilterTo'].includes(f)
-                );
-                if (hasDataTrigger) {
-                    fetchChartDataFromBackend(chartId, updatedChart);
-                }
-                return updatedChart;
+                return { ...chart, ...updates };
             }
             return chart;
         }));
@@ -446,12 +482,16 @@ const AnalyticsDashboardPage = () => {
 
     // Fetch chart data from backend API
     // silent=true skips the per-chart loading mask (used by auto-refresh)
-    const fetchChartDataFromBackend = async (chartId, chartConfig, silent = false) => {
+    const fetchChartDataFromBackend = async (chartId, chartConfig, silent = false, markClean = false) => {
         const isNumber = chartConfig.chartType?.value === 'number';
         if (isNumber ? (!chartConfig.yAxis || !chartConfig.aggregation) : (!chartConfig.xAxis || !chartConfig.yAxis || !chartConfig.aggregation)) {
             return;
         }
 
+        const requestSignature = getChartRequestSignature(chartConfig);
+        if (markClean && requestSignature) {
+            setChartRequestSignatures(prev => ({ ...prev, [chartId]: requestSignature }));
+        }
         if (!silent) setChartLoadingState(prev => ({ ...prev, [chartId]: true }));
         try {
             const xAxisValue = isNumber ? chartConfig.yAxis.value : chartConfig.xAxis.value;
@@ -490,12 +530,7 @@ const AnalyticsDashboardPage = () => {
 
     // Add new chart
     const addChart = () => {
-        const todayDate = new Date();
-        todayDate.setHours(0, 0, 0, 0);
-        const y = todayDate.getFullYear();
-        const m = String(todayDate.getMonth() + 1).padStart(2, '0');
-        const d = String(todayDate.getDate()).padStart(2, '0');
-        const todayISO = `${y}-${m}-${d}`;
+        const todayISO = getTodayISO();
         const newChart = {
             ...defaultChartConfig,
             id: nextChartId,
@@ -503,12 +538,18 @@ const AnalyticsDashboardPage = () => {
             dateFilterTo: todayISO
         };
         setCharts(prev => [...prev, newChart]);
+        setChartRequestSignatures(prev => ({ ...prev, [nextChartId]: getChartRequestSignature(newChart) }));
         setNextChartId(prev => prev + 1);
     };
 
     // Remove chart
     const removeChart = (chartId) => {
         setCharts(prev => prev.filter(chart => chart.id !== chartId));
+        setChartRequestSignatures(prev => {
+            const next = { ...prev };
+            delete next[chartId];
+            return next;
+        });
     };
 
     // Refresh all charts — re-fetches live data for every configured chart
@@ -609,6 +650,7 @@ const AnalyticsDashboardPage = () => {
         const restored = saved.map(entry => normalizeChart(entry));
         chartsRef.current = restored;
         setCharts(restored);
+        setChartRequestSignatures(Object.fromEntries(restored.map(chart => [chart.id, getChartRequestSignature(chart)])));
         setNextChartId(restored.length > 0 ? Math.max(...restored.map(c => c.id)) + 1 : 1);
         setChartDataCache({});
         setCategoryFieldsCache({});
@@ -1134,21 +1176,80 @@ const AnalyticsDashboardPage = () => {
         const yest = new Date(today); yest.setDate(yest.getDate() - 1);
         const yesterdayStr = toISO(yest);
 
-        // Determine active preset
-        const isToday = chartConfig.dateFilterFrom === todayStr && chartConfig.dateFilterTo === todayStr && todayStr !== '';
-        const isYesterday = chartConfig.dateFilterFrom === yesterdayStr && chartConfig.dateFilterTo === yesterdayStr && yesterdayStr !== '';
-        // "Last N Days" is active when To=today and From = today minus N days (N >= 1, not yesterday-only)
-        const lastNDays = chartConfig._lastNDays || 2;
-        const lastNFrom = (() => { const d = new Date(today); d.setDate(d.getDate() - lastNDays); return toISO(d); })();
-        const isLastN = chartConfig._showLastN && chartConfig.dateFilterFrom === lastNFrom && chartConfig.dateFilterTo === todayStr;
+        // Preset date range helpers
+        const mondayThisWeek = new Date(today);
+        mondayThisWeek.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+        const mondayLastWeek = new Date(mondayThisWeek);
+        mondayLastWeek.setDate(mondayThisWeek.getDate() - 7);
+        const sundayLastWeek = new Date(mondayLastWeek);
+        sundayLastWeek.setDate(mondayLastWeek.getDate() + 6);
+        const firstOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const firstOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
 
-        const hasCustomDate = !isToday && !isYesterday && !isLastN && (chartConfig.dateFilterFrom || chartConfig.dateFilterTo);
-        const showCustomInputs = hasCustomDate || chartConfig._showCustom;
+        const DATE_PRESET_OPTIONS = [
+            { value: 'today',     label: 'Today' },
+            { value: 'yesterday', label: 'Yesterday' },
+            { value: 'alltime',   label: 'All Time' },
+            { value: 'thisweek',  label: 'This Week' },
+            { value: 'lastweek',  label: 'Last Week' },
+            { value: 'thismonth', label: 'This Month' },
+            { value: 'lastmonth', label: 'Last Month' },
+            { value: 'last_n',    label: 'Last N Days' },
+            { value: 'custom',    label: 'Custom' },
+        ];
+
+        const activePreset = chartConfig._datePreset || 'today';
+        const activePresetOption = DATE_PRESET_OPTIONS.find(o => o.value === activePreset) || DATE_PRESET_OPTIONS[0];
+        const showCustomInputs = activePreset === 'custom';
+        const showLastNInput = activePreset === 'last_n';
         const filterIsVisible = !!filterVisible[chartConfig.id];
 
-        const applyLastN = (n) => {
-            const d = new Date(today); d.setDate(d.getDate() - n);
-            updateChartConfigBatch(chartConfig.id, { dateFilterFrom: toISO(d), dateFilterTo: todayStr });
+        const applyDatePreset = (preset) => {
+            const updates = { _datePreset: preset };
+            switch (preset) {
+                case 'today':
+                    updates.dateFilterFrom = todayStr;
+                    updates.dateFilterTo = todayStr;
+                    break;
+                case 'yesterday':
+                    updates.dateFilterFrom = yesterdayStr;
+                    updates.dateFilterTo = yesterdayStr;
+                    break;
+                case 'alltime':
+                    updates.dateFilterFrom = '';
+                    updates.dateFilterTo = '';
+                    break;
+                case 'thisweek':
+                    updates.dateFilterFrom = toISO(mondayThisWeek);
+                    updates.dateFilterTo = todayStr;
+                    break;
+                case 'lastweek':
+                    updates.dateFilterFrom = toISO(mondayLastWeek);
+                    updates.dateFilterTo = toISO(sundayLastWeek);
+                    break;
+                case 'thismonth':
+                    updates.dateFilterFrom = toISO(firstOfThisMonth);
+                    updates.dateFilterTo = todayStr;
+                    break;
+                case 'lastmonth':
+                    updates.dateFilterFrom = toISO(firstOfLastMonth);
+                    updates.dateFilterTo = toISO(lastOfLastMonth);
+                    break;
+                case 'last_n': {
+                    const n = chartConfig._lastNDays || 7;
+                    const d = new Date(today); d.setDate(d.getDate() - n);
+                    updates.dateFilterFrom = toISO(d);
+                    updates.dateFilterTo = todayStr;
+                    break;
+                }
+                case 'custom':
+                    // Keep existing dates, just switch to custom mode
+                    break;
+                default:
+                    break;
+            }
+            updateChartConfigBatch(chartConfig.id, updates);
         };
 
         return (
@@ -1346,6 +1447,21 @@ const AnalyticsDashboardPage = () => {
                         <>
                             {/* ── Action buttons bar ── */}
                             <div className="flex items-center justify-end px-5 pt-3 pb-1 gap-1.5">
+                                <button
+                                    onClick={() => fetchChartDataFromBackend(chartConfig.id, chartConfig, false, true)}
+                                    disabled={!isChartConfigured(chartConfig) || !isChartRequestDirty(chartConfig)}
+                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${isChartConfigured(chartConfig) && isChartRequestDirty(chartConfig)
+                                        ? 'bg-gray-900 text-white hover:bg-gray-800'
+                                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                        }`}
+                                    title={!isChartConfigured(chartConfig)
+                                        ? 'Select the required chart fields first'
+                                        : isChartRequestDirty(chartConfig)
+                                            ? 'Update chart data'
+                                            : 'Change the chart query fields to enable update'}
+                                >
+                                    Update
+                                </button>
 
                                 {/* Width toggle: Half / Full */}
                                 <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
@@ -1389,88 +1505,47 @@ const AnalyticsDashboardPage = () => {
                                 </div>
                             </div>
 
-                            {/* ── Date filter row (can wrap freely) ── */}
-                            <div className="flex items-center gap-2 mb-4 flex-wrap px-5">
+                            {/* ── Date filter row ── */}
+                            <div className="flex items-center gap-2 mb-4 px-5 flex-wrap">
                                 <span className="text-xs font-semibold text-gray-700 shrink-0">Filter:</span>
-                                {/* Today */}
-                                <button
-                                    onClick={() => {
-                                        if (isToday) {
-                                            updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '' });
-                                        } else {
-                                            updateChartConfigBatch(chartConfig.id, { dateFilterFrom: todayStr, dateFilterTo: todayStr, _showCustom: false, _showLastN: false });
-                                        }
-                                    }}
-                                    className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${isToday ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
-                                >
-                                    Today
-                                </button>
-
-                                {/* Yesterday */}
-                                <button
-                                    onClick={() => {
-                                        if (isYesterday) {
-                                            updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '' });
-                                        } else {
-                                            updateChartConfigBatch(chartConfig.id, { dateFilterFrom: yesterdayStr, dateFilterTo: yesterdayStr, _showCustom: false, _showLastN: false });
-                                        }
-                                    }}
-                                    className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${isYesterday ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
-                                >
-                                    Yesterday
-                                </button>
-
-                                {/* Last N Days button + inline number input */}
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={() => {
-                                            if (isLastN) {
-                                                updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '', _showLastN: false });
-                                            } else {
-                                                updateChartConfigBatch(chartConfig.id, { _showLastN: true, _showCustom: false });
-                                                applyLastN(lastNDays);
-                                            }
-                                        }}
-                                        className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${isLastN ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
+                                <div className="w-32 [&_input]:!py-0.5 [&_input]:!text-[11px] [&_input]:!pl-2 [&_input]:!pr-7 [&_svg]:!size-3">
+                                    <Combobox
+                                        value={activePresetOption}
+                                        onChange={(val) => val && applyDatePreset(val.value)}
+                                        displayValue={(option) => option?.label || ''}
+                                        options={DATE_PRESET_OPTIONS}
+                                        dropdownClassName="z-50"
                                     >
-                                        Last
-                                    </button>
-                                    {chartConfig._showLastN && (
-                                        <>
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                max="365"
-                                                value={lastNDays}
-                                                onChange={(e) => {
-                                                    const n = Math.max(1, parseInt(e.target.value) || 1);
-                                                    updateChartConfig(chartConfig.id, '_lastNDays', n);
-                                                }}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') applyLastN(lastNDays);
-                                                }}
-                                                className="w-12 px-1.5 py-0.5 text-[11px] text-center border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
-                                            />
-                                            <span className="text-[11px] text-gray-500">days</span>
-                                            <button
-                                                onClick={() => applyLastN(lastNDays)}
-                                                className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800 underline underline-offset-2 transition-colors"
-                                            >
-                                                Apply
-                                            </button>
-                                        </>
-                                    )}
+                                        {(option) => (
+                                            <ComboboxOption key={`date-preset-${chartConfig.id}-${option.value}`} value={option}>
+                                                <ComboboxLabel>{option.label}</ComboboxLabel>
+                                            </ComboboxOption>
+                                        )}
+                                    </Combobox>
                                 </div>
 
-                                {/* Custom date range button */}
-                                <button
-                                    onClick={() => {
-                                        updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '', _showLastN: false, _showCustom: !chartConfig._showCustom });
-                                    }}
-                                    className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-all duration-150 ${showCustomInputs ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-700 hover:text-gray-900'}`}
-                                >
-                                    Custom
-                                </button>
+                                {/* Last N Days number input */}
+                                {showLastNInput && (
+                                    <div className="flex items-center gap-1">
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="365"
+                                            value={chartConfig._lastNDays || 7}
+                                            onChange={(e) => {
+                                                const n = Math.max(1, parseInt(e.target.value) || 1);
+                                                const d = new Date(today); d.setDate(d.getDate() - n);
+                                                updateChartConfigBatch(chartConfig.id, {
+                                                    _lastNDays: n,
+                                                    dateFilterFrom: toISO(d),
+                                                    dateFilterTo: todayStr,
+                                                });
+                                            }}
+                                            className="w-14 px-1.5 py-0.5 text-[11px] text-center border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                        />
+                                        <span className="text-[11px] text-gray-500">days</span>
+                                    </div>
+                                )}
 
                                 {/* From/To inputs — only shown in custom mode */}
                                 {showCustomInputs && (
@@ -1480,7 +1555,7 @@ const AnalyticsDashboardPage = () => {
                                             <input
                                                 type="date"
                                                 value={chartConfig.dateFilterFrom}
-                                                onChange={(e) => updateChartConfig(chartConfig.id, 'dateFilterFrom', e.target.value)}
+                                                onChange={(e) => updateChartConfigBatch(chartConfig.id, { dateFilterFrom: e.target.value })}
                                                 className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
                                             />
                                         </div>
@@ -1489,24 +1564,11 @@ const AnalyticsDashboardPage = () => {
                                             <input
                                                 type="date"
                                                 value={chartConfig.dateFilterTo}
-                                                onChange={(e) => updateChartConfig(chartConfig.id, 'dateFilterTo', e.target.value)}
+                                                onChange={(e) => updateChartConfigBatch(chartConfig.id, { dateFilterTo: e.target.value })}
                                                 className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
                                             />
                                         </div>
                                     </>
-                                )}
-
-                                {/* Clear × — shown when any filter is active */}
-                                {(isToday || isYesterday || isLastN || chartConfig.dateFilterFrom || chartConfig.dateFilterTo) && (
-                                    <button
-                                        onClick={() => {
-                                            updateChartConfigBatch(chartConfig.id, { dateFilterFrom: '', dateFilterTo: '', _showCustom: false, _showLastN: false });
-                                        }}
-                                        className="text-gray-400 hover:text-gray-700 transition-colors text-base leading-none px-1"
-                                        title="Clear date filters"
-                                    >
-                                        ×
-                                    </button>
                                 )}
                             </div>
 
