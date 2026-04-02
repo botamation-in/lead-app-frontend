@@ -236,14 +236,16 @@ const LeadsGrid = () => {
             setTotalPages(response.data.pagination?.pages || 1);
             setCurrentPage(response.data.pagination?.page || 1);
 
-            // Extract field names from the first lead object
-            if ((response.data.data || []).length > 0) {
-                const firstLead = response.data.data[0];
-                const excludeFields = ['__v', '_id', 'acctId', 'categoryId'];
-                const rawFields = Object.keys(firstLead).filter(field => !excludeFields.includes(field));
-                const displayFields = rawFields.includes('adminId')
-                    ? ['adminId', ...rawFields.filter(f => f !== 'adminId')]
-                    : rawFields;
+            const excludeFields = ['__v', '_id', 'acctId', 'categoryId'];
+            const apiCategoryFields = Array.isArray(response.data.categoryFields)
+                ? response.data.categoryFields.filter(field => typeof field === 'string' && !excludeFields.includes(field))
+                : [];
+            const fallbackFields = (response.data.data || []).length > 0
+                ? Object.keys(response.data.data[0]).filter(field => !excludeFields.includes(field))
+                : [];
+            const displayFields = apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields;
+
+            if (displayFields.length > 0) {
                 setFields(displayFields);
                 // Restore saved column visibility for this account + category
                 try {
@@ -350,10 +352,15 @@ const LeadsGrid = () => {
             }
 
             // Build rows: exclude internal fields, resolve adminId -> name
-            const excludeFields = ['__v', '_id'];
+            const excludeFields = ['__v', '_id', 'acctId', 'categoryId'];
+            const apiCategoryFields = Array.isArray(response.data.categoryFields)
+                ? response.data.categoryFields.filter(field => typeof field === 'string' && !excludeFields.includes(field))
+                : [];
             const exportFields = fields.length > 0
                 ? fields
-                : Object.keys(allLeads[0]).filter(f => !excludeFields.includes(f));
+                : (apiCategoryFields.length > 0
+                    ? apiCategoryFields
+                    : Object.keys(allLeads[0]).filter(f => !excludeFields.includes(f)));
 
             const rows = allLeads.map(lead => {
                 const row = {};

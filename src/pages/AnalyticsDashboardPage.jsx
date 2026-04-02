@@ -1188,15 +1188,15 @@ const AnalyticsDashboardPage = () => {
         const lastOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
 
         const DATE_PRESET_OPTIONS = [
-            { value: 'today',     label: 'Today' },
+            { value: 'today', label: 'Today' },
             { value: 'yesterday', label: 'Yesterday' },
-            { value: 'alltime',   label: 'All Time' },
-            { value: 'thisweek',  label: 'This Week' },
-            { value: 'lastweek',  label: 'Last Week' },
+            { value: 'alltime', label: 'All Time' },
+            { value: 'thisweek', label: 'This Week' },
+            { value: 'lastweek', label: 'Last Week' },
             { value: 'thismonth', label: 'This Month' },
             { value: 'lastmonth', label: 'Last Month' },
-            { value: 'last_n',    label: 'Last N Days' },
-            { value: 'custom',    label: 'Custom' },
+            { value: 'last_n', label: 'Last N Days' },
+            { value: 'custom', label: 'Custom' },
         ];
 
         const activePreset = chartConfig._datePreset || 'today';
