@@ -240,10 +240,15 @@ const LeadsGrid = () => {
             const apiCategoryFields = Array.isArray(response.data.categoryFields)
                 ? response.data.categoryFields.filter(field => typeof field === 'string' && !excludeFields.includes(field))
                 : [];
-            const fallbackFields = (response.data.data || []).length > 0
-                ? Object.keys(response.data.data[0]).filter(field => !excludeFields.includes(field))
+            const firstLead = (response.data.data || [])[0];
+            const fallbackFields = firstLead
+                ? Object.keys(firstLead).filter(field => !excludeFields.includes(field))
                 : [];
-            const displayFields = apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields;
+            const baseFields = apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields;
+            const hasAdminField = !!(firstLead && (firstLead.adminId || firstLead.adminName));
+            const displayFields = hasAdminField
+                ? ['adminId', ...baseFields.filter(field => field !== 'adminId' && field !== 'adminName')]
+                : baseFields.filter(field => field !== 'adminName');
 
             if (displayFields.length > 0) {
                 setFields(displayFields);
@@ -251,7 +256,7 @@ const LeadsGrid = () => {
                 try {
                     const saved = loadColVis(acctId, selectedCategory);
                     if (saved) {
-                        const valid = saved.filter(f => displayFields.includes(f));
+                        const valid = displayFields.filter(f => saved.includes(f));
                         setVisibleFields(valid.length > 0 ? valid : null);
                     } else {
                         setVisibleFields(null);
@@ -356,11 +361,14 @@ const LeadsGrid = () => {
             const apiCategoryFields = Array.isArray(response.data.categoryFields)
                 ? response.data.categoryFields.filter(field => typeof field === 'string' && !excludeFields.includes(field))
                 : [];
+            const hasAdminField = !!(allLeads[0] && (allLeads[0].adminId || allLeads[0].adminName));
+            const fallbackFields = Object.keys(allLeads[0]).filter(f => !excludeFields.includes(f));
+            const defaultExportFields = hasAdminField
+                ? ['adminId', ...(apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields).filter(f => f !== 'adminId' && f !== 'adminName')]
+                : (apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields).filter(f => f !== 'adminName');
             const exportFields = fields.length > 0
                 ? fields
-                : (apiCategoryFields.length > 0
-                    ? apiCategoryFields
-                    : Object.keys(allLeads[0]).filter(f => !excludeFields.includes(f)));
+                : defaultExportFields;
 
             const rows = allLeads.map(lead => {
                 const row = {};
