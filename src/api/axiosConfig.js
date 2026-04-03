@@ -1,19 +1,15 @@
 import axios from 'axios';
 
-// Build base URL from environment variables (Vite uses import.meta.env)
-const API_HOST = import.meta.env.VITE_API_HOST || 'http://localhost';
-const API_PORT = import.meta.env.VITE_API_PORT || '8081';
-const BASE_URL = API_PORT ? `${API_HOST}:${API_PORT}` : API_HOST;
-
-// Auth service URL (the SSO login page — auth frontend)
+// Auth service URL (SSO login page and auth backend — same origin)
 export const AUTH_SERVICE_URL =
-    import.meta.env.VITE_AUTH_SERVICE_URL ||
+    import.meta.env.VITE_AUTH_URL ||
     (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
-// Auth backend URL (for user profile API calls)
-export const AUTH_BACKEND_URL =
-    import.meta.env.VITE_AUTH_BACKEND_URL ||
-    (import.meta.env.PROD ? '' : 'http://localhost:8080');
+export const AUTH_BACKEND_URL = AUTH_SERVICE_URL;
+
+// Lead app backend base URL. Empty string = relative paths, which lets
+// the Nginx reverse proxy (production) or Vite dev proxy route /api/* correctly.
+const BASE_URL = import.meta.env.VITE_BACKEND_URL || '';
 
 // ─── Main API Instance (this app's backend) ───────────────────────────────────
 const api = axios.create({

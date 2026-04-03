@@ -7,20 +7,15 @@
  * Returns the auth service (SSO login page) URL — auth frontend, port 3000.
  */
 export const getAuthServiceUrl = () => {
-    return import.meta.env.VITE_AUTH_SERVICE_URL || 'http://localhost:3000';
+    return import.meta.env.VITE_AUTH_URL || 'http://localhost:3000';
 };
 
-/**
- * Returns this app's own URL — used as the ?redirect= param sent to the auth service.
- */
 export const getCurrentServiceUrl = () => {
-    return import.meta.env.VITE_CURRENT_SERVICE_URL || window.location.origin;
+    return window.location.origin;
 };
 
 export const getApiBaseUrl = () => {
-    const host = import.meta.env.VITE_API_HOST || 'http://localhost';
-    const port = import.meta.env.VITE_API_PORT || '8081';
-    return port ? `${host}:${port}` : host;
+    return import.meta.env.VITE_BACKEND_URL || '';
 };
 
 export const isProduction = () => {
@@ -37,7 +32,7 @@ export const redirectToSSOLogin = (redirectUrl) => {
     const authServiceUrl = getAuthServiceUrl();
 
     if (!authServiceUrl) {
-        console.error('VITE_AUTH_SERVICE_URL is not set');
+        console.error('VITE_AUTH_URL is not set');
         return;
     }
 
@@ -54,7 +49,7 @@ export const redirectToSSOLogout = () => {
     const currentServiceUrl = getCurrentServiceUrl();
 
     if (!authServiceUrl) {
-        console.error('VITE_AUTH_SERVICE_URL is not set');
+        console.error('VITE_AUTH_URL is not set');
         return;
     }
 
