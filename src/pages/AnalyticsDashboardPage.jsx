@@ -230,15 +230,72 @@ const AnalyticsDashboardPage = () => {
         }
     };
 
+    // Re-compute dateFrom/dateTo for a given preset as of right now.
+    // Called on restore so relative presets (today, thisweek, …) always reflect
+    // the current date rather than the stale date stored in localStorage.
+    const resolveDatesForPreset = (preset, lastNDays = 7) => {
+        const toISO = (d) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        };
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const todayStr = toISO(today);
+
+        switch (preset) {
+            case 'today':
+                return { dateFilterFrom: todayStr, dateFilterTo: todayStr };
+            case 'yesterday': {
+                const yest = new Date(today); yest.setDate(yest.getDate() - 1);
+                const y = toISO(yest);
+                return { dateFilterFrom: y, dateFilterTo: y };
+            }
+            case 'alltime':
+                return { dateFilterFrom: '', dateFilterTo: '' };
+            case 'thisweek': {
+                const mon = new Date(today);
+                mon.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+                return { dateFilterFrom: toISO(mon), dateFilterTo: todayStr };
+            }
+            case 'lastweek': {
+                const monThis = new Date(today);
+                monThis.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+                const monLast = new Date(monThis); monLast.setDate(monThis.getDate() - 7);
+                const sunLast = new Date(monLast); sunLast.setDate(monLast.getDate() + 6);
+                return { dateFilterFrom: toISO(monLast), dateFilterTo: toISO(sunLast) };
+            }
+            case 'thismonth': {
+                const first = new Date(today.getFullYear(), today.getMonth(), 1);
+                return { dateFilterFrom: toISO(first), dateFilterTo: todayStr };
+            }
+            case 'lastmonth': {
+                const firstLast = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                const lastLast = new Date(today.getFullYear(), today.getMonth(), 0);
+                return { dateFilterFrom: toISO(firstLast), dateFilterTo: toISO(lastLast) };
+            }
+            case 'last_n': {
+                const d = new Date(today); d.setDate(d.getDate() - lastNDays);
+                return { dateFilterFrom: toISO(d), dateFilterTo: todayStr };
+            }
+            case 'custom':
+            default:
+                return null; // keep saved dates as-is
+        }
+    };
+
     const normalizeChart = (entry) => {
         const todayISO = getTodayISO();
+        const preset = entry._datePreset || 'today';
+        const resolvedDates = resolveDatesForPreset(preset, entry._lastNDays || 7);
         return {
             ...defaultChartConfig,
             ...entry,
             id: entry.id,
-            dateFilterFrom: entry.dateFilterFrom || todayISO,
-            dateFilterTo: entry.dateFilterTo || todayISO,
-            _datePreset: entry._datePreset || 'today',
+            _datePreset: preset,
+            // For relative presets, always recompute from today so stale saved dates are never used
+            dateFilterFrom: resolvedDates ? resolvedDates.dateFilterFrom : (entry.dateFilterFrom || todayISO),
+            dateFilterTo: resolvedDates ? resolvedDates.dateFilterTo : (entry.dateFilterTo || todayISO),
         };
     };
 
@@ -1401,10 +1458,10 @@ const AnalyticsDashboardPage = () => {
                     onMouseUp={() => { setTimeout(() => { delete filterLockedRef.current[chartConfig.id]; }, 200); }}
                 >
 
-                    {/* ── Account Category — always shown first ── */}
+                    {/* ── Category — always shown first ── */}
                     {categories.length > 0 && (
-                        <div className="flex items-center gap-2 px-5 pt-3 pb-3 border-b border-gray-100">
-                            <span className="text-xs font-semibold text-gray-700 shrink-0">Account Category:</span>
+                        <div className="flex items-center justify-center gap-2 px-5 pt-2 pb-2 border-b border-gray-100">
+                            <span className="text-xs font-semibold text-gray-700 shrink-0">Category:</span>
                             <div className="w-48">
                                 <Combobox
                                     value={
@@ -1439,74 +1496,55 @@ const AnalyticsDashboardPage = () => {
                                     ×
                                 </button>
                             )}
+                            {/* ── Update Chart button in header row ── */}
+                            {chartConfig.chartCategory && (
+                                <div className="ml-auto flex items-center">
+                                    <button
+                                        onClick={() => fetchChartDataFromBackend(chartConfig.id, chartConfig, false, true)}
+                                        disabled={!isChartConfigured(chartConfig) || !isChartRequestDirty(chartConfig)}
+                                        className={`px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(chartConfig) && isChartRequestDirty(chartConfig)
+                                            ? 'bg-green-600 text-white hover:bg-green-500 shadow-md shadow-green-200 animate-pulse'
+                                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                            }`}
+                                        title={!isChartConfigured(chartConfig)
+                                            ? 'Select the required chart fields first'
+                                            : isChartRequestDirty(chartConfig)
+                                                ? 'Update chart data'
+                                                : 'Change the chart query fields to enable update'}
+                                    >
+                                        Update Chart
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
 
                     {/* ── Rest of controls — only shown when category is selected (or no categories exist) ── */}
                     {(categories.length === 0 || chartConfig.chartCategory) && (
                         <>
-                            {/* ── Action buttons bar ── */}
-                            <div className="flex items-center justify-end px-5 pt-3 pb-1 gap-1.5">
-                                <button
-                                    onClick={() => fetchChartDataFromBackend(chartConfig.id, chartConfig, false, true)}
-                                    disabled={!isChartConfigured(chartConfig) || !isChartRequestDirty(chartConfig)}
-                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${isChartConfigured(chartConfig) && isChartRequestDirty(chartConfig)
-                                        ? 'bg-gray-900 text-white hover:bg-gray-800'
-                                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                        }`}
-                                    title={!isChartConfigured(chartConfig)
-                                        ? 'Select the required chart fields first'
-                                        : isChartRequestDirty(chartConfig)
-                                            ? 'Update chart data'
-                                            : 'Change the chart query fields to enable update'}
-                                >
-                                    Update
-                                </button>
-
-                                {/* Width toggle: Half / Full */}
-                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                            {/* ── Action buttons bar — only when no categories (otherwise in Account Category header row) ── */}
+                            {categories.length === 0 && (
+                                <div className="flex items-center justify-end px-5 pt-2 pb-1">
                                     <button
-                                        onClick={() => updateChartConfigBatch(chartConfig.id, { chartWidth: 'half', chartWidthPx: null })}
-                                        title="Half width"
-                                        className={`px-2 py-1 transition-all ${(chartConfig.chartWidth || 'half') === 'half' && !chartConfig.chartWidthPx
-                                            ? 'bg-gray-900 text-white'
-                                            : 'bg-white text-gray-500 hover:bg-gray-100'
+                                        onClick={() => fetchChartDataFromBackend(chartConfig.id, chartConfig, false, true)}
+                                        disabled={!isChartConfigured(chartConfig) || !isChartRequestDirty(chartConfig)}
+                                        className={`px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(chartConfig) && isChartRequestDirty(chartConfig)
+                                            ? 'bg-green-600 text-white hover:bg-green-500 shadow-md shadow-green-200 animate-pulse'
+                                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             }`}
+                                        title={!isChartConfigured(chartConfig)
+                                            ? 'Select the required chart fields first'
+                                            : isChartRequestDirty(chartConfig)
+                                                ? 'Update chart data'
+                                                : 'Change the chart query fields to enable update'}
                                     >
-                                        ½
-                                    </button>
-                                    <button
-                                        onClick={() => updateChartConfigBatch(chartConfig.id, { chartWidth: 'full', chartWidthPx: null })}
-                                        title="Full width"
-                                        className={`px-2 py-1 transition-all ${chartConfig.chartWidth === 'full' && !chartConfig.chartWidthPx
-                                            ? 'bg-gray-900 text-white'
-                                            : 'bg-white text-gray-500 hover:bg-gray-100'
-                                            }`}
-                                    >
-                                        ▬
+                                        Update Chart
                                     </button>
                                 </div>
-
-                                {/* Height stepper */}
-                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-                                    <button
-                                        onClick={() => updateChartConfig(chartConfig.id, 'chartHeight', Math.max(180, (chartConfig.chartHeight || 320) - 40))}
-                                        title="Decrease height"
-                                        className="px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 font-bold text-sm transition-all"
-                                    >−</button>
-                                    <span className="px-1.5 text-[10px] font-semibold text-gray-600 min-w-[44px] text-center border-x border-gray-200">
-                                        {chartConfig.chartHeight || 320}px
-                                    </span>
-                                    <button
-                                        onClick={() => updateChartConfig(chartConfig.id, 'chartHeight', Math.min(800, (chartConfig.chartHeight || 320) + 40))}
-                                        title="Increase height"
-                                        className="px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 font-bold text-sm transition-all"
-                                    >+</button>
-                                </div>
-                            </div>
+                            )}
 
                             {/* ── Date filter row ── */}
-                            <div className="flex items-center gap-2 mb-4 px-5 flex-wrap">
+                            <div className="flex items-center gap-2 pt-3 mb-3 px-5 flex-wrap">
                                 <span className="text-xs font-semibold text-gray-700 shrink-0">Filter:</span>
                                 <div className="w-32 [&_input]:!py-0.5 [&_input]:!text-[11px] [&_input]:!pl-2 [&_input]:!pr-7 [&_svg]:!size-3">
                                     <Combobox
@@ -1570,6 +1608,47 @@ const AnalyticsDashboardPage = () => {
                                         </div>
                                     </>
                                 )}
+
+                                {/* Width toggle + height stepper — right-aligned in filter row */}
+                                <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                        <button
+                                            onClick={() => updateChartConfigBatch(chartConfig.id, { chartWidth: 'half', chartWidthPx: null })}
+                                            title="Half width"
+                                            className={`px-2 py-1 transition-all ${(chartConfig.chartWidth || 'half') === 'half' && !chartConfig.chartWidthPx
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-500 hover:bg-gray-100'
+                                                }`}
+                                        >
+                                            ½
+                                        </button>
+                                        <button
+                                            onClick={() => updateChartConfigBatch(chartConfig.id, { chartWidth: 'full', chartWidthPx: null })}
+                                            title="Full width"
+                                            className={`px-2 py-1 transition-all ${chartConfig.chartWidth === 'full' && !chartConfig.chartWidthPx
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-500 hover:bg-gray-100'
+                                                }`}
+                                        >
+                                            ▬
+                                        </button>
+                                    </div>
+                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                                        <button
+                                            onClick={() => updateChartConfig(chartConfig.id, 'chartHeight', Math.max(180, (chartConfig.chartHeight || 320) - 40))}
+                                            title="Decrease height"
+                                            className="px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 font-bold text-sm transition-all"
+                                        >−</button>
+                                        <span className="px-1.5 text-[10px] font-semibold text-gray-600 min-w-[44px] text-center border-x border-gray-200">
+                                            {chartConfig.chartHeight || 320}px
+                                        </span>
+                                        <button
+                                            onClick={() => updateChartConfig(chartConfig.id, 'chartHeight', Math.min(800, (chartConfig.chartHeight || 320) + 40))}
+                                            title="Increase height"
+                                            className="px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 font-bold text-sm transition-all"
+                                        >+</button>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Color picker — for line, heatmap, number charts */}
@@ -1796,8 +1875,8 @@ const AnalyticsDashboardPage = () => {
 
                     {/* ── Hint when category not yet selected ── */}
                     {categories.length > 0 && !chartConfig.chartCategory && (
-                        <div className="px-5 pb-4 pt-1">
-                            <p className="text-[11px] text-gray-400 italic">Select an account category above to configure this chart.</p>
+                        <div className="px-5 pb-4 pt-1 text-center">
+                            <p className="text-[11px] text-gray-400 italic">Select a category above to configure this chart.</p>
                         </div>
                     )}
                 </div>
