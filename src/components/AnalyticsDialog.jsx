@@ -461,7 +461,7 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
         }
 
         // Create cache key
-        const categoryId = acctId ? localStorage.getItem(`selectedCategory_${acctId}`) : null;
+        const categoryId = acctId ? (() => { try { const s = localStorage.getItem('selectedCategory'); const p = s ? JSON.parse(s) : {}; return (p && typeof p === 'object' && !Array.isArray(p)) ? (p[acctId] ?? null) : null; } catch { return null; } })() : null;
         const cacheKey = JSON.stringify({
             xAxis: chartConfig.xAxis.value,
             yAxis: chartConfig.yAxis.value,

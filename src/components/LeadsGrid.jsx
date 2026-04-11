@@ -44,7 +44,65 @@ const LeadsGrid = () => {
 
     // localStorage key scoped per account + category — nested format
     const COL_VIS_KEY = 'colVis';
-    const getFiltersKey = (acctId, categoryId) => `filters_${acctId}_${categoryId || 'all'}`;
+    const FILTERS_KEY = 'filters';
+    const SELECTED_CATEGORY_KEY = 'selectedCategory';
+
+    const readFiltersStore = () => {
+        try {
+            const raw = localStorage.getItem(FILTERS_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+        } catch { return {}; }
+    };
+
+    const loadFilters = (acctId, categoryId) => {
+        try {
+            const store = readFiltersStore();
+            return store[acctId]?.[categoryId || ''] ?? null;
+        } catch { return null; }
+    };
+
+    const saveFilters = (acctId, categoryId, value) => {
+        try {
+            const store = readFiltersStore();
+            store[acctId] = store[acctId] || {};
+            if (!value || Object.keys(value).length === 0) {
+                delete store[acctId][categoryId || ''];
+            } else {
+                store[acctId][categoryId || ''] = value;
+            }
+            localStorage.setItem(FILTERS_KEY, JSON.stringify(store));
+        } catch { /* ignore */ }
+    };
+
+    const readSelectedCategoryStore = () => {
+        try {
+            const raw = localStorage.getItem(SELECTED_CATEGORY_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+        } catch { return {}; }
+    };
+
+    const loadSelectedCategory = (acctId) => {
+        try {
+            const store = readSelectedCategoryStore();
+            return store[acctId] ?? null;
+        } catch { return null; }
+    };
+
+    const saveSelectedCategory = (acctId, value) => {
+        try {
+            const store = readSelectedCategoryStore();
+            if (value) {
+                store[acctId] = value;
+            } else {
+                delete store[acctId];
+            }
+            localStorage.setItem(SELECTED_CATEGORY_KEY, JSON.stringify(store));
+        } catch { /* ignore */ }
+    };
 
     const readColVisStore = () => {
         try {
@@ -144,7 +202,7 @@ const LeadsGrid = () => {
             setCategories(filtered);
             // Resolution priority: 1) URL ?categoryId= param, 2) localStorage, 3) API default
             const urlCategoryId = new URLSearchParams(window.location.search).get('categoryId');
-            const stored = localStorage.getItem(`selectedCategory_${acctId}`);
+            const stored = loadSelectedCategory(acctId);
             const urlCat = urlCategoryId && filtered.find(c => c._id === urlCategoryId);
             const storedCat = stored && filtered.find(c => c._id === stored);
             const activeCat = urlCat || storedCat || filtered.find(c => c.default === true);
@@ -172,20 +230,14 @@ const LeadsGrid = () => {
     const handleCategoryChange = (value) => {
         setSelectedCategory(value);
         // Persist to localStorage
-        if (value) localStorage.setItem(`selectedCategory_${acctId}`, value);
-        else localStorage.removeItem(`selectedCategory_${acctId}`);
+        saveSelectedCategory(acctId, value || null);
         // Update URL: add or remove ?categoryId=
         const params = new URLSearchParams(location.search);
         if (value) params.set('categoryId', value);
         else params.delete('categoryId');
         navigate(`${location.pathname}?${params.toString()}`, { replace: true });
         // Restore saved field filters for the new category (or reset to empty)
-        const savedFilters = (() => {
-            try {
-                const raw = localStorage.getItem(getFiltersKey(acctId, value));
-                return raw ? JSON.parse(raw) : null;
-            } catch { return null; }
-        })();
+        const savedFilters = loadFilters(acctId, value);
         // Reset input filters to restored values (or empty strings for each existing field)
         setFilters(prev => {
             const reset = {};
@@ -264,12 +316,7 @@ const LeadsGrid = () => {
 
                 if (Object.keys(filters).length === 0) {
                     // Restore persisted filters for this account + category on initial load
-                    const savedFilters = (() => {
-                        try {
-                            const raw = localStorage.getItem(getFiltersKey(acctId, selectedCategory));
-                            return raw ? JSON.parse(raw) : null;
-                        } catch { return null; }
-                    })();
+                    const savedFilters = loadFilters(acctId, selectedCategory);
                     const initialFilters = {};
                     displayFields.forEach(field => {
                         initialFilters[field] = savedFilters?.[field] ?? '';
@@ -317,12 +364,7 @@ const LeadsGrid = () => {
             else delete updated[field];
             // Persist field filters (exclude categoryId) to localStorage
             const { categoryId: _cat, ...fieldFilters } = updated;
-            const key = getFiltersKey(acctId, selectedCategory);
-            if (Object.keys(fieldFilters).length > 0) {
-                localStorage.setItem(key, JSON.stringify(fieldFilters));
-            } else {
-                localStorage.removeItem(key);
-            }
+            saveFilters(acctId, selectedCategory, Object.keys(fieldFilters).length > 0 ? fieldFilters : null);
             return updated;
         });
         setCurrentPage(1);
@@ -609,7 +651,7 @@ const LeadsGrid = () => {
                                     fields.forEach(f => { cleared[f] = ''; });
                                     setFilters(cleared);
                                     // Remove persisted filters for this account + category
-                                    localStorage.removeItem(getFiltersKey(acctId, selectedCategory));
+                                    saveFilters(acctId, selectedCategory, null);
                                     setAppliedFilters(prev => {
                                         const updated = {};
                                         if (prev.categoryId) updated.categoryId = prev.categoryId;
