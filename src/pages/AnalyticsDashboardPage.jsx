@@ -6,10 +6,29 @@ import { resolveActiveAcctNo, getAcctIdFromLocalStorage } from '../utils/account
 import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
 import {
     PieChart, Pie, Cell, BarChart, Bar, AreaChart, Area,
-    XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+    XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList, ResponsiveContainer
 } from 'recharts';
 import LoadingMask from '../components/LoadingMask';
 import DeleteConfirmation from '../components/DeleteConfirmation';
+
+// ── Controlled label-rename input — defined outside component to keep stable reference ──
+const LabelInput = ({ initialValue, placeholder, onCommit }) => {
+    const [val, setVal] = useState(initialValue);
+    useEffect(() => { setVal(initialValue); }, [initialValue]);
+    return (
+        <input
+            type="text"
+            value={val}
+            placeholder={placeholder}
+            className="w-full px-2 py-1 text-[11px] bg-white border border-gray-200 rounded-md focus:outline-none focus:border-gray-600 focus:ring-1 focus:ring-gray-200 transition-all"
+            onChange={(e) => {
+                setVal(e.target.value);
+                onCommit(e.target.value || placeholder);
+            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+        />
+    );
+};
 
 const AnalyticsDashboardPage = () => {
     const navigate = useNavigate();
@@ -139,7 +158,11 @@ const AnalyticsDashboardPage = () => {
         chartColor: null,
         autoRefreshMins: null,
         chartCategory: null,
-        dateGranularity: 'day'
+        dateGranularity: 'day',
+        showLegend: true,
+        showDataLabels: true,
+        numberSplitCount: 4,
+        fieldLabels: {},
     };
 
     const STORAGE_KEY = 'analyticsDashboard_charts';
@@ -339,6 +362,7 @@ const AnalyticsDashboardPage = () => {
 
     // Filter panel visibility — per-chart, proximity-based
     const [filterVisible, setFilterVisible] = useState({});
+    const [filterHideCountState, setFilterHideCountState] = useState({});
     const filterLockedRef = React.useRef({});
     const pendingHideRef = React.useRef({});
     const filterHideCountRef = React.useRef({});
@@ -346,8 +370,12 @@ const AnalyticsDashboardPage = () => {
 
     const hideFilter = (chartId) => {
         if (!filterLockedRef.current[chartId]) {
-            filterHideCountRef.current[chartId] = (filterHideCountRef.current[chartId] || 0) + 1;
+            // Animate out first, then remount (to reset dropdowns) after transition finishes
             setFilterVisible(prev => { const n = { ...prev }; delete n[chartId]; return n; });
+            setTimeout(() => {
+                filterHideCountRef.current[chartId] = (filterHideCountRef.current[chartId] || 0) + 1;
+                setFilterHideCountState(prev => ({ ...prev, [chartId]: filterHideCountRef.current[chartId] }));
+            }, 320);
         } else {
             // Mark for hide-after-unlock (e.g. mouse left while combobox dropdown was open)
             pendingHideRef.current[chartId] = true;
@@ -361,15 +389,22 @@ const AnalyticsDashboardPage = () => {
                 const pending = Object.keys(pendingHideRef.current);
                 filterLockedRef.current = {};
                 if (pending.length) {
-                    pending.forEach(id => {
-                        filterHideCountRef.current[id] = (filterHideCountRef.current[id] || 0) + 1;
-                    });
                     pendingHideRef.current = {};
                     setFilterVisible(prev => {
                         const n = { ...prev };
                         pending.forEach(id => delete n[id]);
                         return n;
                     });
+                    setTimeout(() => {
+                        pending.forEach(id => {
+                            filterHideCountRef.current[id] = (filterHideCountRef.current[id] || 0) + 1;
+                        });
+                        setFilterHideCountState(prev => {
+                            const n = { ...prev };
+                            pending.forEach(id => { n[id] = filterHideCountRef.current[id]; });
+                            return n;
+                        });
+                    }, 320);
                 }
             }, 200);
         };
@@ -832,6 +867,37 @@ const AnalyticsDashboardPage = () => {
         '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4',
         '#84cc16', '#a855f7', '#22c55e', '#eab308', '#ef4444'
     ];
+
+    // Shared modern legend renderer — pill chips with color swatch
+    const legendChips = ({ payload }) => {
+        if (!payload || !payload.length) return null;
+        return (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center', padding: '6px 12px 2px' }}>
+                {payload.map((entry, i) => {
+                    const color = entry.color || COLORS[i % COLORS.length];
+                    return (
+                        <div key={i} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                            padding: '3px 9px 3px 6px',
+                            borderRadius: 20,
+                            background: `${color}14`,
+                            border: `1px solid ${color}40`,
+                        }}>
+                            <span style={{
+                                width: 8, height: 8, borderRadius: '50%',
+                                background: color,
+                                flexShrink: 0,
+                                boxShadow: `0 0 0 2px ${color}30`,
+                            }} />
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', letterSpacing: 0.1 }}>
+                                {entry.value}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
     const DEFAULT_CHART_COLOR = '#6366f1';
     const COLOR_OPTIONS = [
         '#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#3b82f6',
@@ -854,50 +920,70 @@ const AnalyticsDashboardPage = () => {
     };
 
     // Render Pie Chart — modern donut with radial gradients
-    const renderPieChart = (chartData, yAxisLabel) => (
-        <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-                <defs>
-                    {COLORS.map((color, i) => (
-                        <radialGradient key={i} id={`pieGrad-${i}`} cx="50%" cy="50%" r="50%">
-                            <stop offset="0%" stopColor={color} stopOpacity={1} />
-                            <stop offset="100%" stopColor={color} stopOpacity={0.75} />
-                        </radialGradient>
-                    ))}
-                </defs>
-                <Pie
-                    data={chartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={65}
-                    outerRadius={115}
-                    paddingAngle={3}
-                    labelLine={false}
-                    label={({ percent }) => percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ''}
-                    dataKey="value"
-                >
-                    {chartData.map((entry, index) => (
-                        <Cell
-                            key={`cell-${index}`}
-                            fill={`url(#pieGrad-${index % COLORS.length})`}
-                            stroke="white"
-                            strokeWidth={2}
-                        />
-                    ))}
-                </Pie>
-                <Tooltip
-                    contentStyle={tooltipStyle.contentStyle}
-                    labelStyle={tooltipStyle.labelStyle}
-                    itemStyle={tooltipStyle.itemStyle}
-                    formatter={(value, name) => [value, yAxisLabel]}
-                />
-                <Legend iconType="circle" iconSize={10} />
-            </PieChart>
-        </ResponsiveContainer>
-    );
+    const renderPieChart = (chartData, yAxisLabel, showLegend = true, showDataLabels = true, lbl = (k) => k) => {
+        const total = chartData.reduce((s, d) => s + d.value, 0);
+        const renderLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name, value }) => {
+            if (!showDataLabels || percent < 0.03) return null;
+            const RADIAN = Math.PI / 180;
+            const radius = innerRadius + (outerRadius - innerRadius) * (percent < 0.07 ? 0.5 : 0.55);
+            const x = cx + radius * Math.cos(-midAngle * RADIAN);
+            const y = cy + radius * Math.sin(-midAngle * RADIAN);
+            return (
+                <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={percent > 0.08 ? 11 : 9} fontWeight={700}>
+                    {percent >= 0.07
+                        ? `${value.toLocaleString()}`
+                        : `${(percent * 100).toFixed(0)}%`
+                    }
+                </text>
+            );
+        };
+        return (
+            <ResponsiveContainer width="100%" height="100%">
+                <PieChart margin={{ top: showLegend ? 0 : 8, right: 8, bottom: showLegend ? 0 : 8, left: 8 }}>
+                    <defs>
+                        {COLORS.map((color, i) => (
+                            <radialGradient key={i} id={`pieGrad-${i}`} cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stopColor={color} stopOpacity={1} />
+                                <stop offset="100%" stopColor={color} stopOpacity={0.75} />
+                            </radialGradient>
+                        ))}
+                    </defs>
+                    <Pie
+                        data={chartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={65}
+                        outerRadius={115}
+                        paddingAngle={3}
+                        labelLine={false}
+                        label={renderLabel}
+                        dataKey="value"
+                    >
+                        {chartData.map((entry, index) => (
+                            <Cell
+                                key={`cell-${index}`}
+                                fill={`url(#pieGrad-${index % COLORS.length})`}
+                                stroke="white"
+                                strokeWidth={2}
+                            />
+                        ))}
+                    </Pie>
+                    <Tooltip
+                        contentStyle={tooltipStyle.contentStyle}
+                        labelStyle={tooltipStyle.labelStyle}
+                        itemStyle={tooltipStyle.itemStyle}
+                        formatter={(value, name) => [`${value.toLocaleString()} (${total > 0 ? ((value / total) * 100).toFixed(1) : 0}%)`, lbl(name)]}
+                    />
+                    {showLegend && (
+                        <Legend content={legendChips} />
+                    )}
+                </PieChart>
+            </ResponsiveContainer>
+        );
+    };
 
     // Render Bar Chart — gradient bars, clean grid
-    const renderBarChart = (chartData, yAxisLabel, orientation = 'vertical') => {
+    const renderBarChart = (chartData, yAxisLabel, orientation = 'vertical', showLegend = true, showDataLabels = true, lbl = (k) => k) => {
         const isHorizontal = orientation === 'horizontal';
         return (
             <ResponsiveContainer width="100%" height="100%">
@@ -905,8 +991,8 @@ const AnalyticsDashboardPage = () => {
                     data={chartData}
                     layout={isHorizontal ? 'vertical' : 'horizontal'}
                     margin={isHorizontal
-                        ? { top: 10, right: 30, left: 80, bottom: 10 }
-                        : { top: 10, right: 20, left: 10, bottom: 40 }
+                        ? { top: 10, right: showDataLabels ? 48 : 30, left: 80, bottom: 10 }
+                        : { top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }
                     }
                 >
                     <defs>
@@ -934,18 +1020,28 @@ const AnalyticsDashboardPage = () => {
                         labelStyle={tooltipStyle.labelStyle}
                         itemStyle={tooltipStyle.itemStyle}
                         cursor={tooltipStyle.cursor}
-                        formatter={(value) => [value, yAxisLabel]}
+                        formatter={(value) => [value.toLocaleString(), lbl(yAxisLabel)]}
                     />
-                    <Legend iconType="circle" iconSize={10} />
+                    {showLegend && (
+                        <Legend content={legendChips} />
+                    )}
                     <Bar
                         dataKey="value"
-                        name={yAxisLabel}
+                        name={lbl(yAxisLabel)}
                         radius={isHorizontal ? [0, 8, 8, 0] : [8, 8, 0, 0]}
                         maxBarSize={60}
                     >
                         {chartData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={`url(#barGrad-${index % COLORS.length})`} />
                         ))}
+                        {showDataLabels && (
+                            <LabelList
+                                dataKey="value"
+                                position={isHorizontal ? 'right' : 'top'}
+                                formatter={(v) => v.toLocaleString()}
+                                style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+                            />
+                        )}
                     </Bar>
                 </BarChart>
             </ResponsiveContainer>
@@ -953,9 +1049,9 @@ const AnalyticsDashboardPage = () => {
     };
 
     // Render Line Chart — area chart with gradient fill
-    const renderLineChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR) => (
+    const renderLineChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR, showLegend = true, showDataLabels = true, lbl = (k) => k) => (
         <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 40 }}>
+            <AreaChart data={chartData} margin={{ top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }}>
                 <defs>
                     <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor={color} stopOpacity={0.3} />
@@ -982,19 +1078,31 @@ const AnalyticsDashboardPage = () => {
                     labelStyle={tooltipStyle.labelStyle}
                     itemStyle={tooltipStyle.itemStyle}
                     cursor={{ stroke: color, strokeWidth: 1, strokeDasharray: '4 4' }}
-                    formatter={(value) => [value, yAxisLabel]}
+                    formatter={(value) => [value.toLocaleString(), lbl(yAxisLabel)]}
                 />
-                <Legend iconType="circle" iconSize={10} />
+                {showLegend && (
+                    <Legend content={legendChips} />
+                )}
                 <Area
                     type="monotone"
                     dataKey="value"
-                    name={yAxisLabel}
+                    name={lbl(yAxisLabel)}
                     stroke={color}
                     strokeWidth={3}
                     fill="url(#areaGrad)"
                     dot={{ fill: color, stroke: 'white', strokeWidth: 2, r: 5 }}
                     activeDot={{ r: 7, fill: color, stroke: 'white', strokeWidth: 2 }}
-                />
+                >
+                    {showDataLabels && (
+                        <LabelList
+                            dataKey="value"
+                            position="top"
+                            offset={8}
+                            formatter={(v) => v.toLocaleString()}
+                            style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+                        />
+                    )}
+                </Area>
             </AreaChart>
         </ResponsiveContainer>
     );
@@ -1043,10 +1151,10 @@ const AnalyticsDashboardPage = () => {
     };
 
     // Render Number Chart — large KPI total with top-N breakdown
-    const renderNumberChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR) => {
+    const renderNumberChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR, splitCount = 4) => {
         const total = chartData.reduce((sum, d) => sum + (d.value || 0), 0);
         const fmt = (n) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : n.toLocaleString();
-        const topItems = [...chartData].sort((a, b) => b.value - a.value).slice(0, 4);
+        const topItems = splitCount > 0 ? [...chartData].sort((a, b) => b.value - a.value).slice(0, splitCount) : [];
         return (
             <div className="w-full h-full flex flex-col items-center justify-center gap-4 p-6">
                 <div className="text-center">
@@ -1070,9 +1178,9 @@ const AnalyticsDashboardPage = () => {
     };
 
     // ── Grouped / Stacked Bar ─────────────────────────────────────────────
-    const renderMultiSeriesBarChart = (chartData, yAxisLabel, orientation = 'vertical', stacked = false) => {
+    const renderMultiSeriesBarChart = (chartData, yAxisLabel, orientation = 'vertical', stacked = false, showLegend = true, showDataLabels = true, lbl = (k) => k) => {
         const hasZKey = chartData.length > 0 && chartData[0].zKey !== undefined;
-        if (!hasZKey) return renderBarChart(chartData, yAxisLabel, orientation);
+        if (!hasZKey) return renderBarChart(chartData, yAxisLabel, orientation, showLegend, showDataLabels, lbl);
         const isHorizontal = orientation === 'horizontal';
         const names = [...new Set(chartData.map(d => d.name))];
         const zKeys = [...new Set(chartData.map(d => d.zKey))];
@@ -1089,7 +1197,10 @@ const AnalyticsDashboardPage = () => {
                 <BarChart
                     data={data}
                     layout={isHorizontal ? 'vertical' : 'horizontal'}
-                    margin={isHorizontal ? { top: 10, right: 30, left: 80, bottom: 10 } : { top: 10, right: 20, left: 10, bottom: 40 }}
+                    margin={isHorizontal
+                        ? { top: 10, right: showDataLabels ? 48 : 30, left: 80, bottom: 10 }
+                        : { top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }
+                    }
                 >
                     <defs>
                         {COLORS.map((color, i) => (
@@ -1116,13 +1227,16 @@ const AnalyticsDashboardPage = () => {
                         labelStyle={tooltipStyle.labelStyle}
                         itemStyle={tooltipStyle.itemStyle}
                         cursor={tooltipStyle.cursor}
+                        formatter={(value) => [value.toLocaleString()]}
                     />
-                    <Legend iconType="circle" iconSize={10} />
+                    {showLegend && (
+                        <Legend content={legendChips} />
+                    )}
                     {zKeys.map((zKey, i) => (
                         <Bar
                             key={zKey}
                             dataKey={zKey}
-                            name={zKey}
+                            name={lbl(zKey)}
                             fill={`url(#msBarGrad-${i % COLORS.length})`}
                             stackId={stacked ? 'a' : undefined}
                             radius={stacked
@@ -1130,7 +1244,20 @@ const AnalyticsDashboardPage = () => {
                                 : (isHorizontal ? [0, 6, 6, 0] : [6, 6, 0, 0])
                             }
                             maxBarSize={stacked ? 80 : 50}
-                        />
+                        >
+                            {showDataLabels && (
+                                <LabelList
+                                    dataKey={zKey}
+                                    position={stacked ? 'center' : (isHorizontal ? 'right' : 'top')}
+                                    formatter={(v) => (v > 0 ? v.toLocaleString() : '')}
+                                    style={{
+                                        fontSize: 10,
+                                        fill: stacked ? 'white' : '#374151',
+                                        fontWeight: 600,
+                                    }}
+                                />
+                            )}
+                        </Bar>
                     ))}
                 </BarChart>
             </ResponsiveContainer>
@@ -1138,13 +1265,44 @@ const AnalyticsDashboardPage = () => {
     };
 
     // ── Nested Pie (Grouped — inner=X-axis, outer=Z-axis breakdown) ────────
-    const renderNestedPieChart = (chartData, yAxisLabel) => {
+    const renderNestedPieChart = (chartData, yAxisLabel, showLegend = true, showDataLabels = true, lbl = (k) => k) => {
         const hasZKey = chartData.length > 0 && chartData[0].zKey !== undefined;
-        if (!hasZKey) return renderPieChart(chartData, yAxisLabel);
+        if (!hasZKey) return renderPieChart(chartData, yAxisLabel, showLegend, showDataLabels, lbl);
         const innerMap = {};
         chartData.forEach(d => { innerMap[d.name] = (innerMap[d.name] || 0) + d.value; });
         const innerData = Object.entries(innerMap).map(([name, value]) => ({ name, value }));
         const outerData = chartData.map(d => ({ name: `${d.name} › ${d.zKey}`, value: d.value }));
+        const totalInner = innerData.reduce((s, d) => s + d.value, 0);
+        const totalOuter = outerData.reduce((s, d) => s + d.value, 0);
+
+        const renderInnerLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value, percent }) => {
+            if (!showDataLabels) return null;
+            if (percent < 0.03) return null;
+            const RADIAN = Math.PI / 180;
+            const r = innerRadius + (outerRadius - innerRadius) * 0.5;
+            const x = cx + r * Math.cos(-midAngle * RADIAN);
+            const y = cy + r * Math.sin(-midAngle * RADIAN);
+            return (
+                <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" style={{ fontSize: 10, fontWeight: 600 }}>
+                    {percent >= 0.07 ? value.toLocaleString() : `${(percent * 100).toFixed(0)}%`}
+                </text>
+            );
+        };
+
+        const renderOuterLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value, percent }) => {
+            if (!showDataLabels) return null;
+            if (percent < 0.03) return null;
+            const RADIAN = Math.PI / 180;
+            const r = innerRadius + (outerRadius - innerRadius) * 0.5;
+            const x = cx + r * Math.cos(-midAngle * RADIAN);
+            const y = cy + r * Math.sin(-midAngle * RADIAN);
+            return (
+                <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" style={{ fontSize: 9, fontWeight: 600 }}>
+                    {percent >= 0.07 ? value.toLocaleString() : `${(percent * 100).toFixed(0)}%`}
+                </text>
+            );
+        };
+
         return (
             <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -1162,19 +1320,23 @@ const AnalyticsDashboardPage = () => {
                             </radialGradient>
                         ))}
                     </defs>
-                    <Pie data={innerData} cx="50%" cy="50%" innerRadius={40} outerRadius={72} paddingAngle={2} dataKey="value" labelLine={false} label={({ percent }) => percent > 0.06 ? `${(percent * 100).toFixed(0)}%` : ''}>
+                    <Pie data={innerData} cx="50%" cy="50%" innerRadius={40} outerRadius={72} paddingAngle={2} dataKey="value" labelLine={false} label={renderInnerLabel}>
                         {innerData.map((_, i) => <Cell key={`in-${i}`} fill={`url(#nPieIn-${i % COLORS.length})`} stroke="white" strokeWidth={2} />)}
                     </Pie>
-                    <Pie data={outerData} cx="50%" cy="50%" innerRadius={78} outerRadius={115} paddingAngle={1} dataKey="value">
+                    <Pie data={outerData} cx="50%" cy="50%" innerRadius={78} outerRadius={115} paddingAngle={1} dataKey="value" labelLine={false} label={renderOuterLabel}>
                         {outerData.map((_, i) => <Cell key={`out-${i}`} fill={`url(#nPieOut-${i % COLORS.length})`} stroke="white" strokeWidth={1} />)}
                     </Pie>
                     <Tooltip
                         contentStyle={tooltipStyle.contentStyle}
                         labelStyle={tooltipStyle.labelStyle}
                         itemStyle={tooltipStyle.itemStyle}
-                        formatter={(value, name) => [value, name]}
+                        formatter={(value, name) => {
+                            const total = outerData.find(d => d.name === name) ? totalOuter : totalInner;
+                            const pct = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                            return [`${value.toLocaleString()} (${pct}%)`, lbl(name)];
+                        }}
                     />
-                    <Legend iconType="circle" iconSize={10} />
+                    {showLegend && <Legend content={legendChips} />}
                 </PieChart>
             </ResponsiveContainer>
         );
@@ -1213,23 +1375,30 @@ const AnalyticsDashboardPage = () => {
 
         const chartColor = chartConfig.chartColor || DEFAULT_CHART_COLOR;
         const mode = chartConfig.chartMode;
+        const showLegend = chartConfig.showLegend !== false;
+        const showDataLabels = chartConfig.showDataLabels !== false;
+        const fieldLabels = chartConfig.fieldLabels || {};
+        const lbl = (key) => fieldLabels[key] || key;
+        const splitCount = chartConfig.numberSplitCount ?? 4;
+        // Apply field label override to yAxisLabel for all chart types
+        const displayYLabel = fieldLabels[chartConfig.yAxis?.value] || yAxisLabel;
         switch (chartConfig.chartType.value) {
             case 'pie':
                 return (mode === 'grouped' || mode === 'stacked')
-                    ? renderNestedPieChart(chartData, yAxisLabel)
-                    : renderPieChart(chartData, yAxisLabel);
+                    ? renderNestedPieChart(chartData, displayYLabel, showLegend, showDataLabels, lbl)
+                    : renderPieChart(chartData, displayYLabel, showLegend, showDataLabels, lbl);
             case 'bar':
                 return mode === 'grouped'
-                    ? renderMultiSeriesBarChart(chartData, yAxisLabel, chartConfig.barOrientation || 'vertical', false)
+                    ? renderMultiSeriesBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', false, showLegend, showDataLabels, lbl)
                     : mode === 'stacked'
-                        ? renderMultiSeriesBarChart(chartData, yAxisLabel, chartConfig.barOrientation || 'vertical', true)
-                        : renderBarChart(chartData, yAxisLabel, chartConfig.barOrientation || 'vertical');
+                        ? renderMultiSeriesBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', true, showLegend, showDataLabels, lbl)
+                        : renderBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', showLegend, showDataLabels, lbl);
             case 'line':
-                return renderLineChart(chartData, yAxisLabel, chartColor);
+                return renderLineChart(chartData, displayYLabel, chartColor, showLegend, showDataLabels, lbl);
             case 'heatmap':
-                return renderHeatmapChart(chartData, yAxisLabel, chartColor);
+                return renderHeatmapChart(chartData, displayYLabel, chartColor);
             case 'number':
-                return renderNumberChart(chartData, yAxisLabel, chartColor);
+                return renderNumberChart(chartData, displayYLabel, chartColor, splitCount);
             default:
                 return null;
         }
@@ -1286,7 +1455,7 @@ const AnalyticsDashboardPage = () => {
         const showCustomInputs = activePreset === 'custom';
         const showLastNInput = activePreset === 'last_n';
         const filterIsVisible = !!filterVisible[chartConfig.id];
-        const filterHideCount = filterHideCountRef.current[chartConfig.id] || 0;
+        const filterHideCount = filterHideCountState[chartConfig.id] || 0;
         const isDateXAxis = DATE_AXIS_FIELDS.includes(chartConfig.xAxis?.value);
         const activeDateGranularityOption = DATE_GRANULARITY_OPTIONS.find(o => o.value === (chartConfig.dateGranularity || 'day')) || DATE_GRANULARITY_OPTIONS[1];
 
@@ -1475,13 +1644,18 @@ const AnalyticsDashboardPage = () => {
                 {/* ── All controls — slides in when near top ── */}
                 <div
                     key={filterHideCount}
-                    className={`absolute left-0 right-0 bg-white z-40 border-b border-gray-200 shadow-lg
-                        transition-all duration-200 ease-out origin-top
+                    className={`absolute left-0 right-0 bg-white z-40 border-b border-gray-200 shadow-lg origin-top overflow-hidden
                         ${filterIsVisible
                             ? 'opacity-100 translate-y-0 pointer-events-auto'
-                            : 'opacity-0 -translate-y-3 pointer-events-none'
+                            : 'opacity-0 -translate-y-2 pointer-events-none'
                         }`}
-                    style={{ top: 36 }}
+                    style={{
+                        top: 36,
+                        transition: filterIsVisible
+                            ? 'opacity 220ms ease-out, transform 220ms cubic-bezier(0.22, 1, 0.36, 1), max-height 280ms cubic-bezier(0.22, 1, 0.36, 1)'
+                            : 'opacity 280ms ease-in, transform 280ms cubic-bezier(0.4, 0, 1, 1), max-height 300ms cubic-bezier(0.4, 0, 0.6, 1)',
+                        maxHeight: filterIsVisible ? 1000 : 0,
+                    }}
                     onMouseLeave={() => hideFilter(chartConfig.id)}
                     onMouseDown={() => { filterLockedRef.current[chartConfig.id] = true; }}
                     onMouseUp={() => { setTimeout(() => { delete filterLockedRef.current[chartConfig.id]; }, 200); }}
@@ -1680,126 +1854,180 @@ const AnalyticsDashboardPage = () => {
                                 </div>
                             </div>
 
-                            {/* Color picker — for line, heatmap, number charts */}
-                            {['line', 'heatmap', 'number'].includes(chartConfig.chartType?.value) && (
-                                <div className="flex items-center gap-2 mb-3 px-5">
-                                    <span className="text-xs font-semibold text-gray-700 shrink-0">Color:</span>
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                        {COLOR_OPTIONS.map(c => (
-                                            <button
-                                                key={c}
-                                                title={c}
-                                                onClick={() => updateChartConfig(chartConfig.id, 'chartColor', c)}
-                                                className="w-5 h-5 rounded-full transition-transform hover:scale-110 focus:outline-none"
-                                                style={{
-                                                    backgroundColor: c,
-                                                    boxShadow: (chartConfig.chartColor || DEFAULT_CHART_COLOR) === c
-                                                        ? `0 0 0 2px white, 0 0 0 4px ${c}`
-                                                        : 'none'
-                                                }}
-                                            />
-                                        ))}
+                            {/* ── SECTION: DISPLAY ─────────────────────── */}
+                            {chartConfig.chartType?.value && (
+                                <>
+                                    <div className="flex items-center gap-0 px-5 pt-1 pb-1.5 border-t border-gray-100 mt-1">
+                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Display</span>
                                     </div>
-                                </div>
+                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
+                                        {/* Color — line/heatmap/number only */}
+                                        {['line', 'heatmap', 'number'].includes(chartConfig.chartType?.value) && (
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Color</span>
+                                                <div className="flex items-center gap-1.5">
+                                                    {COLOR_OPTIONS.map(c => (
+                                                        <button
+                                                            key={c}
+                                                            title={c}
+                                                            onClick={() => updateChartConfig(chartConfig.id, 'chartColor', c)}
+                                                            className="w-4.5 h-4.5 rounded-full transition-transform hover:scale-110 focus:outline-none"
+                                                            style={{
+                                                                width: 18, height: 18,
+                                                                backgroundColor: c,
+                                                                boxShadow: (chartConfig.chartColor || DEFAULT_CHART_COLOR) === c
+                                                                    ? `0 0 0 2px white, 0 0 0 3.5px ${c}`
+                                                                    : 'none'
+                                                            }}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {/* Legend + Data Labels — not heatmap/number */}
+                                        {!['heatmap', 'number'].includes(chartConfig.chartType?.value) && (
+                                            <>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Legend</span>
+                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                        <button onClick={() => updateChartConfig(chartConfig.id, 'showLegend', true)}
+                                                            className={`px-2 py-0.5 transition-all ${chartConfig.showLegend !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
+                                                        <button onClick={() => updateChartConfig(chartConfig.id, 'showLegend', false)}
+                                                            className={`px-2 py-0.5 transition-all ${chartConfig.showLegend === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Data Labels</span>
+                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                        <button onClick={() => updateChartConfig(chartConfig.id, 'showDataLabels', true)}
+                                                            className={`px-2 py-0.5 transition-all ${chartConfig.showDataLabels !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
+                                                        <button onClick={() => updateChartConfig(chartConfig.id, 'showDataLabels', false)}
+                                                            className={`px-2 py-0.5 transition-all ${chartConfig.showDataLabels === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </>
                             )}
 
-                            {/* Auto-refresh interval control */}
-                            <div className="flex items-center gap-2 mb-3 px-5">
-                                <span className="text-xs font-semibold text-gray-700 shrink-0">Auto Refresh:</span>
+                            {/* ── SECTION: CHART ────────────────────────── */}
+                            {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar' || chartConfig.chartType?.value === 'number') && (
+                                <>
+                                    <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
+                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Chart</span>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
+                                        {/* Mode — pie + bar */}
+                                        {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Mode</span>
+                                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                    {[{ v: null, label: 'Simple' }, { v: 'grouped', label: 'Grouped' }, { v: 'stacked', label: 'Stacked' }].map(({ v, label }) => (
+                                                        <button key={label} onClick={() => updateChartConfig(chartConfig.id, 'chartMode', v)}
+                                                            className={`px-2 py-0.5 transition-all ${chartConfig.chartMode === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                            {label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {/* Orientation — bar only */}
+                                        {chartConfig.chartType?.value === 'bar' && (
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Orientation</span>
+                                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                    <button onClick={() => updateChartConfig(chartConfig.id, 'barOrientation', 'vertical')}
+                                                        className={`flex items-center gap-1 px-2 py-0.5 transition-all ${(chartConfig.barOrientation || 'vertical') === 'vertical' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                                                            <rect x="1" y="4" width="2.5" height="7" rx="0.5" />
+                                                            <rect x="4.75" y="2" width="2.5" height="9" rx="0.5" />
+                                                            <rect x="8.5" y="5.5" width="2.5" height="5.5" rx="0.5" />
+                                                        </svg>
+                                                        Vertical
+                                                    </button>
+                                                    <button onClick={() => updateChartConfig(chartConfig.id, 'barOrientation', 'horizontal')}
+                                                        className={`flex items-center gap-1 px-2 py-0.5 transition-all ${chartConfig.barOrientation === 'horizontal' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                                                            <rect x="0" y="1" width="7" height="2.5" rx="0.5" />
+                                                            <rect x="0" y="4.75" width="9" height="2.5" rx="0.5" />
+                                                            <rect x="0" y="8.5" width="5.5" height="2.5" rx="0.5" />
+                                                        </svg>
+                                                        Horizontal
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {/* Split — number only */}
+                                        {chartConfig.chartType?.value === 'number' && (
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Split</span>
+                                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                    {[{ v: 0, label: 'None' }, ...Array.from({ length: 10 }, (_, i) => ({ v: i + 1, label: String(i + 1) }))].map(({ v, label }) => (
+                                                        <button key={label} onClick={() => updateChartConfig(chartConfig.id, 'numberSplitCount', v)}
+                                                            className={`px-2 py-0.5 transition-all ${(chartConfig.numberSplitCount ?? 4) === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                            {label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+
+                            {/* ── SECTION: REFRESH ──────────────────────── */}
+                            <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Refresh</span>
+                            </div>
+                            <div className="flex items-center gap-2 mb-2 px-5">
                                 <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                    <button
-                                        onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', null)}
-                                        className={`px-2 py-1 transition-all ${!chartConfig.autoRefreshMins
-                                            ? 'bg-gray-900 text-white'
-                                            : 'bg-white text-gray-500 hover:bg-gray-100'
-                                            }`}
-                                    >
-                                        Off
-                                    </button>
-                                    {[
-                                        { v: 10 / 60, label: '10s' },
-                                        { v: 0.5, label: '30s' },
-                                        { v: 1, label: '1m' },
-                                        { v: 2, label: '2m' },
-                                        { v: 3, label: '3m' },
-                                        { v: 5, label: '5m' },
-                                        { v: 10, label: '10m' },
-                                        { v: 15, label: '15m' },
-                                        { v: 30, label: '30m' },
-                                        { v: 60, label: '1h' },
-                                    ].map(({ v, label }) => (
-                                        <button
-                                            key={label}
-                                            onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', v)}
-                                            className={`px-2 py-1 transition-all ${chartConfig.autoRefreshMins === v
-                                                ? 'bg-gray-900 text-white'
-                                                : 'bg-white text-gray-500 hover:bg-gray-100'
-                                                }`}
-                                        >
+                                    <button onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', null)}
+                                        className={`px-2 py-0.5 transition-all ${!chartConfig.autoRefreshMins ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                    {[{ v: 10 / 60, label: '10s' }, { v: 0.5, label: '30s' }, { v: 1, label: '1m' }, { v: 2, label: '2m' }, { v: 3, label: '3m' }, { v: 5, label: '5m' }, { v: 10, label: '10m' }, { v: 15, label: '15m' }, { v: 30, label: '30m' }, { v: 60, label: '1h' }].map(({ v, label }) => (
+                                        <button key={label} onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', v)}
+                                            className={`px-2 py-0.5 transition-all ${chartConfig.autoRefreshMins === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
                                             {label}
                                         </button>
                                     ))}
                                 </div>
                             </div>
-                            {/* Chart Mode toggle — Simple / Grouped / Stacked */}
-                            {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (
-                                <div className="flex items-center gap-2 mb-3 px-5">
-                                    <span className="text-xs font-semibold text-gray-700 shrink-0">Mode:</span>
-                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                        {[
-                                            { v: null, label: 'Simple' },
-                                            { v: 'grouped', label: 'Grouped' },
-                                            { v: 'stacked', label: 'Stacked' }
-                                        ].map(({ v, label }) => (
-                                            <button
-                                                key={label}
-                                                onClick={() => updateChartConfig(chartConfig.id, 'chartMode', v)}
-                                                className={`px-2.5 py-1 transition-all ${chartConfig.chartMode === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}
-                                            >
-                                                {label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                            {/* Bar orientation toggle — bar only */}
-                            {chartConfig.chartType?.value === 'bar' && (
-                                <div className="flex items-center gap-2 mb-3 px-5">
-                                    <span className="text-xs font-semibold text-gray-700">Orientation:</span>
-                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                        <button
-                                            onClick={() => updateChartConfig(chartConfig.id, 'barOrientation', 'vertical')}
-                                            title="Vertical bars"
-                                            className={`flex items-center gap-1 px-2.5 py-1 transition-all ${(chartConfig.barOrientation || 'vertical') === 'vertical'
-                                                ? 'bg-gray-900 text-white'
-                                                : 'bg-white text-gray-500 hover:bg-gray-100'
-                                                }`}
-                                        >
-                                            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-                                                <rect x="1" y="4" width="2.5" height="7" rx="0.5" />
-                                                <rect x="4.75" y="2" width="2.5" height="9" rx="0.5" />
-                                                <rect x="8.5" y="5.5" width="2.5" height="5.5" rx="0.5" />
-                                            </svg>
-                                            Vertical
-                                        </button>
-                                        <button
-                                            onClick={() => updateChartConfig(chartConfig.id, 'barOrientation', 'horizontal')}
-                                            title="Horizontal bars"
-                                            className={`flex items-center gap-1 px-2.5 py-1 transition-all ${chartConfig.barOrientation === 'horizontal'
-                                                ? 'bg-gray-900 text-white'
-                                                : 'bg-white text-gray-500 hover:bg-gray-100'
-                                                }`}
-                                        >
-                                            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-                                                <rect x="0" y="1" width="7" height="2.5" rx="0.5" />
-                                                <rect x="0" y="4.75" width="9" height="2.5" rx="0.5" />
-                                                <rect x="0" y="8.5" width="5.5" height="2.5" rx="0.5" />
-                                            </svg>
-                                            Horizontal
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+
+                            {/* ── SECTION: RENAME LABELS ────────────────── */}
+                            {chartConfig.chartType?.value && (() => {
+                                const isNumber = chartConfig.chartType?.value === 'number';
+                                const isHeatmap = chartConfig.chartType?.value === 'heatmap';
+                                if (isHeatmap) return null;
+                                const activeFields = isNumber
+                                    ? (chartConfig.yAxis ? [chartConfig.yAxis] : [])
+                                    : [chartConfig.xAxis, chartConfig.yAxis, chartConfig.zAxis].filter(Boolean);
+                                if (!activeFields.length) return null;
+                                return (
+                                    <>
+                                        <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Rename Labels</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-3 mb-2 px-5">
+                                            {activeFields.map((field) => {
+                                                const currentVal = (chartConfig.fieldLabels || {})[field.value] ?? field.label;
+                                                return (
+                                                    <div key={field.value} className="flex flex-col gap-0.5" style={{ minWidth: 90 }}>
+                                                        <span className="text-[10px] font-medium text-gray-400 truncate">{field.label}</span>
+                                                        <LabelInput
+                                                            initialValue={currentVal}
+                                                            placeholder={field.label}
+                                                            onCommit={(newVal) => updateChartConfig(chartConfig.id, 'fieldLabels', {
+                                                                ...(chartConfig.fieldLabels || {}),
+                                                                [field.value]: newVal,
+                                                            })}
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </>
+                                );
+                            })()}
                             {/* Chart Controls */}
                             <div className={`grid gap-3 mb-4 px-5 ${
                                 chartConfig.chartType?.value === 'number' ? 'grid-cols-3' :
@@ -2008,7 +2236,7 @@ const AnalyticsDashboardPage = () => {
                         transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
                     }}
                 >
-                    <div className="container mx-auto px-4 py-2">
+                    <div className="w-full px-6 py-2">
                         <div className="flex justify-between items-center">
                             <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                                 <div className="w-6 h-6 bg-gray-900 rounded-md flex items-center justify-center">
@@ -2035,7 +2263,7 @@ const AnalyticsDashboardPage = () => {
                 </div>
 
                 {/* Content */}
-                <div className="container mx-auto px-4 py-6">
+                <div className="w-full px-6 py-6">
                     {charts.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 animate-fade-in">
                             <div className="w-12 h-12 mb-4 bg-gray-100 rounded-xl flex items-center justify-center border border-gray-200">
