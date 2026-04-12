@@ -30,6 +30,61 @@ const LabelInput = ({ initialValue, placeholder, onCommit }) => {
     );
 };
 
+// ── SVG overlay for pie callout labels — lives outside Recharts render cycle, zero flicker ──
+const PieCalloutOverlay = ({ data, total, lbl, innerR, outerR, marginTop, marginRight, marginBottom, marginLeft, colors, computeCallouts }) => {
+    const svgRef = useRef(null);
+    const [dims, setDims] = useState({ w: 0, h: 0 });
+
+    useEffect(() => {
+        const el = svgRef.current?.parentElement;
+        if (!el) return;
+        const ro = new ResizeObserver(([entry]) => {
+            const { width, height } = entry.contentRect;
+            setDims({ w: width, h: height });
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
+    if (!dims.w || !dims.h || !data.length || total === 0) return <g ref={svgRef} />;
+
+    // Recharts puts the pie at center of the area inside margins
+    const plotW = dims.w - marginLeft - marginRight;
+    const plotH = dims.h - marginTop - marginBottom;
+    const cx = marginLeft + plotW / 2;
+    const cy = marginTop + plotH / 2;
+
+    const callouts = computeCallouts(data, total, cx, cy, innerR, outerR, lbl);
+
+    return (
+        <g ref={svgRef}>
+            {callouts.map((c, i) => (
+                <g key={i}>
+                    <path
+                        d={`M${c.sx},${c.sy} L${c.mx},${c.my} L${c.ex},${c.ey}`}
+                        stroke={c.color} strokeWidth={1.2} fill="none" strokeLinecap="round" strokeOpacity={0.55}
+                    />
+                    <circle cx={c.sx} cy={c.sy} r={2.5} fill={c.color} fillOpacity={0.7} />
+                    <text
+                        x={c.ex + (c.right ? 5 : -5)} y={c.ey - 4}
+                        textAnchor={c.right ? 'start' : 'end'}
+                        fill="#1e293b" fontSize={10} fontWeight={600}
+                    >
+                        {c.displayName}
+                    </text>
+                    <text
+                        x={c.ex + (c.right ? 5 : -5)} y={c.ey + 9}
+                        textAnchor={c.right ? 'start' : 'end'}
+                        fill="#64748b" fontSize={9}
+                    >
+                        {c.value.toLocaleString()} ({c.pct}%)
+                    </text>
+                </g>
+            ))}
+        </g>
+    );
+};
+
 const AnalyticsDashboardPage = () => {
     const navigate = useNavigate();
     const location = useLocation();
@@ -875,7 +930,10 @@ const AnalyticsDashboardPage = () => {
         return (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center', padding: '6px 12px 2px' }}>
                 {payload.map((entry, i) => {
-                    const color = entry.color || COLORS[i % COLORS.length];
+                    // entry.color may be a gradient URL reference (e.g. "url(#pieGrad-0)") when
+                    // Cell uses radial gradients — extract the real hex from COLORS by index instead.
+                    const rawColor = entry.color || '';
+                    const color = rawColor.startsWith('url(') ? COLORS[i % COLORS.length] : (rawColor || COLORS[i % COLORS.length]);
                     return (
                         <div key={i} style={{
                             display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -920,66 +978,131 @@ const AnalyticsDashboardPage = () => {
         cursor: { fill: 'rgba(99,102,241,0.06)' }
     };
 
-    // Render Pie Chart — modern donut with radial gradients
+    // ── Pie callout geometry helpers ──────────────────────────────────────────
+    // Compute elbow-line callout positions entirely from data, no Recharts label prop needed.
+    const computePieCallouts = (data, total, cx, cy, innerR, outerR, lbl) => {
+        if (!data.length || total === 0) return [];
+        const RADIAN = Math.PI / 180;
+        let startAngle = 90; // recharts default
+        return data.map((d, i) => {
+            const sliceAngle = (d.value / total) * 360;
+            const midAngle = startAngle - sliceAngle / 2;
+            startAngle -= sliceAngle;
+            const percent = d.value / total;
+            if (percent < 0.03) return null; // skip tiny slices
+
+            const sin = Math.sin(-midAngle * RADIAN);
+            const cos = Math.cos(-midAngle * RADIAN);
+            // start on the outer edge
+            const sx = cx + (outerR + 4) * cos;
+            const sy = cy + (outerR + 4) * sin;
+            // elbow
+            const mx = cx + (outerR + 18) * cos;
+            const my = cy + (outerR + 18) * sin;
+            // horizontal end
+            const right = cos >= 0;
+            const ex = mx + (right ? 16 : -16);
+            const ey = my;
+
+            const maxLen = 14;
+            const rawName = lbl(d.name);
+            const displayName = rawName.length > maxLen ? rawName.slice(0, maxLen - 1) + '\u2026' : rawName;
+            const pct = ((percent) * 100).toFixed(1);
+
+            return { sx, sy, mx, my, ex, ey, right, displayName, value: d.value, pct, color: COLORS[i % COLORS.length] };
+        }).filter(Boolean);
+    };
+
+    // Render Pie Chart — modern donut, HTML overlay callouts, external legend (zero flicker)
     const renderPieChart = (chartData, yAxisLabel, showLegend = true, showDataLabels = true, lbl = (k) => k) => {
         const total = chartData.reduce((s, d) => s + d.value, 0);
-        const renderLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name, value }) => {
-            if (!showDataLabels || percent < 0.03) return null;
-            const RADIAN = Math.PI / 180;
-            const radius = innerRadius + (outerRadius - innerRadius) * (percent < 0.07 ? 0.5 : 0.55);
-            const x = cx + radius * Math.cos(-midAngle * RADIAN);
-            const y = cy + radius * Math.sin(-midAngle * RADIAN);
-            return (
-                <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={percent > 0.08 ? 11 : 9} fontWeight={700}>
-                    {percent >= 0.07
-                        ? `${value.toLocaleString()}`
-                        : `${(percent * 100).toFixed(0)}%`
-                    }
-                </text>
-            );
-        };
+
         return (
-            <ResponsiveContainer width="100%" height="100%">
-                <PieChart margin={{ top: showLegend ? 0 : 8, right: 8, bottom: showLegend ? 0 : 8, left: 8 }}>
-                    <defs>
-                        {COLORS.map((color, i) => (
-                            <radialGradient key={i} id={`pieGrad-${i}`} cx="50%" cy="50%" r="50%">
-                                <stop offset="0%" stopColor={color} stopOpacity={1} />
-                                <stop offset="100%" stopColor={color} stopOpacity={0.75} />
-                            </radialGradient>
-                        ))}
-                    </defs>
-                    <Pie
-                        data={chartData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={65}
-                        outerRadius={115}
-                        paddingAngle={3}
-                        labelLine={false}
-                        label={renderLabel}
-                        dataKey="value"
-                    >
-                        {chartData.map((entry, index) => (
-                            <Cell
-                                key={`cell-${index}`}
-                                fill={`url(#pieGrad-${index % COLORS.length})`}
-                                stroke="white"
-                                strokeWidth={2}
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+                {/* Chart + overlay wrapper */}
+                <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        {/* Use a render-prop approach via children to get the resolved width/height */}
+                        <PieChart margin={{ top: 30, right: 70, bottom: 30, left: 70 }}>
+                            <defs>
+                                {COLORS.map((color, i) => (
+                                    <radialGradient key={i} id={`pieGrad-${i}`} cx="50%" cy="50%" r="50%">
+                                        <stop offset="0%" stopColor={color} stopOpacity={1} />
+                                        <stop offset="100%" stopColor={color} stopOpacity={0.75} />
+                                    </radialGradient>
+                                ))}
+                            </defs>
+                            <Pie
+                                data={chartData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={55}
+                                outerRadius={95}
+                                paddingAngle={3}
+                                dataKey="value"
+                                isAnimationActive={false}
+                            >
+                                {chartData.map((entry, index) => (
+                                    <Cell
+                                        key={`cell-${index}`}
+                                        fill={`url(#pieGrad-${index % COLORS.length})`}
+                                        stroke="white"
+                                        strokeWidth={2}
+                                    />
+                                ))}
+                            </Pie>
+                            <Tooltip
+                                contentStyle={tooltipStyle.contentStyle}
+                                labelStyle={tooltipStyle.labelStyle}
+                                itemStyle={tooltipStyle.itemStyle}
+                                formatter={(value, name) => [`${value.toLocaleString()} (${total > 0 ? ((value / total) * 100).toFixed(1) : 0}%)`, lbl(name)]}
                             />
-                        ))}
-                    </Pie>
-                    <Tooltip
-                        contentStyle={tooltipStyle.contentStyle}
-                        labelStyle={tooltipStyle.labelStyle}
-                        itemStyle={tooltipStyle.itemStyle}
-                        formatter={(value, name) => [`${value.toLocaleString()} (${total > 0 ? ((value / total) * 100).toFixed(1) : 0}%)`, lbl(name)]}
-                    />
-                    {showLegend && (
-                        <Legend content={legendChips} />
+                        </PieChart>
+                    </ResponsiveContainer>
+                    {/* SVG overlay for callout labels — completely outside Recharts render cycle */}
+                    {showDataLabels && (
+                        <svg
+                            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible' }}
+                            width="100%" height="100%"
+                        >
+                            <PieCalloutOverlay data={chartData} total={total} lbl={lbl}
+                                innerR={55} outerR={95}
+                                marginTop={30} marginRight={70} marginBottom={30} marginLeft={70}
+                                colors={COLORS} computeCallouts={computePieCallouts} />
+                        </svg>
                     )}
-                </PieChart>
-            </ResponsiveContainer>
+                </div>
+                {/* External legend — stable, never flickers, not part of SVG */}
+                {showLegend && (
+                    <div style={{
+                        display: 'flex', flexWrap: 'wrap', gap: '6px',
+                        justifyContent: 'center', padding: '6px 16px 10px',
+                        flexShrink: 0,
+                    }}>
+                        {chartData.map((entry, i) => {
+                            const color = COLORS[i % COLORS.length];
+                            return (
+                                <div key={i} style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    padding: '3px 10px 3px 7px',
+                                    borderRadius: 20,
+                                    background: `${color}12`,
+                                    border: `1px solid ${color}38`,
+                                }}>
+                                    <span style={{
+                                        width: 8, height: 8, borderRadius: '50%',
+                                        background: color, flexShrink: 0,
+                                        boxShadow: `0 0 0 2px ${color}28`,
+                                    }} />
+                                    <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', letterSpacing: 0.1, whiteSpace: 'nowrap' }}>
+                                        {lbl(entry.name)}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
         );
     };
 
@@ -1274,72 +1397,76 @@ const AnalyticsDashboardPage = () => {
         const innerData = Object.entries(innerMap).map(([name, value]) => ({ name, value }));
         const outerData = chartData.map(d => ({ name: `${d.name} › ${d.zKey}`, value: d.value }));
         const totalInner = innerData.reduce((s, d) => s + d.value, 0);
-        const totalOuter = outerData.reduce((s, d) => s + d.value, 0);
-
-        const renderInnerLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value, percent }) => {
-            if (!showDataLabels) return null;
-            if (percent < 0.03) return null;
-            const RADIAN = Math.PI / 180;
-            const r = innerRadius + (outerRadius - innerRadius) * 0.5;
-            const x = cx + r * Math.cos(-midAngle * RADIAN);
-            const y = cy + r * Math.sin(-midAngle * RADIAN);
-            return (
-                <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" style={{ fontSize: 10, fontWeight: 600 }}>
-                    {percent >= 0.07 ? value.toLocaleString() : `${(percent * 100).toFixed(0)}%`}
-                </text>
-            );
-        };
-
-        const renderOuterLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value, percent }) => {
-            if (!showDataLabels) return null;
-            if (percent < 0.03) return null;
-            const RADIAN = Math.PI / 180;
-            const r = innerRadius + (outerRadius - innerRadius) * 0.5;
-            const x = cx + r * Math.cos(-midAngle * RADIAN);
-            const y = cy + r * Math.sin(-midAngle * RADIAN);
-            return (
-                <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" style={{ fontSize: 9, fontWeight: 600 }}>
-                    {percent >= 0.07 ? value.toLocaleString() : `${(percent * 100).toFixed(0)}%`}
-                </text>
-            );
-        };
 
         return (
-            <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                    <defs>
-                        {COLORS.map((color, i) => (
-                            <radialGradient key={i} id={`nPieIn-${i}`} cx="50%" cy="50%" r="50%">
-                                <stop offset="0%" stopColor={color} stopOpacity={1} />
-                                <stop offset="100%" stopColor={color} stopOpacity={0.75} />
-                            </radialGradient>
-                        ))}
-                        {COLORS.map((color, i) => (
-                            <radialGradient key={`o${i}`} id={`nPieOut-${i}`} cx="50%" cy="50%" r="50%">
-                                <stop offset="0%" stopColor={color} stopOpacity={0.85} />
-                                <stop offset="100%" stopColor={color} stopOpacity={0.5} />
-                            </radialGradient>
-                        ))}
-                    </defs>
-                    <Pie data={innerData} cx="50%" cy="50%" innerRadius={40} outerRadius={72} paddingAngle={2} dataKey="value" labelLine={false} label={renderInnerLabel}>
-                        {innerData.map((_, i) => <Cell key={`in-${i}`} fill={`url(#nPieIn-${i % COLORS.length})`} stroke="white" strokeWidth={2} />)}
-                    </Pie>
-                    <Pie data={outerData} cx="50%" cy="50%" innerRadius={78} outerRadius={115} paddingAngle={1} dataKey="value" labelLine={false} label={renderOuterLabel}>
-                        {outerData.map((_, i) => <Cell key={`out-${i}`} fill={`url(#nPieOut-${i % COLORS.length})`} stroke="white" strokeWidth={1} />)}
-                    </Pie>
-                    <Tooltip
-                        contentStyle={tooltipStyle.contentStyle}
-                        labelStyle={tooltipStyle.labelStyle}
-                        itemStyle={tooltipStyle.itemStyle}
-                        formatter={(value, name) => {
-                            const total = outerData.find(d => d.name === name) ? totalOuter : totalInner;
-                            const pct = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
-                            return [`${value.toLocaleString()} (${pct}%)`, lbl(name)];
-                        }}
-                    />
-                    {showLegend && <Legend content={legendChips} />}
-                </PieChart>
-            </ResponsiveContainer>
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+                <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <PieChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                            <defs>
+                                {COLORS.map((color, i) => (
+                                    <radialGradient key={i} id={`nPieIn-${i}`} cx="50%" cy="50%" r="50%">
+                                        <stop offset="0%" stopColor={color} stopOpacity={1} />
+                                        <stop offset="100%" stopColor={color} stopOpacity={0.75} />
+                                    </radialGradient>
+                                ))}
+                                {COLORS.map((color, i) => (
+                                    <radialGradient key={`o${i}`} id={`nPieOut-${i}`} cx="50%" cy="50%" r="50%">
+                                        <stop offset="0%" stopColor={color} stopOpacity={0.85} />
+                                        <stop offset="100%" stopColor={color} stopOpacity={0.5} />
+                                    </radialGradient>
+                                ))}
+                            </defs>
+                            <Pie data={innerData} cx="50%" cy="50%" innerRadius={40} outerRadius={72} paddingAngle={2} dataKey="value" isAnimationActive={false}>
+                                {innerData.map((_, i) => <Cell key={`in-${i}`} fill={`url(#nPieIn-${i % COLORS.length})`} stroke="white" strokeWidth={2} />)}
+                            </Pie>
+                            <Pie data={outerData} cx="50%" cy="50%" innerRadius={78} outerRadius={115} paddingAngle={1} dataKey="value" isAnimationActive={false}>
+                                {outerData.map((_, i) => <Cell key={`out-${i}`} fill={`url(#nPieOut-${i % COLORS.length})`} stroke="white" strokeWidth={1} />)}
+                            </Pie>
+                            <Tooltip
+                                contentStyle={tooltipStyle.contentStyle}
+                                labelStyle={tooltipStyle.labelStyle}
+                                itemStyle={tooltipStyle.itemStyle}
+                                formatter={(value, name) => {
+                                    const total = outerData.find(d => d.name === name) ? totalInner : totalInner;
+                                    const pct = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                    return [`${value.toLocaleString()} (${pct}%)`, lbl(name)];
+                                }}
+                            />
+                        </PieChart>
+                    </ResponsiveContainer>
+                </div>
+                {/* External legend — stable, not part of SVG */}
+                {showLegend && (
+                    <div style={{
+                        display: 'flex', flexWrap: 'wrap', gap: '6px',
+                        justifyContent: 'center', padding: '6px 16px 10px',
+                        flexShrink: 0,
+                    }}>
+                        {innerData.map((entry, i) => {
+                            const color = COLORS[i % COLORS.length];
+                            return (
+                                <div key={i} style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    padding: '3px 10px 3px 7px',
+                                    borderRadius: 20,
+                                    background: `${color}12`,
+                                    border: `1px solid ${color}38`,
+                                }}>
+                                    <span style={{
+                                        width: 8, height: 8, borderRadius: '50%',
+                                        background: color, flexShrink: 0,
+                                        boxShadow: `0 0 0 2px ${color}28`,
+                                    }} />
+                                    <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', letterSpacing: 0.1, whiteSpace: 'nowrap' }}>
+                                        {lbl(entry.name)}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
         );
     };
 
