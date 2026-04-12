@@ -105,6 +105,16 @@ const AnalyticsDashboardPage = () => {
         { value: 'avg', label: 'Average' }
     ];
 
+    const DATE_GRANULARITY_OPTIONS = [
+        { value: 'hour',  label: 'Hourly' },
+        { value: 'day',   label: 'Daily' },
+        { value: 'month', label: 'Monthly' },
+        { value: 'year',  label: 'Yearly' },
+    ];
+
+    // Fields that represent timestamps and should trigger date granularity bucketing
+    const DATE_AXIS_FIELDS = ['createdAt', 'updatedAt'];
+
     const getTodayISO = () => {
         const d = new Date(); d.setHours(0, 0, 0, 0);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -128,7 +138,8 @@ const AnalyticsDashboardPage = () => {
         barOrientation: 'vertical',
         chartColor: null,
         autoRefreshMins: null,
-        chartCategory: null
+        chartCategory: null,
+        dateGranularity: 'day'
     };
 
     const STORAGE_KEY = 'analyticsDashboard_charts';
@@ -330,10 +341,12 @@ const AnalyticsDashboardPage = () => {
     const [filterVisible, setFilterVisible] = useState({});
     const filterLockedRef = React.useRef({});
     const pendingHideRef = React.useRef({});
+    const filterHideCountRef = React.useRef({});
     const cardRefs = React.useRef({});
 
     const hideFilter = (chartId) => {
         if (!filterLockedRef.current[chartId]) {
+            filterHideCountRef.current[chartId] = (filterHideCountRef.current[chartId] || 0) + 1;
             setFilterVisible(prev => { const n = { ...prev }; delete n[chartId]; return n; });
         } else {
             // Mark for hide-after-unlock (e.g. mouse left while combobox dropdown was open)
@@ -348,6 +361,9 @@ const AnalyticsDashboardPage = () => {
                 const pending = Object.keys(pendingHideRef.current);
                 filterLockedRef.current = {};
                 if (pending.length) {
+                    pending.forEach(id => {
+                        filterHideCountRef.current[id] = (filterHideCountRef.current[id] || 0) + 1;
+                    });
                     pendingHideRef.current = {};
                     setFilterVisible(prev => {
                         const n = { ...prev };
@@ -463,8 +479,10 @@ const AnalyticsDashboardPage = () => {
         if (!acctId || !isChartConfigured(chartConfig)) return null;
 
         const isNumber = chartConfig.chartType?.value === 'number';
+        const xAxisField = isNumber ? chartConfig.yAxis.value : chartConfig.xAxis?.value;
+        const isDateAxis = xAxisField === 'createdAt' || xAxisField === 'updatedAt';
         const payload = {
-            xAxis: isNumber ? chartConfig.yAxis.value : chartConfig.xAxis.value,
+            xAxis: xAxisField,
             yAxis: chartConfig.yAxis.value,
             aggregation: chartConfig.aggregation.value === 'average' ? 'avg' : chartConfig.aggregation.value,
             acctId,
@@ -475,7 +493,8 @@ const AnalyticsDashboardPage = () => {
                 ? { zAxis: chartConfig.zAxis.value }
                 : {}),
             ...(chartConfig.dateFilterFrom ? { dateFrom: chartConfig.dateFilterFrom } : {}),
-            ...(chartConfig.dateFilterTo ? { dateTo: chartConfig.dateFilterTo } : {})
+            ...(chartConfig.dateFilterTo ? { dateTo: chartConfig.dateFilterTo } : {}),
+            ...(isDateAxis ? { dateGranularity: chartConfig.dateGranularity || 'day' } : {})
         };
 
         return payload;
@@ -552,6 +571,7 @@ const AnalyticsDashboardPage = () => {
         if (!silent) setChartLoadingState(prev => ({ ...prev, [chartId]: true }));
         try {
             const xAxisValue = isNumber ? chartConfig.yAxis.value : chartConfig.xAxis.value;
+            const isDateAxis = xAxisValue === 'createdAt' || xAxisValue === 'updatedAt';
             // Use the chart's own category if set
             const effectiveCategoryId = chartConfig.chartCategory?._id || chartConfig.chartCategory || null;
             const params = {
@@ -562,13 +582,18 @@ const AnalyticsDashboardPage = () => {
                 ...(effectiveCategoryId && { categoryId: effectiveCategoryId }),
                 ...((chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && chartConfig.zAxis ? { zAxis: chartConfig.zAxis.value } : {}),
                 ...(chartConfig.dateFilterFrom && { dateFrom: chartConfig.dateFilterFrom }),
-                ...(chartConfig.dateFilterTo && { dateTo: chartConfig.dateFilterTo })
+                ...(chartConfig.dateFilterTo && { dateTo: chartConfig.dateFilterTo }),
+                ...(isDateAxis ? { dateGranularity: chartConfig.dateGranularity || 'day' } : {})
             };
 
             const response = await api.post('/api/ui/analytics/chart-data', params);
             const data = response.data.data || [];
-            // Sort descending by value
-            data.sort((a, b) => b.value - a.value);
+            // For date-axis charts sort chronologically; otherwise sort by value descending
+            if (isDateAxis) {
+                data.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+            } else {
+                data.sort((a, b) => b.value - a.value);
+            }
 
             setChartDataCache(prev => ({
                 ...prev,
@@ -1261,6 +1286,9 @@ const AnalyticsDashboardPage = () => {
         const showCustomInputs = activePreset === 'custom';
         const showLastNInput = activePreset === 'last_n';
         const filterIsVisible = !!filterVisible[chartConfig.id];
+        const filterHideCount = filterHideCountRef.current[chartConfig.id] || 0;
+        const isDateXAxis = DATE_AXIS_FIELDS.includes(chartConfig.xAxis?.value);
+        const activeDateGranularityOption = DATE_GRANULARITY_OPTIONS.find(o => o.value === (chartConfig.dateGranularity || 'day')) || DATE_GRANULARITY_OPTIONS[1];
 
         const applyDatePreset = (preset) => {
             const updates = { _datePreset: preset };
@@ -1446,6 +1474,7 @@ const AnalyticsDashboardPage = () => {
 
                 {/* ── All controls — slides in when near top ── */}
                 <div
+                    key={filterHideCount}
                     className={`absolute left-0 right-0 bg-white z-40 border-b border-gray-200 shadow-lg
                         transition-all duration-200 ease-out origin-top
                         ${filterIsVisible
@@ -1478,7 +1507,7 @@ const AnalyticsDashboardPage = () => {
                                     displayValue={(option) => option?.categoryName || ''}
                                     options={categories}
                                     placeholder="Select category..."
-                                    dropdownClassName="z-50"
+                                    dropdownClassName="z-50 !min-w-[160px]"
                                 >
                                     {(option) => (
                                         <ComboboxOption key={`cat-${chartConfig.id}-${option._id}`} value={option}>
@@ -1552,7 +1581,7 @@ const AnalyticsDashboardPage = () => {
                                         onChange={(val) => val && applyDatePreset(val.value)}
                                         displayValue={(option) => option?.label || ''}
                                         options={DATE_PRESET_OPTIONS}
-                                        dropdownClassName="z-50"
+                                        dropdownClassName="z-50 !min-w-[160px]"
                                     >
                                         {(option) => (
                                             <ComboboxOption key={`date-preset-${chartConfig.id}-${option.value}`} value={option}>
@@ -1772,10 +1801,12 @@ const AnalyticsDashboardPage = () => {
                                 </div>
                             )}
                             {/* Chart Controls */}
-                            <div className={`grid gap-3 mb-4 px-5 ${chartConfig.chartType?.value === 'number' ? 'grid-cols-3' :
-                                ((chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked')) ? 'grid-cols-5' :
-                                    'grid-cols-4'
-                                }`}>
+                            <div className={`grid gap-3 mb-4 px-5 ${
+                                chartConfig.chartType?.value === 'number' ? 'grid-cols-3' :
+                                ((chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked'))
+                                    ? (isDateXAxis ? 'grid-cols-6' : 'grid-cols-5')
+                                    : (isDateXAxis ? 'grid-cols-5' : 'grid-cols-4')
+                            }`}>
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
                                     <Combobox
@@ -1783,7 +1814,7 @@ const AnalyticsDashboardPage = () => {
                                         onChange={(val) => updateChartConfig(chartConfig.id, 'chartType', val)}
                                         displayValue={(option) => option?.label || 'Select...'}
                                         options={chartTypes}
-                                        dropdownClassName="z-50"
+                                        dropdownClassName="z-50 !min-w-[160px]"
                                     >
                                         {(option) => (
                                             <ComboboxOption key={`chart-type-${chartConfig.id}-${option.value}`} value={option}>
@@ -1801,11 +1832,11 @@ const AnalyticsDashboardPage = () => {
                                             value={chartConfig.xAxis}
                                             onChange={(val) => updateChartConfig(chartConfig.id, 'xAxis', val)}
                                             displayValue={(option) => option?.label || 'Select...'}
-                                            options={columns}
-                                            dropdownClassName="z-50"
-                                        >
-                                            {(option) => (
-                                                <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                        options={columns}
+                                        dropdownClassName="z-50 !min-w-[160px]"
+                                    >
+                                        {(option) => (
+                                            <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
                                                     <ComboboxLabel>{option.label}</ComboboxLabel>
                                                 </ComboboxOption>
                                             )}
@@ -1821,7 +1852,7 @@ const AnalyticsDashboardPage = () => {
                                         onChange={(val) => updateChartConfig(chartConfig.id, 'yAxis', val)}
                                         displayValue={(option) => option?.label || 'Select...'}
                                         options={columns}
-                                        dropdownClassName="z-50"
+                                        dropdownClassName="z-50 !min-w-[160px]"
                                     >
                                         {(option) => (
                                             <ComboboxOption key={`y-axis-${chartConfig.id}-${option.value}`} value={option}>
@@ -1840,11 +1871,11 @@ const AnalyticsDashboardPage = () => {
                                             value={chartConfig.zAxis}
                                             onChange={(val) => updateChartConfig(chartConfig.id, 'zAxis', val)}
                                             displayValue={(option) => option?.label || 'None'}
-                                            options={columns}
-                                            dropdownClassName="z-50"
-                                        >
-                                            {(option) => (
-                                                <ComboboxOption key={`z-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                        options={columns}
+                                        dropdownClassName="z-50 !min-w-[160px]"
+                                    >
+                                        {(option) => (
+                                            <ComboboxOption key={`z-axis-${chartConfig.id}-${option.value}`} value={option}>
                                                     <ComboboxLabel>{option.label}</ComboboxLabel>
                                                 </ComboboxOption>
                                             )}
@@ -1858,7 +1889,7 @@ const AnalyticsDashboardPage = () => {
                                         onChange={(val) => updateChartConfig(chartConfig.id, 'aggregation', val)}
                                         displayValue={(option) => option?.label || 'Select...'}
                                         options={chartConfig.chartType?.value === 'number' ? aggregationTypesNumber : aggregationTypes}
-                                        dropdownClassName="z-50"
+                                        dropdownClassName="z-50 !min-w-[160px]"
                                     >
                                         {(option) => (
                                             <ComboboxOption key={`agg-${chartConfig.id}-${option.value}`} value={option}>
@@ -1867,6 +1898,25 @@ const AnalyticsDashboardPage = () => {
                                         )}
                                     </Combobox>
                                 </div>
+                                {/* Date Granularity — only when xAxis is a timestamp field */}
+                                {isDateXAxis && (
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Granularity</label>
+                                        <Combobox
+                                            value={activeDateGranularityOption}
+                                            onChange={(val) => val && updateChartConfig(chartConfig.id, 'dateGranularity', val.value)}
+                                            displayValue={(option) => option?.label || 'Daily'}
+                                            options={DATE_GRANULARITY_OPTIONS}
+                                            dropdownClassName="z-50 !min-w-[140px]"
+                                        >
+                                            {(option) => (
+                                                <ComboboxOption key={`gran-${chartConfig.id}-${option.value}`} value={option}>
+                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                </ComboboxOption>
+                                            )}
+                                        </Combobox>
+                                    </div>
+                                )}
                             </div>
                             {/* end filter controls */}
                             <div className="pb-4"></div>
