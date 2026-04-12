@@ -250,7 +250,8 @@ const AnalyticsDashboardPage = () => {
                 autoRefreshMins: chart.autoRefreshMins ?? null,
                 zAxis: chart.zAxis || null,
                 chartMode: chart.chartMode || null,
-                chartCategory: chart.chartCategory || null
+                chartCategory: chart.chartCategory || null,
+                fieldLabels: chart.fieldLabels || {}
             }));
             store[acctKey] = store[acctKey] || {};
             store[acctKey][''] = { filters: chartsToSave };
