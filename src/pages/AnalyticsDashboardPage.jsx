@@ -5,8 +5,8 @@ import { useAccount } from '../context/AccountContext';
 import { resolveActiveAcctNo, getAcctIdFromLocalStorage } from '../utils/accountHelpers';
 import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
 import {
-    PieChart, Pie, Cell, BarChart, Bar, AreaChart, Area,
-    XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList, ResponsiveContainer
+    PieChart, Pie, Cell, Sector, BarChart, Bar, AreaChart, Area,
+    XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList, ResponsiveContainer, Customized
 } from 'recharts';
 import LoadingMask from '../components/LoadingMask';
 import DeleteConfirmation from '../components/DeleteConfirmation';
@@ -27,61 +27,6 @@ const LabelInput = ({ initialValue, placeholder, onCommit }) => {
             }}
             onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
         />
-    );
-};
-
-// ── SVG overlay for pie callout labels — lives outside Recharts render cycle, zero flicker ──
-const PieCalloutOverlay = ({ data, total, lbl, innerR, outerR, marginTop, marginRight, marginBottom, marginLeft, colors, computeCallouts }) => {
-    const svgRef = useRef(null);
-    const [dims, setDims] = useState({ w: 0, h: 0 });
-
-    useEffect(() => {
-        const el = svgRef.current?.parentElement;
-        if (!el) return;
-        const ro = new ResizeObserver(([entry]) => {
-            const { width, height } = entry.contentRect;
-            setDims({ w: width, h: height });
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
-
-    if (!dims.w || !dims.h || !data.length || total === 0) return <g ref={svgRef} />;
-
-    // Recharts puts the pie at center of the area inside margins
-    const plotW = dims.w - marginLeft - marginRight;
-    const plotH = dims.h - marginTop - marginBottom;
-    const cx = marginLeft + plotW / 2;
-    const cy = marginTop + plotH / 2;
-
-    const callouts = computeCallouts(data, total, cx, cy, innerR, outerR, lbl);
-
-    return (
-        <g ref={svgRef}>
-            {callouts.map((c, i) => (
-                <g key={i}>
-                    <path
-                        d={`M${c.sx},${c.sy} L${c.mx},${c.my} L${c.ex},${c.ey}`}
-                        stroke={c.color} strokeWidth={1.2} fill="none" strokeLinecap="round" strokeOpacity={0.55}
-                    />
-                    <circle cx={c.sx} cy={c.sy} r={2.5} fill={c.color} fillOpacity={0.7} />
-                    <text
-                        x={c.ex + (c.right ? 5 : -5)} y={c.ey - 4}
-                        textAnchor={c.right ? 'start' : 'end'}
-                        fill="#1e293b" fontSize={10} fontWeight={600}
-                    >
-                        {c.displayName}
-                    </text>
-                    <text
-                        x={c.ex + (c.right ? 5 : -5)} y={c.ey + 9}
-                        textAnchor={c.right ? 'start' : 'end'}
-                        fill="#64748b" fontSize={9}
-                    >
-                        {c.value.toLocaleString()} ({c.pct}%)
-                    </text>
-                </g>
-            ))}
-        </g>
     );
 };
 
@@ -978,52 +923,86 @@ const AnalyticsDashboardPage = () => {
         cursor: { fill: 'rgba(99,102,241,0.06)' }
     };
 
-    // ── Pie callout geometry helpers ──────────────────────────────────────────
-    // Compute elbow-line callout positions entirely from data, no Recharts label prop needed.
-    const computePieCallouts = (data, total, cx, cy, innerR, outerR, lbl) => {
-        if (!data.length || total === 0) return [];
+    // ── Stable pie callout label — rendered by Recharts' own label pipeline so
+    // coordinates are exact, but wrapped in React.memo so it never re-renders on
+    // hover (the only source of the previous flicker).
+    const PieCalloutLabel = React.memo(({ cx, cy, midAngle, outerRadius, percent, name, value, index, total, lbl, colors }) => {
+        if (percent < 0.03) return null;
         const RADIAN = Math.PI / 180;
-        let startAngle = 90; // recharts default
-        return data.map((d, i) => {
-            const sliceAngle = (d.value / total) * 360;
-            const midAngle = startAngle - sliceAngle / 2;
-            startAngle -= sliceAngle;
-            const percent = d.value / total;
-            if (percent < 0.03) return null; // skip tiny slices
+        const color = colors[index % colors.length];
+        const cos = Math.cos(-midAngle * RADIAN);
+        const sin = Math.sin(-midAngle * RADIAN);
 
-            const sin = Math.sin(-midAngle * RADIAN);
-            const cos = Math.cos(-midAngle * RADIAN);
-            // start on the outer edge
-            const sx = cx + (outerR + 4) * cos;
-            const sy = cy + (outerR + 4) * sin;
-            // elbow
-            const mx = cx + (outerR + 18) * cos;
-            const my = cy + (outerR + 18) * sin;
-            // horizontal end
-            const right = cos >= 0;
-            const ex = mx + (right ? 16 : -16);
-            const ey = my;
+        const sx = cx + (outerRadius + 6) * cos;
+        const sy = cy + (outerRadius + 6) * sin;
+        const mx = cx + (outerRadius + 22) * cos;
+        const my = cy + (outerRadius + 22) * sin;
+        const goRight = cos >= 0;
+        const ex = mx + (goRight ? 20 : -20);
+        const ey = my;
+        const anchor = goRight ? 'start' : 'end';
+        const tx = ex + (goRight ? 4 : -4);
 
-            const maxLen = 14;
-            const rawName = lbl(d.name);
-            const displayName = rawName.length > maxLen ? rawName.slice(0, maxLen - 1) + '\u2026' : rawName;
-            const pct = ((percent) * 100).toFixed(1);
+        const rawName = lbl(name);
+        const maxLen = 15;
+        const displayName = rawName.length > maxLen ? rawName.slice(0, maxLen - 1) + '\u2026' : rawName;
+        const pct = (percent * 100).toFixed(1);
 
-            return { sx, sy, mx, my, ex, ey, right, displayName, value: d.value, pct, color: COLORS[i % COLORS.length] };
-        }).filter(Boolean);
-    };
+        return (
+            <g>
+                <path
+                    d={`M${sx},${sy} L${mx},${my} L${ex},${ey}`}
+                    stroke={color} strokeWidth={1.3} fill="none"
+                    strokeLinecap="round" strokeOpacity={0.65}
+                />
+                <circle cx={sx} cy={sy} r={2.5} fill={color} fillOpacity={0.8} />
+                <text x={tx} y={ey - 5} textAnchor={anchor}
+                    fill="#1e293b" fontSize={10} fontWeight={600}>
+                    {displayName}
+                </text>
+                <text x={tx} y={ey + 8} textAnchor={anchor}
+                    fill="#64748b" fontSize={9}>
+                    {value.toLocaleString()} ({pct}%)
+                </text>
+            </g>
+        );
+    });
 
-    // Render Pie Chart — modern donut, HTML overlay callouts, external legend (zero flicker)
+    // Render Pie Chart — donut with stable callout labels + stable external legend
     const renderPieChart = (chartData, yAxisLabel, showLegend = true, showDataLabels = true, lbl = (k) => k) => {
         const total = chartData.reduce((s, d) => s + d.value, 0);
 
+        // Build stable label renderer — bound to this chart's data so memo comparison works
+        const labelRenderer = showDataLabels
+            ? (props) => <PieCalloutLabel {...props} total={total} lbl={lbl} colors={COLORS} />
+            : false;
+
+        // activeShape: keep the sector visually identical on hover — prevents outerRadius change
+        // which was causing Recharts to re-render the label layer and make labels disappear
+        const stableActiveShape = (props) => {
+            const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+            return (
+                <g>
+                    <path
+                        d={`M ${cx + outerRadius * Math.cos(-startAngle * Math.PI / 180)} ${cy + outerRadius * Math.sin(-startAngle * Math.PI / 180)}`}
+                    />
+                    <Sector
+                        cx={cx} cy={cy}
+                        innerRadius={innerRadius}
+                        outerRadius={outerRadius}
+                        startAngle={startAngle}
+                        endAngle={endAngle}
+                        fill={fill}
+                    />
+                </g>
+            );
+        };
+
         return (
             <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
-                {/* Chart + overlay wrapper */}
-                <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                <div style={{ flex: 1, minHeight: 0 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                        {/* Use a render-prop approach via children to get the resolved width/height */}
-                        <PieChart margin={{ top: 30, right: 70, bottom: 30, left: 70 }}>
+                        <PieChart margin={{ top: 35, right: 80, bottom: 35, left: 80 }}>
                             <defs>
                                 {COLORS.map((color, i) => (
                                     <radialGradient key={i} id={`pieGrad-${i}`} cx="50%" cy="50%" r="50%">
@@ -1041,6 +1020,9 @@ const AnalyticsDashboardPage = () => {
                                 paddingAngle={3}
                                 dataKey="value"
                                 isAnimationActive={false}
+                                labelLine={false}
+                                label={labelRenderer}
+                                activeShape={stableActiveShape}
                             >
                                 {chartData.map((entry, index) => (
                                     <Cell
@@ -1059,20 +1041,8 @@ const AnalyticsDashboardPage = () => {
                             />
                         </PieChart>
                     </ResponsiveContainer>
-                    {/* SVG overlay for callout labels — completely outside Recharts render cycle */}
-                    {showDataLabels && (
-                        <svg
-                            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible' }}
-                            width="100%" height="100%"
-                        >
-                            <PieCalloutOverlay data={chartData} total={total} lbl={lbl}
-                                innerR={55} outerR={95}
-                                marginTop={30} marginRight={70} marginBottom={30} marginLeft={70}
-                                colors={COLORS} computeCallouts={computePieCallouts} />
-                        </svg>
-                    )}
                 </div>
-                {/* External legend — stable, never flickers, not part of SVG */}
+                {/* External legend — stable div, never inside SVG, never flickers */}
                 {showLegend && (
                     <div style={{
                         display: 'flex', flexWrap: 'wrap', gap: '6px',
