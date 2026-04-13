@@ -352,6 +352,7 @@ const AnalyticsDashboardPage = () => {
     const [autoRefreshCountdown, setAutoRefreshCountdown] = useState({});
     const autoRefreshIntervalsRef = React.useRef({});
     const chartsForTimerRef = React.useRef([]);
+    const acctIdRef = React.useRef(acctId);
     const draggedIdRef = React.useRef(null);
     const [dragOverId, setDragOverId] = useState(null);
     const [isDraggingAny, setIsDraggingAny] = useState(false);
@@ -398,8 +399,6 @@ const AnalyticsDashboardPage = () => {
     const [filterVisible, setFilterVisible] = useState({});
     const [filterHideCountState, setFilterHideCountState] = useState({});
     const [filterPanelPos, setFilterPanelPos] = useState({});
-    const filterLockedRef = React.useRef({});
-    const pendingHideRef = React.useRef({});
     const filterHideCountRef = React.useRef({});
     const cardRefs = React.useRef({});
 
@@ -433,48 +432,13 @@ const AnalyticsDashboardPage = () => {
     }, [updateFilterPanelPos]);
 
     const hideFilter = (chartId) => {
-        if (!filterLockedRef.current[chartId]) {
-            // Animate out first, then remount (to reset dropdowns) after transition finishes
-            setFilterVisible(prev => { const n = { ...prev }; delete n[chartId]; return n; });
-            setTimeout(() => {
-                filterHideCountRef.current[chartId] = (filterHideCountRef.current[chartId] || 0) + 1;
-                setFilterHideCountState(prev => ({ ...prev, [chartId]: filterHideCountRef.current[chartId] }));
-            }, 320);
-        } else {
-            // Mark for hide-after-unlock (e.g. mouse left while combobox dropdown was open)
-            pendingHideRef.current[chartId] = true;
-        }
+        // Animate out first, then remount (to reset dropdowns) after transition finishes
+        setFilterVisible(prev => { const n = { ...prev }; delete n[chartId]; return n; });
+        setTimeout(() => {
+            filterHideCountRef.current[chartId] = (filterHideCountRef.current[chartId] || 0) + 1;
+            setFilterHideCountState(prev => ({ ...prev, [chartId]: filterHideCountRef.current[chartId] }));
+        }, 320);
     };
-
-    // Release all locks on document mouseup (covers combobox portal selections)
-    React.useEffect(() => {
-        const onDocMouseUp = () => {
-            setTimeout(() => {
-                const pending = Object.keys(pendingHideRef.current);
-                filterLockedRef.current = {};
-                if (pending.length) {
-                    pendingHideRef.current = {};
-                    setFilterVisible(prev => {
-                        const n = { ...prev };
-                        pending.forEach(id => delete n[id]);
-                        return n;
-                    });
-                    setTimeout(() => {
-                        pending.forEach(id => {
-                            filterHideCountRef.current[id] = (filterHideCountRef.current[id] || 0) + 1;
-                        });
-                        setFilterHideCountState(prev => {
-                            const n = { ...prev };
-                            pending.forEach(id => { n[id] = filterHideCountRef.current[id]; });
-                            return n;
-                        });
-                    }, 320);
-                }
-            }, 200);
-        };
-        document.addEventListener('mouseup', onDocMouseUp);
-        return () => document.removeEventListener('mouseup', onDocMouseUp);
-    }, []);
 
     // Auto-hide slider after a user-initiated "Update Chart" fetch completes successfully
     React.useEffect(() => {
@@ -588,7 +552,7 @@ const AnalyticsDashboardPage = () => {
     };
 
     const getChartRequestPayload = (chartConfig) => {
-        if (!acctId || !isChartConfigured(chartConfig)) return null;
+        if (!acctIdRef.current || !isChartConfigured(chartConfig)) return null;
 
         const isNumber = chartConfig.chartType?.value === 'number';
         const xAxisField = isNumber ? chartConfig.yAxis.value : chartConfig.xAxis?.value;
@@ -597,7 +561,7 @@ const AnalyticsDashboardPage = () => {
             xAxis: xAxisField,
             yAxis: chartConfig.yAxis.value,
             aggregation: chartConfig.aggregation.value === 'average' ? 'avg' : chartConfig.aggregation.value,
-            acctId,
+            acctId: acctIdRef.current,
             ...(chartConfig.chartCategory?._id || chartConfig.chartCategory
                 ? { categoryId: chartConfig.chartCategory?._id || chartConfig.chartCategory }
                 : {}),
@@ -621,6 +585,21 @@ const AnalyticsDashboardPage = () => {
         const signature = getChartRequestSignature(chartConfig);
         return !!signature && chartRequestSignatures[chartConfig.id] !== signature;
     };
+
+    // Returns true if any display-only fields in pendingChartConfigs differ from committed chartConfig
+    const isDisplayDirty = (committedConfig) => {
+        const pending = pendingChartConfigs[committedConfig.id];
+        if (!pending) return false;
+        const displayFields = ['showLegend', 'showDataLabels', 'chartColor', 'barOrientation', 'numberSplitCount', 'autoRefreshMins', 'fieldLabels'];
+        return displayFields.some(f => {
+            if (!(f in pending)) return false;
+            return JSON.stringify(pending[f]) !== JSON.stringify(committedConfig[f]);
+        });
+    };
+
+    // Either the data query changed or display settings changed
+    const isChartDirty = (mergedCfg, committedCfg) =>
+        isChartRequestDirty(mergedCfg) || isDisplayDirty(committedCfg);
 
     // Update individual chart config
     const updateChartConfig = (chartId, field, value) => {
@@ -671,6 +650,7 @@ const AnalyticsDashboardPage = () => {
     // Fetch chart data from backend API
     // silent=true skips the per-chart loading mask (used by auto-refresh)
     const fetchChartDataFromBackend = async (chartId, chartConfig, silent = false, markClean = false) => {
+        const currentAcctId = acctIdRef.current;
         const isNumber = chartConfig.chartType?.value === 'number';
         if (isNumber ? (!chartConfig.yAxis || !chartConfig.aggregation) : (!chartConfig.xAxis || !chartConfig.yAxis || !chartConfig.aggregation)) {
             return;
@@ -690,7 +670,7 @@ const AnalyticsDashboardPage = () => {
                 xAxis: xAxisValue,
                 yAxis: chartConfig.yAxis.value,
                 aggregation: chartConfig.aggregation.value === 'average' ? 'avg' : chartConfig.aggregation.value,
-                ...(acctId && { acctId }),
+                ...(currentAcctId && { acctId: currentAcctId }),
                 ...(effectiveCategoryId && { categoryId: effectiveCategoryId }),
                 ...((chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && chartConfig.zAxis ? { zAxis: chartConfig.zAxis.value } : {}),
                 ...(chartConfig.dateFilterFrom && { dateFrom: chartConfig.dateFilterFrom }),
@@ -763,6 +743,11 @@ const AnalyticsDashboardPage = () => {
     useEffect(() => {
         chartsForTimerRef.current = charts;
     }, [charts]);
+
+    // Keep acctIdRef current so interval callbacks always use the latest acctId
+    useEffect(() => {
+        acctIdRef.current = acctId;
+    }, [acctId]);
 
     // Auto-refresh timer manager — starts/restarts a countdown for each chart
     // No cleanup on dep change: each chart's timer is managed individually inside the body.
@@ -1202,6 +1187,7 @@ const AnalyticsDashboardPage = () => {
                         name={lbl(yAxisLabel)}
                         radius={isHorizontal ? [0, 8, 8, 0] : [8, 8, 0, 0]}
                         maxBarSize={60}
+                        isAnimationActive={false}
                     >
                         {chartData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={`url(#barGrad-${index % COLORS.length})`} />
@@ -1264,6 +1250,7 @@ const AnalyticsDashboardPage = () => {
                     fill="url(#areaGrad)"
                     dot={{ fill: color, stroke: 'white', strokeWidth: 2, r: 5 }}
                     activeDot={{ r: 7, fill: color, stroke: 'white', strokeWidth: 2 }}
+                    isAnimationActive={false}
                 >
                     {showDataLabels && (
                         <LabelList
@@ -1416,6 +1403,7 @@ const AnalyticsDashboardPage = () => {
                                 : (isHorizontal ? [0, 6, 6, 0] : [6, 6, 0, 0])
                             }
                             maxBarSize={stacked ? 80 : 50}
+                            isAnimationActive={false}
                         >
                             {showDataLabels && (
                                 <LabelList
@@ -1714,21 +1702,7 @@ const AnalyticsDashboardPage = () => {
                 }}
                 onDragEnd={() => { setDragOverId(null); draggedIdRef.current = null; stopAutoScroll(); setIsDraggingAny(false); }}
                 ref={(el) => { cardRefs.current[chartConfig.id] = el; }}
-                onMouseMove={(e) => {
-                    if (isResizingRef.current || isDraggingAny) return;
-                    const card = cardRefs.current[chartConfig.id];
-                    if (!card) return;
-                    const rect = card.getBoundingClientRect();
-                    // Only trigger inside the chart body (below the 36px header), near the top
-                    const relY = e.clientY - rect.top;
-                    if (relY > 36 && relY < 96) {
-                        if (!filterVisible[chartConfig.id]) {
-                            updateFilterPanelPos(chartConfig.id);
-                        }
-                        setFilterVisible(prev => ({ ...prev, [chartConfig.id]: true }));
-                    }
-                }}
-                onMouseLeave={() => hideFilter(chartConfig.id)}
+
                 className={`bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 animate-scale-in flex flex-col border-2 relative ${dragOverId === chartConfig.id ? 'border-gray-700 shadow-gray-200' : 'border-gray-200'
                     }`}
                 style={{
@@ -1758,6 +1732,61 @@ const AnalyticsDashboardPage = () => {
                         onClick={(e) => e.stopPropagation()}
                         className="flex-1 text-sm font-semibold text-white bg-transparent outline-none border-none cursor-text placeholder:text-gray-500 min-w-0"
                     />
+                    {/* Settings toggle button */}
+                    <button
+                        title={filterIsVisible ? 'Close settings' : 'Open settings'}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (filterVisible[chartConfig.id]) {
+                                hideFilter(chartConfig.id);
+                            } else {
+                                updateFilterPanelPos(chartConfig.id);
+                                setFilterVisible(prev => ({ ...prev, [chartConfig.id]: true }));
+                            }
+                        }}
+                        className={`p-1 transition-colors shrink-0 cursor-pointer ${filterIsVisible ? 'text-white' : 'text-gray-400 hover:text-white'}`}
+                    >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                        </svg>
+                    </button>
+
+                    {/* Width + height controls */}
+                    <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center border border-gray-700 rounded overflow-hidden text-[10px] font-semibold">
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); updateChartConfigBatch(chartConfig.id, { chartWidth: 'half', chartWidthPx: null }); }}
+                                title="Half width"
+                                className={`px-1.5 py-0.5 transition-all ${(chartConfig.chartWidth || 'half') === 'half' && !chartConfig.chartWidthPx ? 'bg-gray-600 text-white' : 'bg-transparent text-gray-400 hover:bg-gray-700 hover:text-white'}`}
+                            >½</button>
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); updateChartConfigBatch(chartConfig.id, { chartWidth: 'full', chartWidthPx: null }); }}
+                                title="Full width"
+                                className={`px-1.5 py-0.5 transition-all ${chartConfig.chartWidth === 'full' && !chartConfig.chartWidthPx ? 'bg-gray-600 text-white' : 'bg-transparent text-gray-400 hover:bg-gray-700 hover:text-white'}`}
+                            >▬</button>
+                        </div>
+                        <div className="flex items-center border border-gray-700 rounded overflow-hidden">
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartHeight', Math.max(180, (chartConfig.chartHeight || 320) - 40)); }}
+                                title="Decrease height"
+                                className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
+                            >−</button>
+                            <span className="px-1 text-[9px] font-semibold text-gray-400 min-w-[34px] text-center border-x border-gray-700">
+                                {chartConfig.chartHeight || 320}
+                            </span>
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartHeight', Math.min(800, (chartConfig.chartHeight || 320) + 40)); }}
+                                title="Increase height"
+                                className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
+                            >+</button>
+                        </div>
+                    </div>
+
                     {/* Manual refresh button */}
                     <button
                         title="Refresh chart"
@@ -1825,7 +1854,7 @@ const AnalyticsDashboardPage = () => {
                 {/* ── All controls — slides in when near top ── */}
                 <div
                     key={filterHideCount}
-                    className={`fixed bg-white z-[200] border border-gray-200 shadow-xl rounded-b-xl origin-top overflow-y-auto scrollbar-thin
+                    className={`fixed bg-white z-[200] border border-gray-200 shadow-xl rounded-b-xl origin-top flex flex-col overflow-hidden
                         ${filterIsVisible
                             ? 'opacity-100 translate-y-0 pointer-events-auto'
                             : 'opacity-0 -translate-y-2 pointer-events-none'
@@ -1841,9 +1870,7 @@ const AnalyticsDashboardPage = () => {
                             ? `calc(100vh - ${filterPanelPos[chartConfig.id]?.top ?? 0}px - 16px)`
                             : 0,
                     }}
-                    onMouseLeave={() => hideFilter(chartConfig.id)}
-                    onMouseDown={() => { filterLockedRef.current[chartConfig.id] = true; }}
-                    onMouseUp={() => { setTimeout(() => { delete filterLockedRef.current[chartConfig.id]; }, 200); }}
+
                 >
 
                     {/* ── Category — always shown first ── */}
@@ -1915,19 +1942,24 @@ const AnalyticsDashboardPage = () => {
                                     <button
                                         onClick={() => {
                                             const cfg = mergedConfig;
+                                            const needsFetch = isChartRequestDirty(mergedConfig);
                                             setCharts(prev => prev.map(c => c.id === chartConfig.id ? { ...c, ...pendingChartConfigs[chartConfig.id] } : c));
                                             clearPendingConfig(chartConfig.id);
-                                            userFetchInFlightRef.current[chartConfig.id] = true;
-                                            fetchChartDataFromBackend(chartConfig.id, cfg, false, true);
+                                            if (needsFetch) {
+                                                userFetchInFlightRef.current[chartConfig.id] = true;
+                                                fetchChartDataFromBackend(chartConfig.id, cfg, false, true);
+                                            } else {
+                                                hideFilter(chartConfig.id);
+                                            }
                                         }}
-                                        disabled={!isChartConfigured(mergedConfig) || !isChartRequestDirty(mergedConfig) || !!chartLoadingState[chartConfig.id]}
-                                        className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartRequestDirty(mergedConfig) && !chartLoadingState[chartConfig.id]
+                                        disabled={!isChartConfigured(mergedConfig) || !isChartDirty(mergedConfig, chartConfig) || !!chartLoadingState[chartConfig.id]}
+                                        className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
                                             ? 'bg-green-600 text-white hover:bg-green-500 shadow-md shadow-green-200 animate-pulse'
                                             : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             }`}
                                         title={!isChartConfigured(mergedConfig)
                                             ? 'Select the required chart fields first'
-                                            : isChartRequestDirty(mergedConfig)
+                                            : isChartDirty(mergedConfig, chartConfig)
                                                 ? 'Update chart data'
                                                 : 'Change the chart query fields to enable update'}
                                     >
@@ -1949,23 +1981,28 @@ const AnalyticsDashboardPage = () => {
                         <>
                             {/* ── Action buttons bar — only when no categories (otherwise in Account Category header row) ── */}
                             {categories.length === 0 && (
-                                <div className="flex items-center justify-end px-5 pt-2 pb-1">
+                                <div className="flex items-center justify-end px-5 pt-2 pb-1 border-b border-gray-100 shrink-0">
                                     <button
                                         onClick={() => {
                                             const cfg = mergedConfig;
+                                            const needsFetch = isChartRequestDirty(mergedConfig);
                                             setCharts(prev => prev.map(c => c.id === chartConfig.id ? { ...c, ...pendingChartConfigs[chartConfig.id] } : c));
                                             clearPendingConfig(chartConfig.id);
-                                            userFetchInFlightRef.current[chartConfig.id] = true;
-                                            fetchChartDataFromBackend(chartConfig.id, cfg, false, true);
+                                            if (needsFetch) {
+                                                userFetchInFlightRef.current[chartConfig.id] = true;
+                                                fetchChartDataFromBackend(chartConfig.id, cfg, false, true);
+                                            } else {
+                                                hideFilter(chartConfig.id);
+                                            }
                                         }}
-                                        disabled={!isChartConfigured(mergedConfig) || !isChartRequestDirty(mergedConfig) || !!chartLoadingState[chartConfig.id]}
-                                        className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartRequestDirty(mergedConfig) && !chartLoadingState[chartConfig.id]
+                                        disabled={!isChartConfigured(mergedConfig) || !isChartDirty(mergedConfig, chartConfig) || !!chartLoadingState[chartConfig.id]}
+                                        className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
                                             ? 'bg-green-600 text-white hover:bg-green-500 shadow-md shadow-green-200 animate-pulse'
                                             : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             }`}
                                         title={!isChartConfigured(mergedConfig)
                                             ? 'Select the required chart fields first'
-                                            : isChartRequestDirty(mergedConfig)
+                                            : isChartDirty(mergedConfig, chartConfig)
                                                 ? 'Update chart data'
                                                 : 'Change the chart query fields to enable update'}
                                     >
@@ -1979,6 +2016,9 @@ const AnalyticsDashboardPage = () => {
                                     </button>
                                 </div>
                             )}
+
+                            {/* ── Scrollable body ── */}
+                            <div className="overflow-y-auto flex-1 scrollbar-thin">
 
                             {/* ── Date filter row ── */}
                             <div className="flex items-center gap-2 pt-3 mb-3 px-5 flex-wrap">
@@ -2046,46 +2086,6 @@ const AnalyticsDashboardPage = () => {
                                     </>
                                 )}
 
-                                {/* Width toggle + height stepper — right-aligned in filter row */}
-                                <div className="ml-auto flex items-center gap-1.5 shrink-0">
-                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                        <button
-                                            onClick={() => updateChartConfigBatch(chartConfig.id, { chartWidth: 'half', chartWidthPx: null })}
-                                            title="Half width"
-                                            className={`px-2 py-1 transition-all ${(chartConfig.chartWidth || 'half') === 'half' && !chartConfig.chartWidthPx
-                                                ? 'bg-gray-900 text-white'
-                                                : 'bg-white text-gray-500 hover:bg-gray-100'
-                                                }`}
-                                        >
-                                            ½
-                                        </button>
-                                        <button
-                                            onClick={() => updateChartConfigBatch(chartConfig.id, { chartWidth: 'full', chartWidthPx: null })}
-                                            title="Full width"
-                                            className={`px-2 py-1 transition-all ${chartConfig.chartWidth === 'full' && !chartConfig.chartWidthPx
-                                                ? 'bg-gray-900 text-white'
-                                                : 'bg-white text-gray-500 hover:bg-gray-100'
-                                                }`}
-                                        >
-                                            ▬
-                                        </button>
-                                    </div>
-                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-                                        <button
-                                            onClick={() => updateChartConfig(chartConfig.id, 'chartHeight', Math.max(180, (chartConfig.chartHeight || 320) - 40))}
-                                            title="Decrease height"
-                                            className="px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 font-bold text-sm transition-all"
-                                        >−</button>
-                                        <span className="px-1.5 text-[10px] font-semibold text-gray-600 min-w-[44px] text-center border-x border-gray-200">
-                                            {chartConfig.chartHeight || 320}px
-                                        </span>
-                                        <button
-                                            onClick={() => updateChartConfig(chartConfig.id, 'chartHeight', Math.min(800, (chartConfig.chartHeight || 320) + 40))}
-                                            title="Increase height"
-                                            className="px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 font-bold text-sm transition-all"
-                                        >+</button>
-                                    </div>
-                                </div>
                             </div>
 
                             {/* ── SECTION: DISPLAY ─────────────────────── */}
@@ -2104,12 +2104,12 @@ const AnalyticsDashboardPage = () => {
                                                         <button
                                                             key={c}
                                                             title={c}
-                                                            onClick={() => updateChartConfig(chartConfig.id, 'chartColor', c)}
+                                                            onClick={() => updatePendingConfig(chartConfig.id, 'chartColor', c)}
                                                             className="w-4.5 h-4.5 rounded-full transition-transform hover:scale-110 focus:outline-none"
                                                             style={{
                                                                 width: 18, height: 18,
                                                                 backgroundColor: c,
-                                                                boxShadow: (chartConfig.chartColor || DEFAULT_CHART_COLOR) === c
+                                                                boxShadow: (mergedConfig.chartColor || DEFAULT_CHART_COLOR) === c
                                                                     ? `0 0 0 2px white, 0 0 0 3.5px ${c}`
                                                                     : 'none'
                                                             }}
@@ -2124,19 +2124,19 @@ const AnalyticsDashboardPage = () => {
                                                 <div className="flex items-center gap-1.5 shrink-0">
                                                     <span className="text-[11px] font-semibold text-gray-600 shrink-0">Legend</span>
                                                     <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                        <button onClick={() => updateChartConfig(chartConfig.id, 'showLegend', true)}
-                                                            className={`px-2 py-0.5 transition-all ${chartConfig.showLegend !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
-                                                        <button onClick={() => updateChartConfig(chartConfig.id, 'showLegend', false)}
-                                                            className={`px-2 py-0.5 transition-all ${chartConfig.showLegend === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', true)}
+                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
+                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', false)}
+                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-1.5 shrink-0">
                                                     <span className="text-[11px] font-semibold text-gray-600 shrink-0">Data Labels</span>
                                                     <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                        <button onClick={() => updateChartConfig(chartConfig.id, 'showDataLabels', true)}
-                                                            className={`px-2 py-0.5 transition-all ${chartConfig.showDataLabels !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
-                                                        <button onClick={() => updateChartConfig(chartConfig.id, 'showDataLabels', false)}
-                                                            className={`px-2 py-0.5 transition-all ${chartConfig.showDataLabels === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', true)}
+                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
+                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', false)}
+                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
                                                     </div>
                                                 </div>
                                             </>
@@ -2171,8 +2171,8 @@ const AnalyticsDashboardPage = () => {
                                             <div className="flex items-center gap-1.5 shrink-0">
                                                 <span className="text-[11px] font-semibold text-gray-600 shrink-0">Orientation</span>
                                                 <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                    <button onClick={() => updateChartConfig(chartConfig.id, 'barOrientation', 'vertical')}
-                                                        className={`flex items-center gap-1 px-2 py-0.5 transition-all ${(chartConfig.barOrientation || 'vertical') === 'vertical' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                    <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'vertical')}
+                                                        className={`flex items-center gap-1 px-2 py-0.5 transition-all ${(mergedConfig.barOrientation || 'vertical') === 'vertical' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
                                                         <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
                                                             <rect x="1" y="4" width="2.5" height="7" rx="0.5" />
                                                             <rect x="4.75" y="2" width="2.5" height="9" rx="0.5" />
@@ -2180,8 +2180,8 @@ const AnalyticsDashboardPage = () => {
                                                         </svg>
                                                         Vertical
                                                     </button>
-                                                    <button onClick={() => updateChartConfig(chartConfig.id, 'barOrientation', 'horizontal')}
-                                                        className={`flex items-center gap-1 px-2 py-0.5 transition-all ${chartConfig.barOrientation === 'horizontal' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                    <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'horizontal')}
+                                                        className={`flex items-center gap-1 px-2 py-0.5 transition-all ${mergedConfig.barOrientation === 'horizontal' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
                                                         <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
                                                             <rect x="0" y="1" width="7" height="2.5" rx="0.5" />
                                                             <rect x="0" y="4.75" width="9" height="2.5" rx="0.5" />
@@ -2197,9 +2197,9 @@ const AnalyticsDashboardPage = () => {
                                             <div className="flex items-center gap-1.5 shrink-0">
                                                 <span className="text-[11px] font-semibold text-gray-600 shrink-0">Split</span>
                                                 <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                    {[{ v: 0, label: 'None' }, ...Array.from({ length: 10 }, (_, i) => ({ v: i + 1, label: String(i + 1) }))].map(({ v, label }) => (
-                                                        <button key={label} onClick={() => updateChartConfig(chartConfig.id, 'numberSplitCount', v)}
-                                                            className={`px-2 py-0.5 transition-all ${(chartConfig.numberSplitCount ?? 4) === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                     {[{ v: 0, label: 'None' }, ...Array.from({ length: 10 }, (_, i) => ({ v: i + 1, label: String(i + 1) }))].map(({ v, label }) => (
+                                                        <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'numberSplitCount', v)}
+                                                            className={`px-2 py-0.5 transition-all ${(mergedConfig.numberSplitCount ?? 4) === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
                                                             {label}
                                                         </button>
                                                     ))}
@@ -2216,11 +2216,11 @@ const AnalyticsDashboardPage = () => {
                             </div>
                             <div className="flex items-center gap-2 mb-2 px-5">
                                 <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                    <button onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', null)}
-                                        className={`px-2 py-0.5 transition-all ${!chartConfig.autoRefreshMins ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                    <button onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', null)}
+                                        className={`px-2 py-0.5 transition-all ${!mergedConfig.autoRefreshMins ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
                                     {[{ v: 10 / 60, label: '10s' }, { v: 0.5, label: '30s' }, { v: 1, label: '1m' }, { v: 2, label: '2m' }, { v: 3, label: '3m' }, { v: 5, label: '5m' }, { v: 10, label: '10m' }, { v: 15, label: '15m' }, { v: 30, label: '30m' }, { v: 60, label: '1h' }].map(({ v, label }) => (
-                                        <button key={label} onClick={() => updateChartConfig(chartConfig.id, 'autoRefreshMins', v)}
-                                            className={`px-2 py-0.5 transition-all ${chartConfig.autoRefreshMins === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                        <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', v)}
+                                            className={`px-2 py-0.5 transition-all ${mergedConfig.autoRefreshMins === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
                                             {label}
                                         </button>
                                     ))}
@@ -2243,15 +2243,15 @@ const AnalyticsDashboardPage = () => {
                                         </div>
                                         <div className="flex flex-wrap gap-3 mb-2 px-5">
                                             {activeFields.map((field) => {
-                                                const currentVal = (chartConfig.fieldLabels || {})[field.value] ?? field.label;
+                                                const currentVal = (mergedConfig.fieldLabels || {})[field.value] ?? field.label;
                                                 return (
                                                     <div key={field.value} className="flex flex-col gap-0.5" style={{ minWidth: 90 }}>
                                                         <span className="text-[10px] font-medium text-gray-400 truncate">{field.label}</span>
                                                         <LabelInput
                                                             initialValue={currentVal}
                                                             placeholder={field.label}
-                                                            onCommit={(newVal) => updateChartConfig(chartConfig.id, 'fieldLabels', {
-                                                                ...(chartConfig.fieldLabels || {}),
+                                                            onCommit={(newVal) => updatePendingConfig(chartConfig.id, 'fieldLabels', {
+                                                                ...(mergedConfig.fieldLabels || {}),
                                                                 [field.value]: newVal,
                                                             })}
                                                         />
@@ -2382,6 +2382,7 @@ const AnalyticsDashboardPage = () => {
                             </div>
                             {/* end filter controls */}
                             <div className="pb-4"></div>
+                            </div>{/* end scrollable body */}
                         </>
                     )}
 
