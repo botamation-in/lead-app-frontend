@@ -48,7 +48,7 @@ export function Combobox({
             'combobox-padding-margin',
             'relative block w-full appearance-none rounded-lg py-1.5',
             'pr-9 pl-3',
-            'text-sm/6 text-zinc-950 placeholder:text-zinc-500 dark:text-white',
+            'text-sm/6 text-zinc-950 placeholder:text-zinc-500',
             'border border-zinc-950/10 data-hover:border-zinc-950/20 dark:border-white/10 dark:data-hover:border-white/20',
             'bg-transparent dark:bg-white/5',
             'focus:outline-none focus:ring-1 focus:ring-black focus:ring-inset focus:border-black',

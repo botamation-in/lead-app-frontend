@@ -361,13 +361,76 @@ const AnalyticsDashboardPage = () => {
     const [dragHeights, setDragHeights] = useState({});
     const [dragWidths, setDragWidths] = useState({});
 
+    // Pending (draft) chart configs — changes inside the slider that haven't been applied yet
+    const [pendingChartConfigs, setPendingChartConfigs] = useState({});
+    // Ref to track charts whose "Update Chart" fetch is in-flight (for auto-hide after load)
+    const userFetchInFlightRef = React.useRef({});
+
+    const updatePendingConfig = (chartId, field, value) => {
+        setPendingChartConfigs(prev => ({
+            ...prev,
+            [chartId]: { ...(prev[chartId] || {}), [field]: value },
+        }));
+    };
+
+    const updatePendingConfigBatch = (chartId, updates) => {
+        setPendingChartConfigs(prev => ({
+            ...prev,
+            [chartId]: { ...(prev[chartId] || {}), ...updates },
+        }));
+    };
+
+    const clearPendingConfig = (chartId) => {
+        setPendingChartConfigs(prev => {
+            const n = { ...prev };
+            delete n[chartId];
+            return n;
+        });
+    };
+
+    // Merged config: charts state + pending draft overrides
+    const getMergedConfig = (chartConfig) => ({
+        ...chartConfig,
+        ...(pendingChartConfigs[chartConfig.id] || {}),
+    });
+
     // Filter panel visibility — per-chart, proximity-based
     const [filterVisible, setFilterVisible] = useState({});
     const [filterHideCountState, setFilterHideCountState] = useState({});
+    const [filterPanelPos, setFilterPanelPos] = useState({});
     const filterLockedRef = React.useRef({});
     const pendingHideRef = React.useRef({});
     const filterHideCountRef = React.useRef({});
     const cardRefs = React.useRef({});
+
+    // Compute and store the fixed position for a chart's slider panel
+    const updateFilterPanelPos = React.useCallback((chartId) => {
+        const card = cardRefs.current[chartId];
+        if (!card) return;
+        const rect = card.getBoundingClientRect();
+        setFilterPanelPos(prev => ({
+            ...prev,
+            [chartId]: { top: rect.top + 36, left: rect.left, width: rect.width },
+        }));
+    }, []);
+
+    // Keep panel position in sync while any panel is open (resize / scroll)
+    React.useEffect(() => {
+        const handler = () => {
+            setFilterVisible(prev => {
+                const openIds = Object.keys(prev);
+                if (!openIds.length) return prev;
+                openIds.forEach(id => updateFilterPanelPos(Number(id)));
+                return prev;
+            });
+        };
+        window.addEventListener('resize', handler);
+        window.addEventListener('scroll', handler, true);
+        return () => {
+            window.removeEventListener('resize', handler);
+            window.removeEventListener('scroll', handler, true);
+        };
+    }, [updateFilterPanelPos]);
 
     const hideFilter = (chartId) => {
         if (!filterLockedRef.current[chartId]) {
@@ -412,6 +475,19 @@ const AnalyticsDashboardPage = () => {
         document.addEventListener('mouseup', onDocMouseUp);
         return () => document.removeEventListener('mouseup', onDocMouseUp);
     }, []);
+
+    // Auto-hide slider after a user-initiated "Update Chart" fetch completes successfully
+    React.useEffect(() => {
+        const inFlight = userFetchInFlightRef.current;
+        Object.keys(inFlight).forEach(id => {
+            const chartId = Number(id);
+            // chartLoadingState[chartId] becoming false (or undefined) means it finished
+            if (inFlight[chartId] && chartLoadingState[chartId] === false) {
+                delete inFlight[chartId];
+                hideFilter(chartId);
+            }
+        });
+    }, [chartLoadingState]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // direction: 'y' | 'x' | 'both'
     const startResize = (e, id, currentHeight, currentWidth, direction = 'y') => {
@@ -641,6 +717,8 @@ const AnalyticsDashboardPage = () => {
                 ...prev,
                 [chartId]: []
             }));
+            // Clear in-flight flag on error so slider stays open (auto-hide only on success)
+            delete userFetchInFlightRef.current[chartId];
         } finally {
             if (!silent) setChartLoadingState(prev => ({ ...prev, [chartId]: false }));
         }
@@ -1504,7 +1582,9 @@ const AnalyticsDashboardPage = () => {
 
     // Render single chart card
     const renderChartCard = (chartConfig) => {
-        const catIdForFields = chartConfig.chartCategory?._id || chartConfig.chartCategory;
+        // mergedConfig = committed state + any pending (draft) changes from the slider
+        const mergedConfig = getMergedConfig(chartConfig);
+        const catIdForFields = mergedConfig.chartCategory?._id || mergedConfig.chartCategory;
         const excludeAxisFields = ['__v', '_id'];
         const chartFields = catIdForFields
             ? (categoryFieldsCache[catIdForFields] || []).filter(f => !excludeAxisFields.includes(f))
@@ -1548,14 +1628,14 @@ const AnalyticsDashboardPage = () => {
             { value: 'custom', label: 'Custom' },
         ];
 
-        const activePreset = chartConfig._datePreset || 'today';
+        const activePreset = mergedConfig._datePreset || 'today';
         const activePresetOption = DATE_PRESET_OPTIONS.find(o => o.value === activePreset) || DATE_PRESET_OPTIONS[0];
         const showCustomInputs = activePreset === 'custom';
         const showLastNInput = activePreset === 'last_n';
         const filterIsVisible = !!filterVisible[chartConfig.id];
         const filterHideCount = filterHideCountState[chartConfig.id] || 0;
-        const isDateXAxis = DATE_AXIS_FIELDS.includes(chartConfig.xAxis?.value);
-        const activeDateGranularityOption = DATE_GRANULARITY_OPTIONS.find(o => o.value === (chartConfig.dateGranularity || 'day')) || DATE_GRANULARITY_OPTIONS[1];
+        const isDateXAxis = DATE_AXIS_FIELDS.includes(mergedConfig.xAxis?.value);
+        const activeDateGranularityOption = DATE_GRANULARITY_OPTIONS.find(o => o.value === (mergedConfig.dateGranularity || 'day')) || DATE_GRANULARITY_OPTIONS[1];
 
         const applyDatePreset = (preset) => {
             const updates = { _datePreset: preset };
@@ -1589,7 +1669,7 @@ const AnalyticsDashboardPage = () => {
                     updates.dateFilterTo = toISO(lastOfLastMonth);
                     break;
                 case 'last_n': {
-                    const n = chartConfig._lastNDays || 7;
+                    const n = mergedConfig._lastNDays || 7;
                     const d = new Date(today); d.setDate(d.getDate() - n);
                     updates.dateFilterFrom = toISO(d);
                     updates.dateFilterTo = todayStr;
@@ -1601,7 +1681,7 @@ const AnalyticsDashboardPage = () => {
                 default:
                     break;
             }
-            updateChartConfigBatch(chartConfig.id, updates);
+            updatePendingConfigBatch(chartConfig.id, updates);
         };
 
         return (
@@ -1642,6 +1722,9 @@ const AnalyticsDashboardPage = () => {
                     // Only trigger inside the chart body (below the 36px header), near the top
                     const relY = e.clientY - rect.top;
                     if (relY > 36 && relY < 96) {
+                        if (!filterVisible[chartConfig.id]) {
+                            updateFilterPanelPos(chartConfig.id);
+                        }
                         setFilterVisible(prev => ({ ...prev, [chartConfig.id]: true }));
                     }
                 }}
@@ -1742,17 +1825,21 @@ const AnalyticsDashboardPage = () => {
                 {/* ── All controls — slides in when near top ── */}
                 <div
                     key={filterHideCount}
-                    className={`absolute left-0 right-0 bg-white z-40 border-b border-gray-200 shadow-lg origin-top overflow-hidden
+                    className={`fixed bg-white z-[200] border border-gray-200 shadow-xl rounded-b-xl origin-top overflow-y-auto scrollbar-thin
                         ${filterIsVisible
                             ? 'opacity-100 translate-y-0 pointer-events-auto'
                             : 'opacity-0 -translate-y-2 pointer-events-none'
                         }`}
                     style={{
-                        top: 36,
+                        top: filterPanelPos[chartConfig.id]?.top ?? -9999,
+                        left: filterPanelPos[chartConfig.id]?.left ?? 0,
+                        width: filterPanelPos[chartConfig.id]?.width ?? 0,
                         transition: filterIsVisible
                             ? 'opacity 220ms ease-out, transform 220ms cubic-bezier(0.22, 1, 0.36, 1), max-height 280ms cubic-bezier(0.22, 1, 0.36, 1)'
                             : 'opacity 280ms ease-in, transform 280ms cubic-bezier(0.4, 0, 1, 1), max-height 300ms cubic-bezier(0.4, 0, 0.6, 1)',
-                        maxHeight: filterIsVisible ? 1000 : 0,
+                        maxHeight: filterIsVisible
+                            ? `calc(100vh - ${filterPanelPos[chartConfig.id]?.top ?? 0}px - 16px)`
+                            : 0,
                     }}
                     onMouseLeave={() => hideFilter(chartConfig.id)}
                     onMouseDown={() => { filterLockedRef.current[chartConfig.id] = true; }}
@@ -1764,22 +1851,39 @@ const AnalyticsDashboardPage = () => {
                         <div className="flex items-center justify-center gap-2 px-5 pt-2 pb-2 border-b border-gray-100">
                             <span className="text-xs font-semibold text-gray-700 shrink-0">Category:</span>
                             <div className="w-48">
-                                <Combobox
+                                 <Combobox
                                     value={
-                                        chartConfig.chartCategory
-                                            ? (typeof chartConfig.chartCategory === 'object'
-                                                ? chartConfig.chartCategory
-                                                : categories.find(c => c._id === chartConfig.chartCategory) || null)
+                                        mergedConfig.chartCategory
+                                            ? (typeof mergedConfig.chartCategory === 'object'
+                                                ? mergedConfig.chartCategory
+                                                : categories.find(c => c._id === mergedConfig.chartCategory) || null)
                                             : null
                                     }
                                     onChange={(val) => {
-                                        // updateChartConfig handles reset + field fetch when chartCategory changes
-                                        updateChartConfig(chartConfig.id, 'chartCategory', val || null);
+                                        const todayISO = getTodayISO();
+                                        const catId = val?._id || val;
+                                        if (catId) fetchFieldsForCategory(catId);
+                                        // Reset all query-dependent fields in pending when category changes
+                                        updatePendingConfigBatch(chartConfig.id, {
+                                            chartCategory: val || null,
+                                            chartType: null,
+                                            xAxis: null,
+                                            yAxis: null,
+                                            zAxis: null,
+                                            aggregation: null,
+                                            chartMode: null,
+                                            dateFilterFrom: todayISO,
+                                            dateFilterTo: todayISO,
+                                            _datePreset: 'today',
+                                            _showCustom: false,
+                                            _showLastN: false,
+                                            _lastNDays: 2,
+                                        });
                                     }}
                                     displayValue={(option) => option?.categoryName || ''}
                                     options={categories}
                                     placeholder="Select category..."
-                                    dropdownClassName="z-50 !min-w-[160px]"
+                                    dropdownClassName="!z-[500] !min-w-[160px]"
                                 >
                                     {(option) => (
                                         <ComboboxOption key={`cat-${chartConfig.id}-${option._id}`} value={option}>
@@ -1788,9 +1892,17 @@ const AnalyticsDashboardPage = () => {
                                     )}
                                 </Combobox>
                             </div>
-                            {chartConfig.chartCategory && (
+                            {mergedConfig.chartCategory && (
                                 <button
-                                    onClick={() => updateChartConfig(chartConfig.id, 'chartCategory', null)}
+                                    onClick={() => updatePendingConfigBatch(chartConfig.id, {
+                                        chartCategory: null,
+                                        chartType: null,
+                                        xAxis: null,
+                                        yAxis: null,
+                                        zAxis: null,
+                                        aggregation: null,
+                                        chartMode: null,
+                                    })}
                                     className="text-gray-400 hover:text-gray-700 transition-colors text-base leading-none px-1"
                                     title="Clear category filter"
                                 >
@@ -1798,22 +1910,34 @@ const AnalyticsDashboardPage = () => {
                                 </button>
                             )}
                             {/* ── Update Chart button in header row ── */}
-                            {chartConfig.chartCategory && (
+                            {mergedConfig.chartCategory && (
                                 <div className="ml-auto flex items-center">
                                     <button
-                                        onClick={() => fetchChartDataFromBackend(chartConfig.id, chartConfig, false, true)}
-                                        disabled={!isChartConfigured(chartConfig) || !isChartRequestDirty(chartConfig)}
-                                        className={`px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(chartConfig) && isChartRequestDirty(chartConfig)
+                                        onClick={() => {
+                                            const cfg = mergedConfig;
+                                            setCharts(prev => prev.map(c => c.id === chartConfig.id ? { ...c, ...pendingChartConfigs[chartConfig.id] } : c));
+                                            clearPendingConfig(chartConfig.id);
+                                            userFetchInFlightRef.current[chartConfig.id] = true;
+                                            fetchChartDataFromBackend(chartConfig.id, cfg, false, true);
+                                        }}
+                                        disabled={!isChartConfigured(mergedConfig) || !isChartRequestDirty(mergedConfig) || !!chartLoadingState[chartConfig.id]}
+                                        className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartRequestDirty(mergedConfig) && !chartLoadingState[chartConfig.id]
                                             ? 'bg-green-600 text-white hover:bg-green-500 shadow-md shadow-green-200 animate-pulse'
                                             : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             }`}
-                                        title={!isChartConfigured(chartConfig)
+                                        title={!isChartConfigured(mergedConfig)
                                             ? 'Select the required chart fields first'
-                                            : isChartRequestDirty(chartConfig)
+                                            : isChartRequestDirty(mergedConfig)
                                                 ? 'Update chart data'
                                                 : 'Change the chart query fields to enable update'}
                                     >
-                                        Update Chart
+                                        {chartLoadingState[chartConfig.id] && (
+                                            <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                            </svg>
+                                        )}
+                                        {chartLoadingState[chartConfig.id] ? 'Updating…' : 'Update Chart'}
                                     </button>
                                 </div>
                             )}
@@ -1821,25 +1945,37 @@ const AnalyticsDashboardPage = () => {
                     )}
 
                     {/* ── Rest of controls — only shown when category is selected (or no categories exist) ── */}
-                    {(categories.length === 0 || chartConfig.chartCategory) && (
+                    {(categories.length === 0 || mergedConfig.chartCategory) && (
                         <>
                             {/* ── Action buttons bar — only when no categories (otherwise in Account Category header row) ── */}
                             {categories.length === 0 && (
                                 <div className="flex items-center justify-end px-5 pt-2 pb-1">
                                     <button
-                                        onClick={() => fetchChartDataFromBackend(chartConfig.id, chartConfig, false, true)}
-                                        disabled={!isChartConfigured(chartConfig) || !isChartRequestDirty(chartConfig)}
-                                        className={`px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(chartConfig) && isChartRequestDirty(chartConfig)
+                                        onClick={() => {
+                                            const cfg = mergedConfig;
+                                            setCharts(prev => prev.map(c => c.id === chartConfig.id ? { ...c, ...pendingChartConfigs[chartConfig.id] } : c));
+                                            clearPendingConfig(chartConfig.id);
+                                            userFetchInFlightRef.current[chartConfig.id] = true;
+                                            fetchChartDataFromBackend(chartConfig.id, cfg, false, true);
+                                        }}
+                                        disabled={!isChartConfigured(mergedConfig) || !isChartRequestDirty(mergedConfig) || !!chartLoadingState[chartConfig.id]}
+                                        className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartRequestDirty(mergedConfig) && !chartLoadingState[chartConfig.id]
                                             ? 'bg-green-600 text-white hover:bg-green-500 shadow-md shadow-green-200 animate-pulse'
                                             : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             }`}
-                                        title={!isChartConfigured(chartConfig)
+                                        title={!isChartConfigured(mergedConfig)
                                             ? 'Select the required chart fields first'
-                                            : isChartRequestDirty(chartConfig)
+                                            : isChartRequestDirty(mergedConfig)
                                                 ? 'Update chart data'
                                                 : 'Change the chart query fields to enable update'}
                                     >
-                                        Update Chart
+                                        {chartLoadingState[chartConfig.id] && (
+                                            <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                            </svg>
+                                        )}
+                                        {chartLoadingState[chartConfig.id] ? 'Updating…' : 'Update Chart'}
                                     </button>
                                 </div>
                             )}
@@ -1853,7 +1989,7 @@ const AnalyticsDashboardPage = () => {
                                         onChange={(val) => val && applyDatePreset(val.value)}
                                         displayValue={(option) => option?.label || ''}
                                         options={DATE_PRESET_OPTIONS}
-                                        dropdownClassName="z-50 !min-w-[160px]"
+                                        dropdownClassName="!z-[500] !min-w-[160px]"
                                     >
                                         {(option) => (
                                             <ComboboxOption key={`date-preset-${chartConfig.id}-${option.value}`} value={option}>
@@ -1870,11 +2006,11 @@ const AnalyticsDashboardPage = () => {
                                             type="number"
                                             min="1"
                                             max="365"
-                                            value={chartConfig._lastNDays || 7}
+                                            value={mergedConfig._lastNDays || 7}
                                             onChange={(e) => {
                                                 const n = Math.max(1, parseInt(e.target.value) || 1);
                                                 const d = new Date(today); d.setDate(d.getDate() - n);
-                                                updateChartConfigBatch(chartConfig.id, {
+                                                updatePendingConfigBatch(chartConfig.id, {
                                                     _lastNDays: n,
                                                     dateFilterFrom: toISO(d),
                                                     dateFilterTo: todayStr,
@@ -1893,8 +2029,8 @@ const AnalyticsDashboardPage = () => {
                                             <span className="text-[11px] text-gray-500">From:</span>
                                             <input
                                                 type="date"
-                                                value={chartConfig.dateFilterFrom}
-                                                onChange={(e) => updateChartConfigBatch(chartConfig.id, { dateFilterFrom: e.target.value })}
+                                                value={mergedConfig.dateFilterFrom}
+                                                onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterFrom: e.target.value })}
                                                 className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
                                             />
                                         </div>
@@ -1902,8 +2038,8 @@ const AnalyticsDashboardPage = () => {
                                             <span className="text-[11px] text-gray-500">To:</span>
                                             <input
                                                 type="date"
-                                                value={chartConfig.dateFilterTo}
-                                                onChange={(e) => updateChartConfigBatch(chartConfig.id, { dateFilterTo: e.target.value })}
+                                                value={mergedConfig.dateFilterTo}
+                                                onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterTo: e.target.value })}
                                                 className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
                                             />
                                         </div>
@@ -1953,14 +2089,14 @@ const AnalyticsDashboardPage = () => {
                             </div>
 
                             {/* ── SECTION: DISPLAY ─────────────────────── */}
-                            {chartConfig.chartType?.value && (
+                            {mergedConfig.chartType?.value && (
                                 <>
                                     <div className="flex items-center gap-0 px-5 pt-1 pb-1.5 border-t border-gray-100 mt-1">
                                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Display</span>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
                                         {/* Color — line/heatmap/number only */}
-                                        {['line', 'heatmap', 'number'].includes(chartConfig.chartType?.value) && (
+                                        {['line', 'heatmap', 'number'].includes(mergedConfig.chartType?.value) && (
                                             <div className="flex items-center gap-2 shrink-0">
                                                 <span className="text-[11px] font-semibold text-gray-600 shrink-0">Color</span>
                                                 <div className="flex items-center gap-1.5">
@@ -1983,7 +2119,7 @@ const AnalyticsDashboardPage = () => {
                                             </div>
                                         )}
                                         {/* Legend + Data Labels — not heatmap/number */}
-                                        {!['heatmap', 'number'].includes(chartConfig.chartType?.value) && (
+                                        {!['heatmap', 'number'].includes(mergedConfig.chartType?.value) && (
                                             <>
                                                 <div className="flex items-center gap-1.5 shrink-0">
                                                     <span className="text-[11px] font-semibold text-gray-600 shrink-0">Legend</span>
@@ -2010,20 +2146,20 @@ const AnalyticsDashboardPage = () => {
                             )}
 
                             {/* ── SECTION: CHART ────────────────────────── */}
-                            {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar' || chartConfig.chartType?.value === 'number') && (
+                            {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar' || mergedConfig.chartType?.value === 'number') && (
                                 <>
                                     <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
                                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Chart</span>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
                                         {/* Mode — pie + bar */}
-                                        {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (
+                                        {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (
                                             <div className="flex items-center gap-1.5 shrink-0">
                                                 <span className="text-[11px] font-semibold text-gray-600 shrink-0">Mode</span>
                                                 <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
                                                     {[{ v: null, label: 'Simple' }, { v: 'grouped', label: 'Grouped' }, { v: 'stacked', label: 'Stacked' }].map(({ v, label }) => (
-                                                        <button key={label} onClick={() => updateChartConfig(chartConfig.id, 'chartMode', v)}
-                                                            className={`px-2 py-0.5 transition-all ${chartConfig.chartMode === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                        <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'chartMode', v)}
+                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.chartMode === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
                                                             {label}
                                                         </button>
                                                     ))}
@@ -2031,7 +2167,7 @@ const AnalyticsDashboardPage = () => {
                                             </div>
                                         )}
                                         {/* Orientation — bar only */}
-                                        {chartConfig.chartType?.value === 'bar' && (
+                                        {mergedConfig.chartType?.value === 'bar' && (
                                             <div className="flex items-center gap-1.5 shrink-0">
                                                 <span className="text-[11px] font-semibold text-gray-600 shrink-0">Orientation</span>
                                                 <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
@@ -2057,7 +2193,7 @@ const AnalyticsDashboardPage = () => {
                                             </div>
                                         )}
                                         {/* Split — number only */}
-                                        {chartConfig.chartType?.value === 'number' && (
+                                        {mergedConfig.chartType?.value === 'number' && (
                                             <div className="flex items-center gap-1.5 shrink-0">
                                                 <span className="text-[11px] font-semibold text-gray-600 shrink-0">Split</span>
                                                 <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
@@ -2092,13 +2228,13 @@ const AnalyticsDashboardPage = () => {
                             </div>
 
                             {/* ── SECTION: RENAME LABELS ────────────────── */}
-                            {chartConfig.chartType?.value && (() => {
-                                const isNumber = chartConfig.chartType?.value === 'number';
-                                const isHeatmap = chartConfig.chartType?.value === 'heatmap';
+                            {mergedConfig.chartType?.value && (() => {
+                                const isNumber = mergedConfig.chartType?.value === 'number';
+                                const isHeatmap = mergedConfig.chartType?.value === 'heatmap';
                                 if (isHeatmap) return null;
                                 const activeFields = isNumber
-                                    ? (chartConfig.yAxis ? [chartConfig.yAxis] : [])
-                                    : [chartConfig.xAxis, chartConfig.yAxis, chartConfig.zAxis].filter(Boolean);
+                                    ? (mergedConfig.yAxis ? [mergedConfig.yAxis] : [])
+                                    : [mergedConfig.xAxis, mergedConfig.yAxis, mergedConfig.zAxis].filter(Boolean);
                                 if (!activeFields.length) return null;
                                 return (
                                     <>
@@ -2128,19 +2264,19 @@ const AnalyticsDashboardPage = () => {
                             })()}
                             {/* Chart Controls */}
                             <div className={`grid gap-3 mb-4 px-5 ${
-                                chartConfig.chartType?.value === 'number' ? 'grid-cols-3' :
-                                ((chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked'))
+                                mergedConfig.chartType?.value === 'number' ? 'grid-cols-3' :
+                                ((mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (mergedConfig.chartMode === 'grouped' || mergedConfig.chartMode === 'stacked'))
                                     ? (isDateXAxis ? 'grid-cols-6' : 'grid-cols-5')
                                     : (isDateXAxis ? 'grid-cols-5' : 'grid-cols-4')
                             }`}>
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
                                     <Combobox
-                                        value={chartConfig.chartType}
-                                        onChange={(val) => updateChartConfig(chartConfig.id, 'chartType', val)}
+                                        value={mergedConfig.chartType}
+                                        onChange={(val) => updatePendingConfig(chartConfig.id, 'chartType', val)}
                                         displayValue={(option) => option?.label || 'Select...'}
                                         options={chartTypes}
-                                        dropdownClassName="z-50 !min-w-[160px]"
+                                        dropdownClassName="!z-[500] !min-w-[160px]"
                                     >
                                         {(option) => (
                                             <ComboboxOption key={`chart-type-${chartConfig.id}-${option.value}`} value={option}>
@@ -2149,17 +2285,17 @@ const AnalyticsDashboardPage = () => {
                                         )}
                                     </Combobox>
                                 </div>
-                                {chartConfig.chartType?.value !== 'number' && (
+                                {mergedConfig.chartType?.value !== 'number' && (
                                     <div>
                                         <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                            {chartConfig.chartType?.value === 'pie' ? 'Group By' : 'X Axis'}
+                                            {mergedConfig.chartType?.value === 'pie' ? 'Group By' : 'X Axis'}
                                         </label>
                                         <Combobox
-                                            value={chartConfig.xAxis}
-                                            onChange={(val) => updateChartConfig(chartConfig.id, 'xAxis', val)}
+                                            value={mergedConfig.xAxis}
+                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'xAxis', val)}
                                             displayValue={(option) => option?.label || 'Select...'}
                                         options={columns}
-                                        dropdownClassName="z-50 !min-w-[160px]"
+                                        dropdownClassName="!z-[500] !min-w-[160px]"
                                     >
                                         {(option) => (
                                             <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
@@ -2171,14 +2307,14 @@ const AnalyticsDashboardPage = () => {
                                 )}
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                        {chartConfig.chartType?.value === 'pie' ? 'Value' : chartConfig.chartType?.value === 'number' ? 'Value' : 'Y Axis'}
+                                        {mergedConfig.chartType?.value === 'pie' ? 'Value' : mergedConfig.chartType?.value === 'number' ? 'Value' : 'Y Axis'}
                                     </label>
                                     <Combobox
-                                        value={chartConfig.yAxis}
-                                        onChange={(val) => updateChartConfig(chartConfig.id, 'yAxis', val)}
+                                        value={mergedConfig.yAxis}
+                                        onChange={(val) => updatePendingConfig(chartConfig.id, 'yAxis', val)}
                                         displayValue={(option) => option?.label || 'Select...'}
                                         options={columns}
-                                        dropdownClassName="z-50 !min-w-[160px]"
+                                        dropdownClassName="!z-[500] !min-w-[160px]"
                                     >
                                         {(option) => (
                                             <ComboboxOption key={`y-axis-${chartConfig.id}-${option.value}`} value={option}>
@@ -2188,17 +2324,17 @@ const AnalyticsDashboardPage = () => {
                                     </Combobox>
                                 </div>
                                 {/* Z Axis — for Grouped / Stacked modes */}
-                                {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') && (chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && (
+                                {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (mergedConfig.chartMode === 'grouped' || mergedConfig.chartMode === 'stacked') && (
                                     <div>
                                         <label className="block text-xs font-semibold text-gray-700 mb-1.5">
                                             Group By
                                         </label>
                                         <Combobox
-                                            value={chartConfig.zAxis}
-                                            onChange={(val) => updateChartConfig(chartConfig.id, 'zAxis', val)}
+                                            value={mergedConfig.zAxis}
+                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'zAxis', val)}
                                             displayValue={(option) => option?.label || 'None'}
                                         options={columns}
-                                        dropdownClassName="z-50 !min-w-[160px]"
+                                        dropdownClassName="!z-[500] !min-w-[160px]"
                                     >
                                         {(option) => (
                                             <ComboboxOption key={`z-axis-${chartConfig.id}-${option.value}`} value={option}>
@@ -2211,11 +2347,11 @@ const AnalyticsDashboardPage = () => {
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Aggregation</label>
                                     <Combobox
-                                        value={chartConfig.aggregation}
-                                        onChange={(val) => updateChartConfig(chartConfig.id, 'aggregation', val)}
+                                        value={mergedConfig.aggregation}
+                                        onChange={(val) => updatePendingConfig(chartConfig.id, 'aggregation', val)}
                                         displayValue={(option) => option?.label || 'Select...'}
-                                        options={chartConfig.chartType?.value === 'number' ? aggregationTypesNumber : aggregationTypes}
-                                        dropdownClassName="z-50 !min-w-[160px]"
+                                        options={mergedConfig.chartType?.value === 'number' ? aggregationTypesNumber : aggregationTypes}
+                                        dropdownClassName="!z-[500] !min-w-[160px]"
                                     >
                                         {(option) => (
                                             <ComboboxOption key={`agg-${chartConfig.id}-${option.value}`} value={option}>
@@ -2230,10 +2366,10 @@ const AnalyticsDashboardPage = () => {
                                         <label className="block text-xs font-semibold text-gray-700 mb-1.5">Granularity</label>
                                         <Combobox
                                             value={activeDateGranularityOption}
-                                            onChange={(val) => val && updateChartConfig(chartConfig.id, 'dateGranularity', val.value)}
+                                            onChange={(val) => val && updatePendingConfig(chartConfig.id, 'dateGranularity', val.value)}
                                             displayValue={(option) => option?.label || 'Daily'}
                                             options={DATE_GRANULARITY_OPTIONS}
-                                            dropdownClassName="z-50 !min-w-[140px]"
+                                            dropdownClassName="!z-[500] !min-w-[140px]"
                                         >
                                             {(option) => (
                                                 <ComboboxOption key={`gran-${chartConfig.id}-${option.value}`} value={option}>
@@ -2250,7 +2386,7 @@ const AnalyticsDashboardPage = () => {
                     )}
 
                     {/* ── Hint when category not yet selected ── */}
-                    {categories.length > 0 && !chartConfig.chartCategory && (
+                    {categories.length > 0 && !mergedConfig.chartCategory && (
                         <div className="px-5 pb-4 pt-1 text-center">
                             <p className="text-[11px] text-gray-400 italic">Select a category above to configure this chart.</p>
                         </div>
