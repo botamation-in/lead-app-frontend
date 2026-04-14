@@ -11,6 +11,34 @@ import {
 import LoadingMask from '../components/LoadingMask';
 import DeleteConfirmation from '../components/DeleteConfirmation';
 
+// ── Controlled dimension input for width/height ──
+const DimensionInput = ({ value, onCommit, min, max, className }) => {
+    const [val, setVal] = useState(value);
+    useEffect(() => { setVal(value); }, [value]);
+    const handleBlur = () => {
+        let num = parseInt(val, 10);
+        if (isNaN(num)) num = value;
+        num = Math.max(min, Math.min(max, num));
+        setVal(num);
+        if (num !== value) onCommit(num);
+    };
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') e.target.blur();
+    };
+    return (
+        <input
+            type="number"
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            className={`appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${className}`}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+        />
+    );
+};
+
 // ── Controlled label-rename input — defined outside component to keep stable reference ──
 const LabelInput = ({ initialValue, placeholder, onCommit }) => {
     const [val, setVal] = useState(initialValue);
@@ -364,6 +392,7 @@ const AnalyticsDashboardPage = () => {
 
     // Pending (draft) chart configs — changes inside the slider that haven't been applied yet
     const [pendingChartConfigs, setPendingChartConfigs] = useState({});
+    const [updateSuccess, setUpdateSuccess] = useState({});
     // Ref to track charts whose "Update Chart" fetch is in-flight (for auto-hide after load)
     const userFetchInFlightRef = React.useRef({});
 
@@ -425,11 +454,36 @@ const AnalyticsDashboardPage = () => {
         };
         window.addEventListener('resize', handler);
         window.addEventListener('scroll', handler, true);
+        
+        const observer = new ResizeObserver((entries) => {
+            setFilterVisible(prev => {
+                const openIds = Object.keys(prev);
+                if (!openIds.length) return prev;
+                let changed = false;
+                for (const entry of entries) {
+                    const idStr = entry.target.dataset.chartId;
+                    if (idStr && prev[idStr]) {
+                        changed = true;
+                        break;
+                    }
+                }
+                if (changed) {
+                    openIds.forEach(id => updateFilterPanelPos(Number(id)));
+                }
+                return prev;
+            });
+        });
+        
+        Object.values(cardRefs.current).forEach(el => {
+            if (el) observer.observe(el);
+        });
+
         return () => {
             window.removeEventListener('resize', handler);
             window.removeEventListener('scroll', handler, true);
+            observer.disconnect();
         };
-    }, [updateFilterPanelPos]);
+    }, [updateFilterPanelPos, charts.length]);
 
     const hideFilter = (chartId) => {
         // Animate out first, then remount (to reset dropdowns) after transition finishes
@@ -448,7 +502,11 @@ const AnalyticsDashboardPage = () => {
             // chartLoadingState[chartId] becoming false (or undefined) means it finished
             if (inFlight[chartId] && chartLoadingState[chartId] === false) {
                 delete inFlight[chartId];
-                hideFilter(chartId);
+                setUpdateSuccess(prev => ({ ...prev, [chartId]: true }));
+                setTimeout(() => {
+                    setUpdateSuccess(prev => { const n = { ...prev }; delete n[chartId]; return n; });
+                    hideFilter(chartId);
+                }, 800);
             }
         });
     }, [chartLoadingState]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1705,6 +1763,7 @@ const AnalyticsDashboardPage = () => {
 
                 className={`bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 animate-scale-in flex flex-col border-2 relative ${dragOverId === chartConfig.id ? 'border-gray-700 shadow-gray-200' : 'border-gray-200'
                     }`}
+                data-chart-id={chartConfig.id}
                 style={{
                     height: dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400,
                     width: (() => {
@@ -1723,6 +1782,7 @@ const AnalyticsDashboardPage = () => {
                         <circle cx="5" cy="8" r="1.2" /><circle cx="11" cy="8" r="1.2" />
                         <circle cx="5" cy="12" r="1.2" /><circle cx="11" cy="12" r="1.2" />
                     </svg>
+
                     <input
                         type="text"
                         value={chartConfig.chartName || ''}
@@ -1732,6 +1792,7 @@ const AnalyticsDashboardPage = () => {
                         onClick={(e) => e.stopPropagation()}
                         className="flex-1 text-sm font-semibold text-white bg-transparent outline-none border-none cursor-text placeholder:text-gray-500 min-w-0"
                     />
+
                     {/* Settings toggle button */}
                     <button
                         title={filterIsVisible ? 'Close settings' : 'Open settings'}
@@ -1754,40 +1815,45 @@ const AnalyticsDashboardPage = () => {
 
                     {/* Width + height controls */}
                     <div className="flex items-center gap-1 shrink-0">
-                        <div className="flex items-center border border-gray-700 rounded overflow-hidden text-[10px] font-semibold">
+                        <div className="flex items-center border border-gray-700 rounded overflow-hidden text-[10px] font-semibold" title="Chart Width">
                             <button
                                 onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => { e.stopPropagation(); updateChartConfigBatch(chartConfig.id, { chartWidth: 'half', chartWidthPx: null }); }}
-                                title="Half width"
-                                className={`px-1.5 py-0.5 transition-all ${(chartConfig.chartWidth || 'half') === 'half' && !chartConfig.chartWidthPx ? 'bg-gray-600 text-white' : 'bg-transparent text-gray-400 hover:bg-gray-700 hover:text-white'}`}
-                            >½</button>
+                                onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartWidthPx', Math.max(200, (chartConfig.chartWidthPx || 500) - 40)); }}
+                                className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
+                            >−</button>
+                            <DimensionInput
+                                value={chartConfig.chartWidthPx || 500}
+                                onCommit={(v) => updateChartConfig(chartConfig.id, 'chartWidthPx', v)}
+                                min={200} max={2400}
+                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-gray-800 m-0"
+                            />
                             <button
                                 onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => { e.stopPropagation(); updateChartConfigBatch(chartConfig.id, { chartWidth: 'full', chartWidthPx: null }); }}
-                                title="Full width"
-                                className={`px-1.5 py-0.5 transition-all ${chartConfig.chartWidth === 'full' && !chartConfig.chartWidthPx ? 'bg-gray-600 text-white' : 'bg-transparent text-gray-400 hover:bg-gray-700 hover:text-white'}`}
-                            >▬</button>
+                                onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartWidthPx', Math.min(2400, (chartConfig.chartWidthPx || 500) + 40)); }}
+                                className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
+                            >+</button>
                         </div>
-                        <div className="flex items-center border border-gray-700 rounded overflow-hidden">
+                        <div className="flex items-center border border-gray-700 rounded overflow-hidden" title="Chart Height">
                             <button
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartHeight', Math.max(180, (chartConfig.chartHeight || 320) - 40)); }}
-                                title="Decrease height"
                                 className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
                             >−</button>
-                            <span className="px-1 text-[9px] font-semibold text-gray-400 min-w-[34px] text-center border-x border-gray-700">
-                                {chartConfig.chartHeight || 320}
-                            </span>
+                            <DimensionInput
+                                value={chartConfig.chartHeight || 320}
+                                onCommit={(v) => updateChartConfig(chartConfig.id, 'chartHeight', v)}
+                                min={180} max={800}
+                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-gray-800 m-0"
+                            />
                             <button
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartHeight', Math.min(800, (chartConfig.chartHeight || 320) + 40)); }}
-                                title="Increase height"
                                 className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
                             >+</button>
                         </div>
                     </div>
 
-                    {/* Manual refresh button */}
+                    {/* Settings toggle button */}
                     <button
                         title="Refresh chart"
                         onMouseDown={(e) => e.stopPropagation()}
@@ -1856,16 +1922,17 @@ const AnalyticsDashboardPage = () => {
                     key={filterHideCount}
                     className={`fixed bg-white z-[200] border border-gray-200 shadow-xl rounded-b-xl origin-top flex flex-col overflow-hidden
                         ${filterIsVisible
-                            ? 'opacity-100 translate-y-0 pointer-events-auto'
-                            : 'opacity-0 -translate-y-2 pointer-events-none'
+                            ? 'opacity-100 pointer-events-auto scale-y-100'
+                            : 'opacity-0 pointer-events-none scale-y-95 -translate-y-2'
                         }`}
                     style={{
                         top: filterPanelPos[chartConfig.id]?.top ?? -9999,
                         left: filterPanelPos[chartConfig.id]?.left ?? 0,
                         width: filterPanelPos[chartConfig.id]?.width ?? 0,
+                        transformOrigin: 'top center',
                         transition: filterIsVisible
-                            ? 'opacity 220ms ease-out, transform 220ms cubic-bezier(0.22, 1, 0.36, 1), max-height 280ms cubic-bezier(0.22, 1, 0.36, 1)'
-                            : 'opacity 280ms ease-in, transform 280ms cubic-bezier(0.4, 0, 1, 1), max-height 300ms cubic-bezier(0.4, 0, 0.6, 1)',
+                            ? 'opacity 300ms cubic-bezier(0.16, 1, 0.3, 1), transform 300ms cubic-bezier(0.16, 1, 0.3, 1), max-height 300ms cubic-bezier(0.16, 1, 0.3, 1)'
+                            : 'opacity 250ms cubic-bezier(0.4, 0, 1, 1), transform 250ms cubic-bezier(0.4, 0, 1, 1), max-height 250ms cubic-bezier(0.4, 0, 1, 1)',
                         maxHeight: filterIsVisible
                             ? `calc(100vh - ${filterPanelPos[chartConfig.id]?.top ?? 0}px - 16px)`
                             : 0,
@@ -1875,7 +1942,7 @@ const AnalyticsDashboardPage = () => {
 
                     {/* ── Category — always shown first ── */}
                     {categories.length > 0 && (
-                        <div className="flex items-center justify-center gap-2 px-5 pt-2 pb-2 border-b border-gray-100">
+                        <div className="flex items-center justify-center gap-2 px-5 pt-2 pb-2 border-b border-gray-100 relative pr-10">
                             <span className="text-xs font-semibold text-gray-700 shrink-0">Category:</span>
                             <div className="w-48">
                                  <Combobox
@@ -1953,9 +2020,11 @@ const AnalyticsDashboardPage = () => {
                                             }
                                         }}
                                         disabled={!isChartConfigured(mergedConfig) || !isChartDirty(mergedConfig, chartConfig) || !!chartLoadingState[chartConfig.id]}
-                                        className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
-                                            ? 'bg-green-600 text-white hover:bg-green-500 shadow-md shadow-green-200 animate-pulse'
-                                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                        className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
+                                            ? 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-md shadow-emerald-200'
+                                            : updateSuccess[chartConfig.id]
+                                                ? 'bg-emerald-500 text-white'
+                                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             }`}
                                         title={!isChartConfigured(mergedConfig)
                                             ? 'Select the required chart fields first'
@@ -1963,16 +2032,35 @@ const AnalyticsDashboardPage = () => {
                                                 ? 'Update chart data'
                                                 : 'Change the chart query fields to enable update'}
                                     >
-                                        {chartLoadingState[chartConfig.id] && (
-                                            <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                            </svg>
+                                        {chartLoadingState[chartConfig.id] ? (
+                                            <>
+                                                <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                                </svg>
+                                                Updating…
+                                            </>
+                                        ) : updateSuccess[chartConfig.id] ? (
+                                            <>
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                                Updated
+                                            </>
+                                        ) : (
+                                            'Update Chart'
                                         )}
-                                        {chartLoadingState[chartConfig.id] ? 'Updating…' : 'Update Chart'}
                                     </button>
                                 </div>
                             )}
+
+                            {/* Close button top right */}
+                            <button 
+                                onClick={() => hideFilter(chartConfig.id)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
                         </div>
                     )}
 
@@ -1981,7 +2069,7 @@ const AnalyticsDashboardPage = () => {
                         <>
                             {/* ── Action buttons bar — only when no categories (otherwise in Account Category header row) ── */}
                             {categories.length === 0 && (
-                                <div className="flex items-center justify-end px-5 pt-2 pb-1 border-b border-gray-100 shrink-0">
+                                <div className="flex items-center justify-end px-5 pt-2 pb-1 border-b border-gray-100 shrink-0 relative pr-10">
                                     <button
                                         onClick={() => {
                                             const cfg = mergedConfig;
@@ -1996,9 +2084,11 @@ const AnalyticsDashboardPage = () => {
                                             }
                                         }}
                                         disabled={!isChartConfigured(mergedConfig) || !isChartDirty(mergedConfig, chartConfig) || !!chartLoadingState[chartConfig.id]}
-                                        className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
-                                            ? 'bg-green-600 text-white hover:bg-green-500 shadow-md shadow-green-200 animate-pulse'
-                                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                        className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
+                                            ? 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-md shadow-emerald-200'
+                                            : updateSuccess[chartConfig.id]
+                                                ? 'bg-emerald-500 text-white'
+                                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             }`}
                                         title={!isChartConfigured(mergedConfig)
                                             ? 'Select the required chart fields first'
@@ -2006,13 +2096,32 @@ const AnalyticsDashboardPage = () => {
                                                 ? 'Update chart data'
                                                 : 'Change the chart query fields to enable update'}
                                     >
-                                        {chartLoadingState[chartConfig.id] && (
-                                            <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                            </svg>
+                                        {chartLoadingState[chartConfig.id] ? (
+                                            <>
+                                                <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                                </svg>
+                                                Updating…
+                                            </>
+                                        ) : updateSuccess[chartConfig.id] ? (
+                                            <>
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                                Updated
+                                            </>
+                                        ) : (
+                                            'Update Chart'
                                         )}
-                                        {chartLoadingState[chartConfig.id] ? 'Updating…' : 'Update Chart'}
+                                    </button>
+                                    
+                                    {/* Close button top right */}
+                                    <button 
+                                        onClick={() => hideFilter(chartConfig.id)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
                                     </button>
                                 </div>
                             )}
