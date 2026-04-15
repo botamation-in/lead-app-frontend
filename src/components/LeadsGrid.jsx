@@ -34,7 +34,8 @@ const LeadsGrid = () => {
     const [editLead, setEditLead] = useState(null);
     const [editForm, setEditForm] = useState({});
     const [editFields, setEditFields] = useState([]);
-    const [isEditOpen, setIsEditOpen] = useState(false);
+    const [isEditFormVisible, setIsEditFormVisible] = useState(false);
+    const [isGridVisible, setIsGridVisible] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [deleteLeadId, setDeleteLeadId] = useState(null);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -172,6 +173,18 @@ const LeadsGrid = () => {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Responsive: hide grid on mobile when edit form is open
+    const checkWindowSize = () => {
+        const isSmallScreen = window.innerWidth <= 768;
+        setIsGridVisible(isSmallScreen ? !isEditFormVisible : true);
+    };
+
+    useEffect(() => {
+        checkWindowSize();
+        window.addEventListener('resize', checkWindowSize);
+        return () => window.removeEventListener('resize', checkWindowSize);
+    }, [isEditFormVisible]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -465,7 +478,7 @@ const LeadsGrid = () => {
         orderedFields.forEach(f => { formData[f] = lead[f] ?? ''; });
         setEditFields(orderedFields);
         setEditForm(formData);
-        setIsEditOpen(true);
+        setIsEditFormVisible(true);
     };
 
     const handleEditSave = async () => {
@@ -493,7 +506,7 @@ const LeadsGrid = () => {
             );
             await api.put(`/api/ui/leads/${editLead._id}`, coerced, { params: { acctId, acctNo } });
             showSuccess('Lead updated successfully.');
-            setIsEditOpen(false);
+            setIsEditFormVisible(false);
             setEditLead(null);
             setEditFields([]);
             fetchLeads();
@@ -502,6 +515,12 @@ const LeadsGrid = () => {
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const cancelEdit = () => {
+        setIsEditFormVisible(false);
+        setEditLead(null);
+        setEditFields([]);
     };
 
     // Delete lead
@@ -914,301 +933,301 @@ const LeadsGrid = () => {
                                     ) : null;
                                 })()}
                             </div>
+
+
                         </div>
 
-                        {/* Table Section */}
-                        <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-white rounded-lg shadow-2xl border border-gray-200 animate-scale-in">
-                            {error && (
-                                <div className="bg-gray-100 border-l-4 border-black text-gray-900 px-3 py-2 m-3 rounded-lg">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <div className="flex items-center gap-2">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
-                                            <span className="text-xs font-medium">Error: {error}</span>
+                        {/* Split Panel: Table (left) + Edit Form (right) */}
+                        <div className="flex flex-row gap-4 transition-all duration-300" style={{ alignItems: 'flex-start', width: '100%' }}>
+
+                            {/* LEFT — Table panel */}
+                            {isGridVisible && (
+                                <div
+                                    className={`transition-all duration-300 flex flex-col min-h-0 ${isEditFormVisible ? 'w-2/3' : 'w-full'}`}
+                                    style={{ height: '65vh', minWidth: 0 }}
+                                >
+                                    <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-white rounded-lg shadow-2xl border border-gray-200 animate-scale-in">
+                                        {error && (
+                                            <div className="bg-gray-100 border-l-4 border-black text-gray-900 px-3 py-2 m-3 rounded-lg">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                        </svg>
+                                                        <span className="text-xs font-medium">Error: {error}</span>
+                                                    </div>
+                                                    <button
+                                                        onClick={fetchLeads}
+                                                        className="text-xs font-medium underline hover:text-black transition-colors"
+                                                    >
+                                                        Try Again
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="flex-1 overflow-auto min-h-0">
+                                            <table className="min-w-full divide-y divide-gray-200">
+                                                <thead className="bg-black">
+                                                    <tr>
+                                                        {(visibleFields ?? fields).map((field) => (
+                                                            <th key={field} className="px-3 py-2 text-center">
+                                                                <div
+                                                                    className="flex items-center justify-center gap-1 cursor-pointer hover:text-gray-300 mb-1.5 transition-colors group"
+                                                                    onClick={() => handleSort(field)}
+                                                                >
+                                                                    <span className="text-[10px] font-bold text-white uppercase tracking-wider">
+                                                                        {formatFieldName(field)}
+                                                                    </span>
+                                                                    {renderSortIcon(field)}
+                                                                </div>
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="Filter..."
+                                                                    value={filters[field] || ''}
+                                                                    onChange={(e) => handleFilterChange(field, e.target.value)}
+                                                                    onKeyDown={(e) => handleFilterKeyDown(e, field)}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className="w-full px-2 py-1 text-[10px] border border-gray-700 bg-gray-900 text-white rounded focus:ring-1 focus:ring-gray-500 focus:border-transparent placeholder-gray-500 transition-all text-center"
+                                                                />
+                                                            </th>
+                                                        ))}
+                                                        <th className="px-3 py-2 text-center w-20">
+                                                            <span className="text-[10px] font-bold text-white uppercase tracking-wider">Actions</span>
+                                                        </th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="bg-white divide-y divide-gray-100">
+                                                    {loading ? (
+                                                        <tr>
+                                                            <td colSpan={(visibleFields ?? fields).length + 1} className="px-3 py-6 text-center">
+                                                                <div className="flex flex-col justify-center items-center gap-2">
+                                                                    <div className="relative">
+                                                                        <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-300"></div>
+                                                                        <div className="animate-spin rounded-full h-8 w-8 border-4 border-black border-t-transparent absolute top-0"></div>
+                                                                    </div>
+                                                                    <span className="text-gray-600 text-xs font-medium">Loading leads...</span>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ) : leads.length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan={(visibleFields ?? fields).length + 1} className="px-3 py-6 text-center">
+                                                                <div className="flex flex-col items-center gap-2">
+                                                                    <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                                                    </svg>
+                                                                    <span className="text-gray-500 text-xs font-medium">No leads found</span>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ) : (
+                                                        leads.map((lead, index) => (
+                                                            <tr key={lead._id} className="hover:bg-gray-50 transition-all duration-200" style={{ animationDelay: `${index * 50}ms` }}>
+                                                                {(visibleFields ?? fields).map((field) => {
+                                                                    if (field === 'adminId') {
+                                                                        if (!lead.adminId) {
+                                                                            return (
+                                                                                <td key={field} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">-</td>
+                                                                            );
+                                                                        }
+                                                                        const imgUrl = lead.adminImage || lead.adminProfileImage || null;
+                                                                        const adminName = lead.adminName || '-';
+                                                                        const initial = adminName !== '-' ? adminName.charAt(0).toUpperCase() : null;
+                                                                        const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0284c7'];
+                                                                        const avatarColor = initial ? COLORS[(initial.charCodeAt(0) || 0) % COLORS.length] : null;
+                                                                        return (
+                                                                            <td key={field} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">
+                                                                                {adminName === '-' ? (
+                                                                                    <span>-</span>
+                                                                                ) : (
+                                                                                    <div className="flex items-center justify-center gap-1.5">
+                                                                                        {imgUrl ? (
+                                                                                            <img
+                                                                                                src={imgUrl}
+                                                                                                alt="admin"
+                                                                                                className="w-5 h-5 rounded-full object-cover border border-gray-200 flex-shrink-0"
+                                                                                                onError={(e) => { e.target.style.display = 'none'; }}
+                                                                                            />
+                                                                                        ) : (
+                                                                                            <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold text-[9px] select-none" style={{ backgroundColor: avatarColor }}>
+                                                                                                {initial}
+                                                                                            </span>
+                                                                                        )}
+                                                                                        <span>{adminName}</span>
+                                                                                    </div>
+                                                                                )}
+                                                                            </td>
+                                                                        );
+                                                                    }
+                                                                    return (
+                                                                        <td key={field} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">
+                                                                            {formatFieldValue(field, lead[field])}
+                                                                        </td>
+                                                                    );
+                                                                })}
+                                                                <td className="px-3 py-2 whitespace-nowrap text-center">
+                                                                    <div className="flex items-center justify-center gap-1.5">
+                                                                        <button
+                                                                            onClick={() => handleEditOpen(lead)}
+                                                                            className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors"
+                                                                            title="Edit lead"
+                                                                        >
+                                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                            </svg>
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleDeleteOpen(lead._id)}
+                                                                            className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+                                                                            title="Delete lead"
+                                                                        >
+                                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                    )}
+                                                </tbody>
+                                            </table>
                                         </div>
-                                        <button
-                                            onClick={fetchLeads}
-                                            className="text-xs font-medium underline hover:text-black transition-colors"
-                                        >
-                                            Try Again
-                                        </button>
+
+                                        {/* Pagination Section */}
+                                        <div className="flex-shrink-0 bg-gray-50 px-3 py-2 flex items-center justify-between border-t border-gray-200">
+                                            <div className="flex-1 flex justify-between sm:hidden">
+                                                <button
+                                                    onClick={() => goToPage(currentPage - 1)}
+                                                    disabled={currentPage === 1}
+                                                    className="relative inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                                >
+                                                    Previous
+                                                </button>
+                                                <button
+                                                    onClick={() => goToPage(currentPage + 1)}
+                                                    disabled={currentPage === totalPages}
+                                                    className="ml-2 relative inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                                >
+                                                    Next
+                                                </button>
+                                            </div>
+                                            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                                                <div>
+                                                    <p className="text-xs text-gray-700 font-medium">
+                                                        Showing <span className="font-bold text-black">{(currentPage - 1) * pageSize + 1}</span> to{' '}
+                                                        <span className="font-bold text-black">
+                                                            {Math.min(currentPage * pageSize, totalRecords)}
+                                                        </span> of{' '}
+                                                        <span className="font-bold text-black">{totalRecords}</span> results
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <nav className="relative z-0 inline-flex rounded shadow-sm -space-x-px" aria-label="Pagination">
+                                                        <button
+                                                            onClick={() => goToPage(currentPage - 1)}
+                                                            disabled={currentPage === 1}
+                                                            className="relative inline-flex items-center px-2 py-1 rounded-l border border-gray-300 bg-white text-xs font-medium text-gray-500 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                                        >
+                                                            Previous
+                                                        </button>
+                                                        {[...Array(totalPages)].map((_, index) => {
+                                                            const page = index + 1;
+                                                            if (
+                                                                page === 1 ||
+                                                                page === totalPages ||
+                                                                (page >= currentPage - 1 && page <= currentPage + 1)
+                                                            ) {
+                                                                return (
+                                                                    <button
+                                                                        key={page}
+                                                                        onClick={() => goToPage(page)}
+                                                                        className={`relative inline-flex items-center px-2 py-1 border text-xs font-medium transition-all ${currentPage === page
+                                                                            ? 'z-10 bg-black border-black text-white shadow-lg'
+                                                                            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
+                                                                            }`}
+                                                                    >
+                                                                        {page}
+                                                                    </button>
+                                                                );
+                                                            } else if (page === currentPage - 2 || page === currentPage + 2) {
+                                                                return (
+                                                                    <span key={page} className="relative inline-flex items-center px-2 py-1 border border-gray-300 bg-white text-xs font-medium text-gray-700">
+                                                                        ...
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        })}
+                                                        <button
+                                                            onClick={() => goToPage(currentPage + 1)}
+                                                            disabled={currentPage === totalPages}
+                                                            className="relative inline-flex items-center px-2 py-1 rounded-r border border-gray-300 bg-white text-xs font-medium text-gray-500 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                                        >
+                                                            Next
+                                                        </button>
+                                                    </nav>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             )}
 
-                            <div className="flex-1 overflow-auto min-h-0">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-black">
-                                        <tr>
-                                            {(visibleFields ?? fields).map((field) => (
-                                                <th key={field} className="px-3 py-2 text-center">
-                                                    <div
-                                                        className="flex items-center justify-center gap-1 cursor-pointer hover:text-gray-300 mb-1.5 transition-colors group"
-                                                        onClick={() => handleSort(field)}
-                                                    >
-                                                        <span className="text-[10px] font-bold text-white uppercase tracking-wider">
-                                                            {formatFieldName(field)}
-                                                        </span>
-                                                        {renderSortIcon(field)}
-                                                    </div>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Filter..."
-                                                        value={filters[field] || ''}
-                                                        onChange={(e) => handleFilterChange(field, e.target.value)}
-                                                        onKeyDown={(e) => handleFilterKeyDown(e, field)}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="w-full px-2 py-1 text-[10px] border border-gray-700 bg-gray-900 text-white rounded focus:ring-1 focus:ring-gray-500 focus:border-transparent placeholder-gray-500 transition-all text-center"
-                                                    />
-                                                </th>
-                                            ))}
-                                            <th className="px-3 py-2 text-center w-20">
-                                                <span className="text-[10px] font-bold text-white uppercase tracking-wider">Actions</span>
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-100">
-                                        {loading ? (
-                                            <tr>
-                                                <td colSpan={(visibleFields ?? fields).length + 1} className="px-3 py-6 text-center">
-                                                    <div className="flex flex-col justify-center items-center gap-2">
-                                                        <div className="relative">
-                                                            <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-300"></div>
-                                                            <div className="animate-spin rounded-full h-8 w-8 border-4 border-black border-t-transparent absolute top-0"></div>
-                                                        </div>
-                                                        <span className="text-gray-600 text-xs font-medium">Loading leads...</span>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ) : leads.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={(visibleFields ?? fields).length + 1} className="px-3 py-6 text-center">
-                                                    <div className="flex flex-col items-center gap-2">
-                                                        <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                                                        </svg>
-                                                        <span className="text-gray-500 text-xs font-medium">No leads found</span>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            leads.map((lead, index) => (
-                                                <tr key={lead._id} className="hover:bg-gray-50 transition-all duration-200" style={{ animationDelay: `${index * 50}ms` }}>
-                                                    {(visibleFields ?? fields).map((field) => {
-                                                        if (field === 'adminId') {
-                                                            if (!lead.adminId) {
-                                                                return (
-                                                                    <td key={field} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">-</td>
-                                                                );
-                                                            }
-                                                            const imgUrl = lead.adminImage || lead.adminProfileImage || null;
-                                                            const adminName = lead.adminName || '-';
-                                                            const initial = adminName !== '-' ? adminName.charAt(0).toUpperCase() : null;
-                                                            const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0284c7'];
-                                                            const avatarColor = initial ? COLORS[(initial.charCodeAt(0) || 0) % COLORS.length] : null;
-                                                            return (
-                                                                <td key={field} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">
-                                                                    {adminName === '-' ? (
-                                                                        <span>-</span>
-                                                                    ) : (
-                                                                        <div className="flex items-center justify-center gap-1.5">
-                                                                            {imgUrl ? (
-                                                                                <img
-                                                                                    src={imgUrl}
-                                                                                    alt="admin"
-                                                                                    className="w-5 h-5 rounded-full object-cover border border-gray-200 flex-shrink-0"
-                                                                                    onError={(e) => { e.target.style.display = 'none'; }}
-                                                                                />
-                                                                            ) : (
-                                                                                <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold text-[9px] select-none" style={{ backgroundColor: avatarColor }}>
-                                                                                    {initial}
-                                                                                </span>
-                                                                            )}
-                                                                            <span>{adminName}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </td>
-                                                            );
-                                                        }
-                                                        return (
-                                                            <td key={field} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">
-                                                                {formatFieldValue(field, lead[field])}
-                                                            </td>
-                                                        );
-                                                    })}
-                                                    <td className="px-3 py-2 whitespace-nowrap text-center">
-                                                        <div className="flex items-center justify-center gap-1.5">
-                                                            <button
-                                                                onClick={() => handleEditOpen(lead)}
-                                                                className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors"
-                                                                title="Edit lead"
-                                                            >
-                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                                </svg>
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleDeleteOpen(lead._id)}
-                                                                className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
-                                                                title="Delete lead"
-                                                            >
-                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                                </svg>
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
+                            {/* RIGHT — Edit form panel */}
+                            {isEditFormVisible && editLead && (
+                                <div
+                                    className="w-1/3 p-4 bg-white border border-gray-300 rounded-lg shadow-sm relative overflow-y-auto max-sm:w-full"
+                                    style={{ height: '65vh', minWidth: 0 }}
+                                >
+                                    {/* Action buttons */}
+                                    <div className="flex items-center justify-end gap-2 mb-4 pb-3 border-b border-gray-200">
+                                        <button
+                                            type="button"
+                                            onClick={handleEditSave}
+                                            disabled={isSaving}
+                                            className={`rounded-md px-3 py-1.5 text-xs font-semibold shadow-sm ${isSaving ? 'bg-gray-400 text-gray-700 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-700'}`}
+                                        >
+                                            {isSaving ? 'Saving...' : 'Save'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={cancelEdit}
+                                            disabled={isSaving}
+                                            className="rounded-md bg-white border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-40"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
 
-                            {/* Pagination Section */}
-                            <div className="flex-shrink-0 bg-gray-50 px-3 py-2 flex items-center justify-between border-t border-gray-200">
-                                <div className="flex-1 flex justify-between sm:hidden">
-                                    <button
-                                        onClick={() => goToPage(currentPage - 1)}
-                                        disabled={currentPage === 1}
-                                        className="relative inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                    >
-                                        Previous
-                                    </button>
-                                    <button
-                                        onClick={() => goToPage(currentPage + 1)}
-                                        disabled={currentPage === totalPages}
-                                        className="ml-2 relative inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                    >
-                                        Next
-                                    </button>
-                                </div>
-                                <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                                    <div>
-                                        <p className="text-xs text-gray-700 font-medium">
-                                            Showing <span className="font-bold text-black">{(currentPage - 1) * pageSize + 1}</span> to{' '}
-                                            <span className="font-bold text-black">
-                                                {Math.min(currentPage * pageSize, totalRecords)}
-                                            </span> of{' '}
-                                            <span className="font-bold text-black">{totalRecords}</span> results
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <nav className="relative z-0 inline-flex rounded shadow-sm -space-x-px" aria-label="Pagination">
-                                            <button
-                                                onClick={() => goToPage(currentPage - 1)}
-                                                disabled={currentPage === 1}
-                                                className="relative inline-flex items-center px-2 py-1 rounded-l border border-gray-300 bg-white text-xs font-medium text-gray-500 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                            >
-                                                Previous
-                                            </button>
-                                            {[...Array(totalPages)].map((_, index) => {
-                                                const page = index + 1;
-                                                if (
-                                                    page === 1 ||
-                                                    page === totalPages ||
-                                                    (page >= currentPage - 1 && page <= currentPage + 1)
-                                                ) {
-                                                    return (
-                                                        <button
-                                                            key={page}
-                                                            onClick={() => goToPage(page)}
-                                                            className={`relative inline-flex items-center px-2 py-1 border text-xs font-medium transition-all ${currentPage === page
-                                                                ? 'z-10 bg-black border-black text-white shadow-lg'
-                                                                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
-                                                                }`}
-                                                        >
-                                                            {page}
-                                                        </button>
-                                                    );
-                                                } else if (page === currentPage - 2 || page === currentPage + 2) {
-                                                    return (
-                                                        <span key={page} className="relative inline-flex items-center px-2 py-1 border border-gray-300 bg-white text-xs font-medium text-gray-700">
-                                                            ...
-                                                        </span>
-                                                    );
-                                                }
-                                                return null;
-                                            })}
-                                            <button
-                                                onClick={() => goToPage(currentPage + 1)}
-                                                disabled={currentPage === totalPages}
-                                                className="relative inline-flex items-center px-2 py-1 rounded-r border border-gray-300 bg-white text-xs font-medium text-gray-500 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                            >
-                                                Next
-                                            </button>
-                                        </nav>
+                                    {/* Form fields */}
+                                    <div className="grid grid-cols-1 gap-4">
+                                        {editFields.map(field => {
+                                            const isNumeric = editLead[field] !== null && editLead[field] !== undefined && editLead[field] !== '' && !isNaN(Number(editLead[field])) && typeof editLead[field] === 'number';
+                                            return (
+                                                <div key={field}>
+                                                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                                        {formatFieldName(field)}
+                                                    </label>
+                                                    <input
+                                                        type={isNumeric ? 'number' : 'text'}
+                                                        value={editForm[field] ?? ''}
+                                                        onChange={e => setEditForm(prev => ({ ...prev, [field]: isNumeric ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
+                                                        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-black focus:border-black transition-colors"
+                                                        disabled={isSaving}
+                                                    />
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
-                            </div>
+                            )}
+
                         </div>
                     </div>
                 )}
             </div>
-
-            {/* Edit Lead Modal */}
-            {isEditOpen && editLead && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                    <div className="fixed inset-0 bg-black opacity-50" onClick={() => !isSaving && setIsEditOpen(false)} />
-                    <div className="relative z-10 w-full max-w-lg bg-white rounded-lg shadow-xl flex flex-col max-h-[90vh]">
-                        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-                            <h3 className="text-base font-semibold text-gray-900">Edit Lead</h3>
-                            <button
-                                onClick={() => setIsEditOpen(false)}
-                                disabled={isSaving}
-                                className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-40"
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-                        <div className="overflow-y-auto flex-1 px-6 py-4">
-                            <div className="grid grid-cols-1 gap-4">
-                                {editFields.map(field => {
-                                    const isNumeric = editLead[field] !== null && editLead[field] !== undefined && editLead[field] !== '' && !isNaN(Number(editLead[field])) && typeof editLead[field] === 'number';
-                                    return (
-                                        <div key={field}>
-                                            <label className="block text-xs font-semibold text-gray-700 mb-1">
-                                                {formatFieldName(field)}
-                                            </label>
-                                            <input
-                                                type={isNumeric ? 'number' : 'text'}
-                                                value={editForm[field] ?? ''}
-                                                onChange={e => setEditForm(prev => ({ ...prev, [field]: isNumeric ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
-                                                className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-black focus:border-black transition-colors"
-                                                disabled={isSaving}
-                                            />
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0">
-                            <button
-                                onClick={() => setIsEditOpen(false)}
-                                disabled={isSaving}
-                                className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-40"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleEditSave}
-                                disabled={isSaving}
-                                className="px-4 py-2 text-sm font-medium text-white bg-black rounded-md hover:bg-gray-800 transition-colors disabled:opacity-40 flex items-center gap-2"
-                            >
-                                {isSaving && (
-                                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                )}
-                                {isSaving ? 'Saving...' : 'Save Changes'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Delete Confirmation */}
             <DeleteConfirmation
