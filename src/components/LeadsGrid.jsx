@@ -298,7 +298,7 @@ const LeadsGrid = () => {
             setTotalPages(response.data.pagination?.pages || 1);
             setCurrentPage(response.data.pagination?.page || 1);
 
-            const excludeFields = ['__v', '_id', 'acctId', 'categoryId'];
+            const excludeFields = ['__v', '_id', 'acctId', 'categoryId', 'adminName', 'adminProfileImage'];
             const apiCategoryFields = Array.isArray(response.data.categoryFields)
                 ? response.data.categoryFields.filter(field => typeof field === 'string' && !excludeFields.includes(field))
                 : [];
@@ -307,10 +307,7 @@ const LeadsGrid = () => {
                 ? Object.keys(firstLead).filter(field => !excludeFields.includes(field))
                 : [];
             const baseFields = apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields;
-            const hasAdminField = !!(firstLead && (firstLead.adminId || firstLead.adminName));
-            const displayFields = hasAdminField
-                ? ['adminId', ...baseFields.filter(field => field !== 'adminId' && field !== 'adminName')]
-                : baseFields.filter(field => field !== 'adminName');
+            const displayFields = baseFields;
 
             if (displayFields.length > 0) {
                 setFields(displayFields);
@@ -409,15 +406,12 @@ const LeadsGrid = () => {
             }
 
             // Build rows: exclude internal fields, resolve adminId -> name
-            const excludeFields = ['__v', '_id', 'acctId', 'categoryId'];
+            const exportExcludeFields = ['__v', '_id', 'acctId', 'categoryId', 'adminName', 'adminProfileImage'];
             const apiCategoryFields = Array.isArray(response.data.categoryFields)
-                ? response.data.categoryFields.filter(field => typeof field === 'string' && !excludeFields.includes(field))
+                ? response.data.categoryFields.filter(field => typeof field === 'string' && !exportExcludeFields.includes(field))
                 : [];
-            const hasAdminField = !!(allLeads[0] && (allLeads[0].adminId || allLeads[0].adminName));
-            const fallbackFields = Object.keys(allLeads[0]).filter(f => !excludeFields.includes(f));
-            const defaultExportFields = hasAdminField
-                ? ['adminId', ...(apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields).filter(f => f !== 'adminId' && f !== 'adminName')]
-                : (apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields).filter(f => f !== 'adminName');
+            const fallbackFields = Object.keys(allLeads[0]).filter(f => !exportExcludeFields.includes(f));
+            const defaultExportFields = apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields;
             const exportFields = fields.length > 0
                 ? fields
                 : defaultExportFields;
