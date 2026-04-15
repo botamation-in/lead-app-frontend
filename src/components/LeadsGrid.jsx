@@ -9,6 +9,7 @@ import AccountCombobox from './AccountCombobox';
 import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
 import { useNotifications } from './Notifications';
 import LoadingMask from './LoadingMask';
+import DeleteConfirmation from './DeleteConfirmation';
 
 const LeadsGrid = () => {
     const navigate = useNavigate();
@@ -28,6 +29,15 @@ const LeadsGrid = () => {
     const { showSuccess, showError, NotificationComponent } = useNotifications();
     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(false);
+
+    // Edit / Delete state
+    const [editLead, setEditLead] = useState(null);
+    const [editForm, setEditForm] = useState({});
+    const [editFields, setEditFields] = useState([]);
+    const [isEditOpen, setIsEditOpen] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [deleteLeadId, setDeleteLeadId] = useState(null);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [error, setError] = useState(null);
     const [fields, setFields] = useState([]);
 
@@ -445,6 +455,77 @@ const LeadsGrid = () => {
             console.error('Export error:', err);
         } finally {
             setIsExporting(false);
+        }
+    };
+
+    // Edit lead
+    const handleEditOpen = (lead) => {
+        setEditLead(lead);
+        const excluded = ['__v', '_id', 'acctId', 'categoryId', 'adminId', 'adminName', 'createdAt', 'updatedAt'];
+        const leadFields = Object.keys(lead || {}).filter(field => !excluded.includes(field));
+        const orderedFields = [
+            ...fields.filter(field => leadFields.includes(field)),
+            ...leadFields.filter(field => !fields.includes(field))
+        ];
+        const formData = {};
+        orderedFields.forEach(f => { formData[f] = lead[f] ?? ''; });
+        setEditFields(orderedFields);
+        setEditForm(formData);
+        setIsEditOpen(true);
+    };
+
+    const handleEditSave = async () => {
+        if (!editLead) return;
+        setIsSaving(true);
+        try {
+            const { adminId: _a, adminName: _b, ...editableFields } = editForm;
+            // Coerce fields that were originally numeric (or look like pure numbers) back to numbers
+            const coerced = Object.fromEntries(
+                Object.entries(editableFields).map(([k, v]) => {
+                    if (v !== '' && v !== null && v !== undefined) {
+                        const orig = editLead[k];
+                        const isOrigNumber = typeof orig === 'number';
+                        const looksNumeric = !isNaN(Number(v)) && String(v).trim() !== '' && !/^0\d/.test(String(v));
+                        if (isOrigNumber || (looksNumeric && typeof orig !== 'string')) {
+                            return [k, Number(v)];
+                        }
+                        // Also coerce if original was a numeric string (e.g. "10" stored as string)
+                        if (typeof orig === 'string' && looksNumeric && /^\d+(\.\d+)?$/.test(String(orig).trim())) {
+                            return [k, Number(v)];
+                        }
+                    }
+                    return [k, v];
+                })
+            );
+            await api.put(`/api/ui/leads/${editLead._id}`, coerced, { params: { acctId, acctNo } });
+            showSuccess('Lead updated successfully.');
+            setIsEditOpen(false);
+            setEditLead(null);
+            setEditFields([]);
+            fetchLeads();
+        } catch (err) {
+            showError(err.response?.data?.message || 'Failed to update lead.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // Delete lead
+    const handleDeleteOpen = (leadId) => {
+        setDeleteLeadId(leadId);
+        setIsDeleteOpen(true);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!deleteLeadId) return;
+        try {
+            await api.delete(`/api/ui/leads/${deleteLeadId}`, { params: { acctId, acctNo } });
+            showSuccess('Lead deleted successfully.');
+            setIsDeleteOpen(false);
+            setDeleteLeadId(null);
+            fetchLeads();
+        } catch (err) {
+            showError(err.response?.data?.message || 'Failed to delete lead.');
         }
     };
 
@@ -888,12 +969,15 @@ const LeadsGrid = () => {
                                                     />
                                                 </th>
                                             ))}
+                                            <th className="px-3 py-2 text-center w-20">
+                                                <span className="text-[10px] font-bold text-white uppercase tracking-wider">Actions</span>
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-100">
                                         {loading ? (
                                             <tr>
-                                                <td colSpan={(visibleFields ?? fields).length} className="px-3 py-6 text-center">
+                                                <td colSpan={(visibleFields ?? fields).length + 1} className="px-3 py-6 text-center">
                                                     <div className="flex flex-col justify-center items-center gap-2">
                                                         <div className="relative">
                                                             <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-300"></div>
@@ -905,7 +989,7 @@ const LeadsGrid = () => {
                                             </tr>
                                         ) : leads.length === 0 ? (
                                             <tr>
-                                                <td colSpan={(visibleFields ?? fields).length} className="px-3 py-6 text-center">
+                                                <td colSpan={(visibleFields ?? fields).length + 1} className="px-3 py-6 text-center">
                                                     <div className="flex flex-col items-center gap-2">
                                                         <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
@@ -959,6 +1043,28 @@ const LeadsGrid = () => {
                                                             </td>
                                                         );
                                                     })}
+                                                    <td className="px-3 py-2 whitespace-nowrap text-center">
+                                                        <div className="flex items-center justify-center gap-1.5">
+                                                            <button
+                                                                onClick={() => handleEditOpen(lead)}
+                                                                className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors"
+                                                                title="Edit lead"
+                                                            >
+                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                </svg>
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeleteOpen(lead._id)}
+                                                                className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+                                                                title="Delete lead"
+                                                            >
+                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    </td>
                                                 </tr>
                                             ))
                                         )}
@@ -1046,6 +1152,78 @@ const LeadsGrid = () => {
                     </div>
                 )}
             </div>
+
+            {/* Edit Lead Modal */}
+            {isEditOpen && editLead && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="fixed inset-0 bg-black opacity-50" onClick={() => !isSaving && setIsEditOpen(false)} />
+                    <div className="relative z-10 w-full max-w-lg bg-white rounded-lg shadow-xl flex flex-col max-h-[90vh]">
+                        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+                            <h3 className="text-base font-semibold text-gray-900">Edit Lead</h3>
+                            <button
+                                onClick={() => setIsEditOpen(false)}
+                                disabled={isSaving}
+                                className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-40"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto flex-1 px-6 py-4">
+                            <div className="grid grid-cols-1 gap-4">
+                                {editFields.map(field => {
+                                    const isNumeric = editLead[field] !== null && editLead[field] !== undefined && editLead[field] !== '' && !isNaN(Number(editLead[field])) && typeof editLead[field] === 'number';
+                                    return (
+                                        <div key={field}>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                                {formatFieldName(field)}
+                                            </label>
+                                            <input
+                                                type={isNumeric ? 'number' : 'text'}
+                                                value={editForm[field] ?? ''}
+                                                onChange={e => setEditForm(prev => ({ ...prev, [field]: isNumeric ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
+                                                className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-black focus:border-black transition-colors"
+                                                disabled={isSaving}
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0">
+                            <button
+                                onClick={() => setIsEditOpen(false)}
+                                disabled={isSaving}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-40"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleEditSave}
+                                disabled={isSaving}
+                                className="px-4 py-2 text-sm font-medium text-white bg-black rounded-md hover:bg-gray-800 transition-colors disabled:opacity-40 flex items-center gap-2"
+                            >
+                                {isSaving && (
+                                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                )}
+                                {isSaving ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation */}
+            <DeleteConfirmation
+                isOpen={isDeleteOpen}
+                onClose={() => setIsDeleteOpen(false)}
+                onConfirm={handleDeleteConfirm}
+                title="Delete Lead"
+                message="Are you sure you want to delete this lead? This action cannot be undone."
+            />
         </div>
     );
 };
