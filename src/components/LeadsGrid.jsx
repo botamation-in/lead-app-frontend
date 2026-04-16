@@ -267,12 +267,7 @@ const LeadsGrid = () => {
             Object.keys(prev).forEach(f => { reset[f] = savedFilters?.[f] ?? ''; });
             return reset;
         });
-        setAppliedFilters(() => {
-            const updated = savedFilters ? { ...savedFilters } : {};
-            if (value) updated['categoryId'] = value;
-            else delete updated['categoryId'];
-            return updated;
-        });
+        setAppliedFilters(() => (value ? { categoryId: value } : {}));
         setCurrentPage(1);
     };
 
@@ -465,13 +460,23 @@ const LeadsGrid = () => {
         }
     };
 
+    // Add lead
+    const handleAdd = () => {
+        setEditLead(null);
+        const initialForm = {};
+        fields.forEach(f => { initialForm[f] = ''; });
+        setEditFields(fields);
+        setEditForm(initialForm);
+        setIsEditFormVisible(true);
+    };
+
     // Edit lead
     const handleEditOpen = (lead) => {
         setEditLead(lead);
         const excluded = ['__v', '_id', 'acctId', 'categoryId', 'adminId', 'adminName', 'createdAt', 'updatedAt'];
         const leadFields = Object.keys(lead || {}).filter(field => !excluded.includes(field));
         const orderedFields = [
-            ...fields.filter(field => leadFields.includes(field)),
+            ...fields,
             ...leadFields.filter(field => !fields.includes(field))
         ];
         const formData = {};
@@ -482,36 +487,47 @@ const LeadsGrid = () => {
     };
 
     const handleEditSave = async () => {
-        if (!editLead) return;
         setIsSaving(true);
         try {
-            const { adminId: _a, adminName: _b, ...editableFields } = editForm;
-            // Coerce fields that were originally numeric (or look like pure numbers) back to numbers
-            const coerced = Object.fromEntries(
-                Object.entries(editableFields).map(([k, v]) => {
-                    if (v !== '' && v !== null && v !== undefined) {
-                        const orig = editLead[k];
-                        const isOrigNumber = typeof orig === 'number';
-                        const looksNumeric = !isNaN(Number(v)) && String(v).trim() !== '' && !/^0\d/.test(String(v));
-                        if (isOrigNumber || (looksNumeric && typeof orig !== 'string')) {
-                            return [k, Number(v)];
+            if (editLead) {
+                // UPDATE — existing lead
+                const { adminId: _a, adminName: _b, ...editableFields } = editForm;
+                // Coerce fields that were originally numeric (or look like pure numbers) back to numbers
+                const coerced = Object.fromEntries(
+                    Object.entries(editableFields).map(([k, v]) => {
+                        if (v !== '' && v !== null && v !== undefined) {
+                            const orig = editLead[k];
+                            const isOrigNumber = typeof orig === 'number';
+                            const looksNumeric = !isNaN(Number(v)) && String(v).trim() !== '' && !/^0\d/.test(String(v));
+                            if (isOrigNumber || (looksNumeric && typeof orig !== 'string')) {
+                                return [k, Number(v)];
+                            }
+                            // Also coerce if original was a numeric string (e.g. "10" stored as string)
+                            if (typeof orig === 'string' && looksNumeric && /^\d+(\.\d+)?$/.test(String(orig).trim())) {
+                                return [k, Number(v)];
+                            }
                         }
-                        // Also coerce if original was a numeric string (e.g. "10" stored as string)
-                        if (typeof orig === 'string' && looksNumeric && /^\d+(\.\d+)?$/.test(String(orig).trim())) {
-                            return [k, Number(v)];
-                        }
-                    }
-                    return [k, v];
-                })
-            );
-            await api.put(`/api/ui/leads/${editLead._id}`, coerced, { params: { acctId, acctNo } });
-            showSuccess('Lead updated successfully.');
+                        return [k, v];
+                    })
+                );
+                await api.put(`/api/ui/leads/${editLead._id}`, coerced, { params: { acctId, acctNo } });
+                showSuccess('Lead updated successfully.');
+            } else {
+                // CREATE — new lead
+                const activeCat = categories.find(c => c._id === selectedCategory);
+                const categoryName = activeCat?.categoryName;
+                const createUrl = categoryName
+                    ? `/api/leads/category/${encodeURIComponent(categoryName)}`
+                    : '/api/leads';
+                await api.post(createUrl, { data: { ...editForm } }, { params: { acctId, acctNo } });
+                showSuccess('Lead created successfully.');
+            }
             setIsEditFormVisible(false);
             setEditLead(null);
             setEditFields([]);
             fetchLeads();
         } catch (err) {
-            showError(err.response?.data?.message || 'Failed to update lead.');
+            showError(err.response?.data?.message || (editLead ? 'Failed to update lead.' : 'Failed to create lead.'));
         } finally {
             setIsSaving(false);
         }
@@ -809,6 +825,18 @@ const LeadsGrid = () => {
                             >
                                 <svg className="w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                            </button>
+
+                            {/* Add New Lead */}
+                            <button
+                                onClick={handleAdd}
+                                disabled={loading || fields.length === 0}
+                                className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-yellow-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-yellow-400 focus:ring-1 focus:ring-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                                title="Add New Lead"
+                            >
+                                <svg className="w-4 h-4 text-gray-600 group-hover:text-yellow-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                 </svg>
                             </button>
 
@@ -1175,36 +1203,43 @@ const LeadsGrid = () => {
                                 </div>
                             )}
 
-                            {/* RIGHT — Edit form panel */}
-                            {isEditFormVisible && editLead && (
+                            {/* RIGHT — Add / Edit form panel */}
+                            {isEditFormVisible && (
                                 <div
                                     className="w-1/3 p-4 bg-white border border-gray-300 rounded-lg shadow-sm relative overflow-y-auto max-sm:w-full"
                                     style={{ height: '65vh', minWidth: 0 }}
                                 >
                                     {/* Action buttons */}
-                                    <div className="flex items-center justify-end gap-2 mb-4 pb-3 border-b border-gray-200">
-                                        <button
-                                            type="button"
-                                            onClick={handleEditSave}
-                                            disabled={isSaving}
-                                            className={`rounded-md px-3 py-1.5 text-xs font-semibold shadow-sm ${isSaving ? 'bg-gray-400 text-gray-700 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-700'}`}
-                                        >
-                                            {isSaving ? 'Saving...' : 'Save'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={cancelEdit}
-                                            disabled={isSaving}
-                                            className="rounded-md bg-white border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-40"
-                                        >
-                                            Cancel
-                                        </button>
+                                    <div className="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-gray-200">
+                                        <h3 className="text-xs font-bold text-gray-700">
+                                            {editLead ? 'Edit Lead' : 'Add New Lead'}
+                                        </h3>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={handleEditSave}
+                                                disabled={isSaving}
+                                                className={`rounded-md px-3 py-1.5 text-xs font-semibold shadow-sm ${isSaving ? 'bg-gray-400 text-gray-700 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-700'}`}
+                                            >
+                                                {isSaving ? 'Saving...' : 'Save'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={cancelEdit}
+                                                disabled={isSaving}
+                                                className="rounded-md bg-white border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-40"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* Form fields */}
                                     <div className="grid grid-cols-1 gap-4">
                                         {editFields.map(field => {
-                                            const isNumeric = editLead[field] !== null && editLead[field] !== undefined && editLead[field] !== '' && !isNaN(Number(editLead[field])) && typeof editLead[field] === 'number';
+                                            const isNumeric = editLead
+                                                ? editLead[field] !== null && editLead[field] !== undefined && editLead[field] !== '' && !isNaN(Number(editLead[field])) && typeof editLead[field] === 'number'
+                                                : false;
                                             return (
                                                 <div key={field}>
                                                     <label className="block text-xs font-semibold text-gray-700 mb-1">
