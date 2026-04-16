@@ -211,6 +211,7 @@ const LeadsGrid = () => {
         if (!acctId) return;
         setCategoryLoading(true);
         setCategoriesReady(false);
+        setCurrentPage(1);
         try {
             const response = await api.get('/api/ui/leads/categories', { params: { acctId } });
             const d = response.data;
