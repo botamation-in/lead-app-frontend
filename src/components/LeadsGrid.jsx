@@ -206,6 +206,9 @@ const LeadsGrid = () => {
     const [categoryLoading, setCategoryLoading] = useState(false);
     const [categoriesReady, setCategoriesReady] = useState(false);
 
+    // Account API key (fetched once per account, used for lead create)
+    const [apiKey, setApiKey] = useState('');
+
     // Fetch category names from API using acctId
     const fetchCategories = async () => {
         if (!acctId) return;
@@ -249,6 +252,13 @@ const LeadsGrid = () => {
 
     useEffect(() => {
         fetchCategories();
+    }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+        if (!acctId) return;
+        api.post('/api/ui/accounts/token', { acctId, masked: false })
+            .then(res => setApiKey(res.data.apiKey || ''))
+            .catch(() => { });
     }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleCategoryChange = (value) => {
@@ -518,9 +528,9 @@ const LeadsGrid = () => {
                 const activeCat = categories.find(c => c._id === selectedCategory);
                 const categoryName = activeCat?.categoryName;
                 const createUrl = categoryName
-                    ? `/api/leads/category/${encodeURIComponent(categoryName)}`
-                    : '/api/leads';
-                await api.post(createUrl, { data: { ...editForm } }, { params: { acctId, acctNo } });
+                    ? `/api/ui/leads/category/${encodeURIComponent(categoryName)}`
+                    : '/api/ui/leads';
+                await api.post(createUrl, { data: { ...editForm } }, { params: { acctId } });
                 showSuccess('Lead created successfully.');
             }
             setIsEditFormVisible(false);
@@ -549,7 +559,7 @@ const LeadsGrid = () => {
     const handleDeleteConfirm = async () => {
         if (!deleteLeadId) return;
         try {
-            await api.delete(`/api/ui/leads/${deleteLeadId}`, { params: { acctId, acctNo } });
+            await api.delete(`/api/ui/leads/${deleteLeadId}`, { params: { acctId } });
             showSuccess('Lead deleted successfully.');
             setIsDeleteOpen(false);
             setDeleteLeadId(null);

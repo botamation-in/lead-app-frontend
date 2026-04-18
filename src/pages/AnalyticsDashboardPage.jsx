@@ -10,6 +10,8 @@ import {
 } from 'recharts';
 import LoadingMask from '../components/LoadingMask';
 import DeleteConfirmation from '../components/DeleteConfirmation';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 // ── Controlled dimension input for width/height ──
 const DimensionInput = ({ value, onCommit, min, max, className }) => {
@@ -153,10 +155,10 @@ const AnalyticsDashboardPage = () => {
     ];
 
     const DATE_GRANULARITY_OPTIONS = [
-        { value: 'hour',  label: 'Hourly' },
-        { value: 'day',   label: 'Daily' },
+        { value: 'hour', label: 'Hourly' },
+        { value: 'day', label: 'Daily' },
         { value: 'month', label: 'Monthly' },
-        { value: 'year',  label: 'Yearly' },
+        { value: 'year', label: 'Yearly' },
     ];
 
     // Fields that represent timestamps and should trigger date granularity bucketing
@@ -454,7 +456,7 @@ const AnalyticsDashboardPage = () => {
         };
         window.addEventListener('resize', handler);
         window.addEventListener('scroll', handler, true);
-        
+
         const observer = new ResizeObserver((entries) => {
             setFilterVisible(prev => {
                 const openIds = Object.keys(prev);
@@ -473,7 +475,7 @@ const AnalyticsDashboardPage = () => {
                 return prev;
             });
         });
-        
+
         Object.values(cardRefs.current).forEach(el => {
             if (el) observer.observe(el);
         });
@@ -794,6 +796,78 @@ const AnalyticsDashboardPage = () => {
         setGlobalRefreshing(true);
         await Promise.all(configured.map(c => fetchChartDataFromBackend(c.id, c)));
         setGlobalRefreshing(false);
+    };
+
+    // Download all charts as a single PDF (landscape A4)
+    const [pdfDownloading, setPdfDownloading] = useState(false);
+    const handleDownloadPDF = async () => {
+        if (pdfDownloading) return;
+        const chartIds = charts.map(c => c.id);
+        if (!chartIds.length) return;
+        setPdfDownloading(true);
+        try {
+            const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 24;
+            let firstPage = true;
+
+            for (const id of chartIds) {
+                const el = cardRefs.current[id];
+                if (!el) continue;
+                const chartConfig = charts.find(c => c.id === id);
+                const title = chartConfig?.chartName?.trim() || `Chart ${id}`;
+
+                // Hide toolbar/header elements so they don't appear in the capture
+                const hiddenEls = el.querySelectorAll('[data-pdf-hide]');
+                hiddenEls.forEach(h => { h.style.display = 'none'; });
+
+                const canvas = await html2canvas(el, {
+                    scale: 2,
+                    useCORS: true,
+                    backgroundColor: '#ffffff',
+                    logging: false,
+                });
+
+                // Restore hidden elements
+                hiddenEls.forEach(h => { h.style.display = ''; });
+
+                const imgData = canvas.toDataURL('image/png');
+                const imgAspect = canvas.width / canvas.height;
+
+                // Available area (leave room for title at top)
+                const titleHeight = 20;
+                const availW = pageWidth - margin * 2;
+                const availH = pageHeight - margin * 2 - titleHeight;
+
+                let drawW = availW;
+                let drawH = drawW / imgAspect;
+                if (drawH > availH) {
+                    drawH = availH;
+                    drawW = drawH * imgAspect;
+                }
+
+                const x = margin + (availW - drawW) / 2;
+                const y = margin + titleHeight;
+
+                if (!firstPage) pdf.addPage();
+                firstPage = false;
+
+                // Title
+                pdf.setFontSize(13);
+                pdf.setTextColor(30, 30, 30);
+                pdf.text(title, margin, margin + 13);
+
+                // Chart image
+                pdf.addImage(imgData, 'PNG', x, y, drawW, drawH);
+            }
+
+            pdf.save('analytics-charts.pdf');
+        } catch (err) {
+            console.error('PDF generation failed:', err);
+        } finally {
+            setPdfDownloading(false);
+        }
     };
 
 
@@ -1776,7 +1850,7 @@ const AnalyticsDashboardPage = () => {
                 }}
             >
                 {/* ── Always-visible name bar with drag handle ── */}
-                <div className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-b border-gray-800 cursor-grab active:cursor-grabbing select-none">
+                <div data-pdf-hide="true" className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-b border-gray-800 cursor-grab active:cursor-grabbing select-none">
                     <svg className="w-4 h-4 text-gray-500 shrink-0" fill="currentColor" viewBox="0 0 16 16">
                         <circle cx="5" cy="4" r="1.2" /><circle cx="11" cy="4" r="1.2" />
                         <circle cx="5" cy="8" r="1.2" /><circle cx="11" cy="8" r="1.2" />
@@ -1945,7 +2019,7 @@ const AnalyticsDashboardPage = () => {
                         <div className="flex items-center justify-center gap-2 px-5 pt-2 pb-2 border-b border-gray-100 relative pr-10">
                             <span className="text-xs font-semibold text-gray-700 shrink-0">Category:</span>
                             <div className="w-48">
-                                 <Combobox
+                                <Combobox
                                     value={
                                         mergedConfig.chartCategory
                                             ? (typeof mergedConfig.chartCategory === 'object'
@@ -2055,7 +2129,7 @@ const AnalyticsDashboardPage = () => {
                             )}
 
                             {/* Close button top right */}
-                            <button 
+                            <button
                                 onClick={() => hideFilter(chartConfig.id)}
                                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors"
                             >
@@ -2115,9 +2189,9 @@ const AnalyticsDashboardPage = () => {
                                             'Update Chart'
                                         )}
                                     </button>
-                                    
+
                                     {/* Close button top right */}
-                                    <button 
+                                    <button
                                         onClick={() => hideFilter(chartConfig.id)}
                                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors"
                                     >
@@ -2129,368 +2203,367 @@ const AnalyticsDashboardPage = () => {
                             {/* ── Scrollable body ── */}
                             <div className="overflow-y-auto flex-1 scrollbar-thin">
 
-                            {/* ── Date filter row ── */}
-                            <div className="flex items-center gap-2 pt-3 mb-3 px-5 flex-wrap">
-                                <span className="text-xs font-semibold text-gray-700 shrink-0">Filter:</span>
-                                <div className="w-32 [&_input]:!py-0.5 [&_input]:!text-[11px] [&_input]:!pl-2 [&_input]:!pr-7 [&_svg]:!size-3">
-                                    <Combobox
-                                        value={activePresetOption}
-                                        onChange={(val) => val && applyDatePreset(val.value)}
-                                        displayValue={(option) => option?.label || ''}
-                                        options={DATE_PRESET_OPTIONS}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`date-preset-${chartConfig.id}-${option.value}`} value={option}>
-                                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                                            </ComboboxOption>
-                                        )}
-                                    </Combobox>
-                                </div>
-
-                                {/* Last N Days number input */}
-                                {showLastNInput && (
-                                    <div className="flex items-center gap-1">
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="365"
-                                            value={mergedConfig._lastNDays || 7}
-                                            onChange={(e) => {
-                                                const n = Math.max(1, parseInt(e.target.value) || 1);
-                                                const d = new Date(today); d.setDate(d.getDate() - n);
-                                                updatePendingConfigBatch(chartConfig.id, {
-                                                    _lastNDays: n,
-                                                    dateFilterFrom: toISO(d),
-                                                    dateFilterTo: todayStr,
-                                                });
-                                            }}
-                                            className="w-14 px-1.5 py-0.5 text-[11px] text-center border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
-                                        />
-                                        <span className="text-[11px] text-gray-500">days</span>
-                                    </div>
-                                )}
-
-                                {/* From/To inputs — only shown in custom mode */}
-                                {showCustomInputs && (
-                                    <>
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            <span className="text-[11px] text-gray-500">From:</span>
-                                            <input
-                                                type="date"
-                                                value={mergedConfig.dateFilterFrom}
-                                                onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterFrom: e.target.value })}
-                                                className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
-                                            />
-                                        </div>
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            <span className="text-[11px] text-gray-500">To:</span>
-                                            <input
-                                                type="date"
-                                                value={mergedConfig.dateFilterTo}
-                                                onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterTo: e.target.value })}
-                                                className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
-                                            />
-                                        </div>
-                                    </>
-                                )}
-
-                            </div>
-
-                            {/* ── SECTION: DISPLAY ─────────────────────── */}
-                            {mergedConfig.chartType?.value && (
-                                <>
-                                    <div className="flex items-center gap-0 px-5 pt-1 pb-1.5 border-t border-gray-100 mt-1">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Display</span>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
-                                        {/* Color — line/heatmap/number only */}
-                                        {['line', 'heatmap', 'number'].includes(mergedConfig.chartType?.value) && (
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Color</span>
-                                                <div className="flex items-center gap-1.5">
-                                                    {COLOR_OPTIONS.map(c => (
-                                                        <button
-                                                            key={c}
-                                                            title={c}
-                                                            onClick={() => updatePendingConfig(chartConfig.id, 'chartColor', c)}
-                                                            className="w-4.5 h-4.5 rounded-full transition-transform hover:scale-110 focus:outline-none"
-                                                            style={{
-                                                                width: 18, height: 18,
-                                                                backgroundColor: c,
-                                                                boxShadow: (mergedConfig.chartColor || DEFAULT_CHART_COLOR) === c
-                                                                    ? `0 0 0 2px white, 0 0 0 3.5px ${c}`
-                                                                    : 'none'
-                                                            }}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                        {/* Legend + Data Labels — not heatmap/number */}
-                                        {!['heatmap', 'number'].includes(mergedConfig.chartType?.value) && (
-                                            <>
-                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Legend</span>
-                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', true)}
-                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
-                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', false)}
-                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Data Labels</span>
-                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', true)}
-                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
-                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', false)}
-                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
-                                                    </div>
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                </>
-                            )}
-
-                            {/* ── SECTION: CHART ────────────────────────── */}
-                            {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar' || mergedConfig.chartType?.value === 'number') && (
-                                <>
-                                    <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Chart</span>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
-                                        {/* Mode — pie + bar */}
-                                        {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Mode</span>
-                                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                    {[{ v: null, label: 'Simple' }, { v: 'grouped', label: 'Grouped' }, { v: 'stacked', label: 'Stacked' }].map(({ v, label }) => (
-                                                        <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'chartMode', v)}
-                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.chartMode === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
-                                                            {label}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                        {/* Orientation — bar only */}
-                                        {mergedConfig.chartType?.value === 'bar' && (
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Orientation</span>
-                                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                    <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'vertical')}
-                                                        className={`flex items-center gap-1 px-2 py-0.5 transition-all ${(mergedConfig.barOrientation || 'vertical') === 'vertical' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
-                                                        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-                                                            <rect x="1" y="4" width="2.5" height="7" rx="0.5" />
-                                                            <rect x="4.75" y="2" width="2.5" height="9" rx="0.5" />
-                                                            <rect x="8.5" y="5.5" width="2.5" height="5.5" rx="0.5" />
-                                                        </svg>
-                                                        Vertical
-                                                    </button>
-                                                    <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'horizontal')}
-                                                        className={`flex items-center gap-1 px-2 py-0.5 transition-all ${mergedConfig.barOrientation === 'horizontal' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
-                                                        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-                                                            <rect x="0" y="1" width="7" height="2.5" rx="0.5" />
-                                                            <rect x="0" y="4.75" width="9" height="2.5" rx="0.5" />
-                                                            <rect x="0" y="8.5" width="5.5" height="2.5" rx="0.5" />
-                                                        </svg>
-                                                        Horizontal
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-                                        {/* Split — number only */}
-                                        {mergedConfig.chartType?.value === 'number' && (
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Split</span>
-                                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                     {[{ v: 0, label: 'None' }, ...Array.from({ length: 10 }, (_, i) => ({ v: i + 1, label: String(i + 1) }))].map(({ v, label }) => (
-                                                        <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'numberSplitCount', v)}
-                                                            className={`px-2 py-0.5 transition-all ${(mergedConfig.numberSplitCount ?? 4) === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
-                                                            {label}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </>
-                            )}
-
-                            {/* ── SECTION: REFRESH ──────────────────────── */}
-                            <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
-                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Refresh</span>
-                            </div>
-                            <div className="flex items-center gap-2 mb-2 px-5">
-                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                    <button onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', null)}
-                                        className={`px-2 py-0.5 transition-all ${!mergedConfig.autoRefreshMins ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
-                                    {[{ v: 10 / 60, label: '10s' }, { v: 0.5, label: '30s' }, { v: 1, label: '1m' }, { v: 2, label: '2m' }, { v: 3, label: '3m' }, { v: 5, label: '5m' }, { v: 10, label: '10m' }, { v: 15, label: '15m' }, { v: 30, label: '30m' }, { v: 60, label: '1h' }].map(({ v, label }) => (
-                                        <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', v)}
-                                            className={`px-2 py-0.5 transition-all ${mergedConfig.autoRefreshMins === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
-                                            {label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* ── SECTION: RENAME LABELS ────────────────── */}
-                            {mergedConfig.chartType?.value && (() => {
-                                const isNumber = mergedConfig.chartType?.value === 'number';
-                                const isHeatmap = mergedConfig.chartType?.value === 'heatmap';
-                                if (isHeatmap) return null;
-                                const activeFields = isNumber
-                                    ? (mergedConfig.yAxis ? [mergedConfig.yAxis] : [])
-                                    : [mergedConfig.xAxis, mergedConfig.yAxis, mergedConfig.zAxis].filter(Boolean);
-                                if (!activeFields.length) return null;
-                                return (
-                                    <>
-                                        <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
-                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Rename Labels</span>
-                                        </div>
-                                        <div className="flex flex-wrap gap-3 mb-2 px-5">
-                                            {activeFields.map((field) => {
-                                                const currentVal = (mergedConfig.fieldLabels || {})[field.value] ?? field.label;
-                                                return (
-                                                    <div key={field.value} className="flex flex-col gap-0.5" style={{ minWidth: 90 }}>
-                                                        <span className="text-[10px] font-medium text-gray-400 truncate">{field.label}</span>
-                                                        <LabelInput
-                                                            initialValue={currentVal}
-                                                            placeholder={field.label}
-                                                            onCommit={(newVal) => updatePendingConfig(chartConfig.id, 'fieldLabels', {
-                                                                ...(mergedConfig.fieldLabels || {}),
-                                                                [field.value]: newVal,
-                                                            })}
-                                                        />
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </>
-                                );
-                            })()}
-                            {/* Chart Controls */}
-                            <div className={`grid gap-3 mb-4 px-5 ${
-                                mergedConfig.chartType?.value === 'number' ? 'grid-cols-3' :
-                                ((mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (mergedConfig.chartMode === 'grouped' || mergedConfig.chartMode === 'stacked'))
-                                    ? (isDateXAxis ? 'grid-cols-6' : 'grid-cols-5')
-                                    : (isDateXAxis ? 'grid-cols-5' : 'grid-cols-4')
-                            }`}>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
-                                    <Combobox
-                                        value={mergedConfig.chartType}
-                                        onChange={(val) => updatePendingConfig(chartConfig.id, 'chartType', val)}
-                                        displayValue={(option) => option?.label || 'Select...'}
-                                        options={chartTypes}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`chart-type-${chartConfig.id}-${option.value}`} value={option}>
-                                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                                            </ComboboxOption>
-                                        )}
-                                    </Combobox>
-                                </div>
-                                {mergedConfig.chartType?.value !== 'number' && (
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                            {mergedConfig.chartType?.value === 'pie' ? 'Group By' : 'X Axis'}
-                                        </label>
+                                {/* ── Date filter row ── */}
+                                <div className="flex items-center gap-2 pt-3 mb-3 px-5 flex-wrap">
+                                    <span className="text-xs font-semibold text-gray-700 shrink-0">Filter:</span>
+                                    <div className="w-32 [&_input]:!py-0.5 [&_input]:!text-[11px] [&_input]:!pl-2 [&_input]:!pr-7 [&_svg]:!size-3">
                                         <Combobox
-                                            value={mergedConfig.xAxis}
-                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'xAxis', val)}
-                                            displayValue={(option) => option?.label || 'Select...'}
-                                        options={columns}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
-                                                </ComboboxOption>
-                                            )}
-                                        </Combobox>
-                                    </div>
-                                )}
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                        {mergedConfig.chartType?.value === 'pie' ? 'Value' : mergedConfig.chartType?.value === 'number' ? 'Value' : 'Y Axis'}
-                                    </label>
-                                    <Combobox
-                                        value={mergedConfig.yAxis}
-                                        onChange={(val) => updatePendingConfig(chartConfig.id, 'yAxis', val)}
-                                        displayValue={(option) => option?.label || 'Select...'}
-                                        options={columns}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`y-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                                            </ComboboxOption>
-                                        )}
-                                    </Combobox>
-                                </div>
-                                {/* Z Axis — for Grouped / Stacked modes */}
-                                {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (mergedConfig.chartMode === 'grouped' || mergedConfig.chartMode === 'stacked') && (
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                            Group By
-                                        </label>
-                                        <Combobox
-                                            value={mergedConfig.zAxis}
-                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'zAxis', val)}
-                                            displayValue={(option) => option?.label || 'None'}
-                                        options={columns}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`z-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
-                                                </ComboboxOption>
-                                            )}
-                                        </Combobox>
-                                    </div>
-                                )}
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Aggregation</label>
-                                    <Combobox
-                                        value={mergedConfig.aggregation}
-                                        onChange={(val) => updatePendingConfig(chartConfig.id, 'aggregation', val)}
-                                        displayValue={(option) => option?.label || 'Select...'}
-                                        options={mergedConfig.chartType?.value === 'number' ? aggregationTypesNumber : aggregationTypes}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`agg-${chartConfig.id}-${option.value}`} value={option}>
-                                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                                            </ComboboxOption>
-                                        )}
-                                    </Combobox>
-                                </div>
-                                {/* Date Granularity — only when xAxis is a timestamp field */}
-                                {isDateXAxis && (
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Granularity</label>
-                                        <Combobox
-                                            value={activeDateGranularityOption}
-                                            onChange={(val) => val && updatePendingConfig(chartConfig.id, 'dateGranularity', val.value)}
-                                            displayValue={(option) => option?.label || 'Daily'}
-                                            options={DATE_GRANULARITY_OPTIONS}
-                                            dropdownClassName="!z-[500] !min-w-[140px]"
+                                            value={activePresetOption}
+                                            onChange={(val) => val && applyDatePreset(val.value)}
+                                            displayValue={(option) => option?.label || ''}
+                                            options={DATE_PRESET_OPTIONS}
+                                            dropdownClassName="!z-[500] !min-w-[160px]"
                                         >
                                             {(option) => (
-                                                <ComboboxOption key={`gran-${chartConfig.id}-${option.value}`} value={option}>
+                                                <ComboboxOption key={`date-preset-${chartConfig.id}-${option.value}`} value={option}>
                                                     <ComboboxLabel>{option.label}</ComboboxLabel>
                                                 </ComboboxOption>
                                             )}
                                         </Combobox>
                                     </div>
+
+                                    {/* Last N Days number input */}
+                                    {showLastNInput && (
+                                        <div className="flex items-center gap-1">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="365"
+                                                value={mergedConfig._lastNDays || 7}
+                                                onChange={(e) => {
+                                                    const n = Math.max(1, parseInt(e.target.value) || 1);
+                                                    const d = new Date(today); d.setDate(d.getDate() - n);
+                                                    updatePendingConfigBatch(chartConfig.id, {
+                                                        _lastNDays: n,
+                                                        dateFilterFrom: toISO(d),
+                                                        dateFilterTo: todayStr,
+                                                    });
+                                                }}
+                                                className="w-14 px-1.5 py-0.5 text-[11px] text-center border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                            />
+                                            <span className="text-[11px] text-gray-500">days</span>
+                                        </div>
+                                    )}
+
+                                    {/* From/To inputs — only shown in custom mode */}
+                                    {showCustomInputs && (
+                                        <>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <span className="text-[11px] text-gray-500">From:</span>
+                                                <input
+                                                    type="date"
+                                                    value={mergedConfig.dateFilterFrom}
+                                                    onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterFrom: e.target.value })}
+                                                    className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                                />
+                                            </div>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <span className="text-[11px] text-gray-500">To:</span>
+                                                <input
+                                                    type="date"
+                                                    value={mergedConfig.dateFilterTo}
+                                                    onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterTo: e.target.value })}
+                                                    className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+
+                                </div>
+
+                                {/* ── SECTION: DISPLAY ─────────────────────── */}
+                                {mergedConfig.chartType?.value && (
+                                    <>
+                                        <div className="flex items-center gap-0 px-5 pt-1 pb-1.5 border-t border-gray-100 mt-1">
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Display</span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
+                                            {/* Color — line/heatmap/number only */}
+                                            {['line', 'heatmap', 'number'].includes(mergedConfig.chartType?.value) && (
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Color</span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {COLOR_OPTIONS.map(c => (
+                                                            <button
+                                                                key={c}
+                                                                title={c}
+                                                                onClick={() => updatePendingConfig(chartConfig.id, 'chartColor', c)}
+                                                                className="w-4.5 h-4.5 rounded-full transition-transform hover:scale-110 focus:outline-none"
+                                                                style={{
+                                                                    width: 18, height: 18,
+                                                                    backgroundColor: c,
+                                                                    boxShadow: (mergedConfig.chartColor || DEFAULT_CHART_COLOR) === c
+                                                                        ? `0 0 0 2px white, 0 0 0 3.5px ${c}`
+                                                                        : 'none'
+                                                                }}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {/* Legend + Data Labels — not heatmap/number */}
+                                            {!['heatmap', 'number'].includes(mergedConfig.chartType?.value) && (
+                                                <>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <span className="text-[11px] font-semibold text-gray-600 shrink-0">Legend</span>
+                                                        <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                            <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', true)}
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
+                                                            <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', false)}
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <span className="text-[11px] font-semibold text-gray-600 shrink-0">Data Labels</span>
+                                                        <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                            <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', true)}
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
+                                                            <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', false)}
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    </>
                                 )}
-                            </div>
-                            {/* end filter controls */}
-                            <div className="pb-4"></div>
+
+                                {/* ── SECTION: CHART ────────────────────────── */}
+                                {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar' || mergedConfig.chartType?.value === 'number') && (
+                                    <>
+                                        <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Chart</span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
+                                            {/* Mode — pie + bar */}
+                                            {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Mode</span>
+                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                        {[{ v: null, label: 'Simple' }, { v: 'grouped', label: 'Grouped' }, { v: 'stacked', label: 'Stacked' }].map(({ v, label }) => (
+                                                            <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'chartMode', v)}
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.chartMode === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                                {label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {/* Orientation — bar only */}
+                                            {mergedConfig.chartType?.value === 'bar' && (
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Orientation</span>
+                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'vertical')}
+                                                            className={`flex items-center gap-1 px-2 py-0.5 transition-all ${(mergedConfig.barOrientation || 'vertical') === 'vertical' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                                                                <rect x="1" y="4" width="2.5" height="7" rx="0.5" />
+                                                                <rect x="4.75" y="2" width="2.5" height="9" rx="0.5" />
+                                                                <rect x="8.5" y="5.5" width="2.5" height="5.5" rx="0.5" />
+                                                            </svg>
+                                                            Vertical
+                                                        </button>
+                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'horizontal')}
+                                                            className={`flex items-center gap-1 px-2 py-0.5 transition-all ${mergedConfig.barOrientation === 'horizontal' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                                                                <rect x="0" y="1" width="7" height="2.5" rx="0.5" />
+                                                                <rect x="0" y="4.75" width="9" height="2.5" rx="0.5" />
+                                                                <rect x="0" y="8.5" width="5.5" height="2.5" rx="0.5" />
+                                                            </svg>
+                                                            Horizontal
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {/* Split — number only */}
+                                            {mergedConfig.chartType?.value === 'number' && (
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Split</span>
+                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                        {[{ v: 0, label: 'None' }, ...Array.from({ length: 10 }, (_, i) => ({ v: i + 1, label: String(i + 1) }))].map(({ v, label }) => (
+                                                            <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'numberSplitCount', v)}
+                                                                className={`px-2 py-0.5 transition-all ${(mergedConfig.numberSplitCount ?? 4) === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                                {label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* ── SECTION: REFRESH ──────────────────────── */}
+                                <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
+                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Refresh</span>
+                                </div>
+                                <div className="flex items-center gap-2 mb-2 px-5">
+                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', null)}
+                                            className={`px-2 py-0.5 transition-all ${!mergedConfig.autoRefreshMins ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                        {[{ v: 10 / 60, label: '10s' }, { v: 0.5, label: '30s' }, { v: 1, label: '1m' }, { v: 2, label: '2m' }, { v: 3, label: '3m' }, { v: 5, label: '5m' }, { v: 10, label: '10m' }, { v: 15, label: '15m' }, { v: 30, label: '30m' }, { v: 60, label: '1h' }].map(({ v, label }) => (
+                                            <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', v)}
+                                                className={`px-2 py-0.5 transition-all ${mergedConfig.autoRefreshMins === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* ── SECTION: RENAME LABELS ────────────────── */}
+                                {mergedConfig.chartType?.value && (() => {
+                                    const isNumber = mergedConfig.chartType?.value === 'number';
+                                    const isHeatmap = mergedConfig.chartType?.value === 'heatmap';
+                                    if (isHeatmap) return null;
+                                    const activeFields = isNumber
+                                        ? (mergedConfig.yAxis ? [mergedConfig.yAxis] : [])
+                                        : [mergedConfig.xAxis, mergedConfig.yAxis, mergedConfig.zAxis].filter(Boolean);
+                                    if (!activeFields.length) return null;
+                                    return (
+                                        <>
+                                            <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
+                                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Rename Labels</span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-3 mb-2 px-5">
+                                                {activeFields.map((field) => {
+                                                    const currentVal = (mergedConfig.fieldLabels || {})[field.value] ?? field.label;
+                                                    return (
+                                                        <div key={field.value} className="flex flex-col gap-0.5" style={{ minWidth: 90 }}>
+                                                            <span className="text-[10px] font-medium text-gray-400 truncate">{field.label}</span>
+                                                            <LabelInput
+                                                                initialValue={currentVal}
+                                                                placeholder={field.label}
+                                                                onCommit={(newVal) => updatePendingConfig(chartConfig.id, 'fieldLabels', {
+                                                                    ...(mergedConfig.fieldLabels || {}),
+                                                                    [field.value]: newVal,
+                                                                })}
+                                                            />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                                {/* Chart Controls */}
+                                <div className={`grid gap-3 mb-4 px-5 ${mergedConfig.chartType?.value === 'number' ? 'grid-cols-3' :
+                                        ((mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (mergedConfig.chartMode === 'grouped' || mergedConfig.chartMode === 'stacked'))
+                                            ? (isDateXAxis ? 'grid-cols-6' : 'grid-cols-5')
+                                            : (isDateXAxis ? 'grid-cols-5' : 'grid-cols-4')
+                                    }`}>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
+                                        <Combobox
+                                            value={mergedConfig.chartType}
+                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'chartType', val)}
+                                            displayValue={(option) => option?.label || 'Select...'}
+                                            options={chartTypes}
+                                            dropdownClassName="!z-[500] !min-w-[160px]"
+                                        >
+                                            {(option) => (
+                                                <ComboboxOption key={`chart-type-${chartConfig.id}-${option.value}`} value={option}>
+                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                </ComboboxOption>
+                                            )}
+                                        </Combobox>
+                                    </div>
+                                    {mergedConfig.chartType?.value !== 'number' && (
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                                {mergedConfig.chartType?.value === 'pie' ? 'Group By' : 'X Axis'}
+                                            </label>
+                                            <Combobox
+                                                value={mergedConfig.xAxis}
+                                                onChange={(val) => updatePendingConfig(chartConfig.id, 'xAxis', val)}
+                                                displayValue={(option) => option?.label || 'Select...'}
+                                                options={columns}
+                                                dropdownClassName="!z-[500] !min-w-[160px]"
+                                            >
+                                                {(option) => (
+                                                    <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                                        <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                    </ComboboxOption>
+                                                )}
+                                            </Combobox>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                            {mergedConfig.chartType?.value === 'pie' ? 'Value' : mergedConfig.chartType?.value === 'number' ? 'Value' : 'Y Axis'}
+                                        </label>
+                                        <Combobox
+                                            value={mergedConfig.yAxis}
+                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'yAxis', val)}
+                                            displayValue={(option) => option?.label || 'Select...'}
+                                            options={columns}
+                                            dropdownClassName="!z-[500] !min-w-[160px]"
+                                        >
+                                            {(option) => (
+                                                <ComboboxOption key={`y-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                </ComboboxOption>
+                                            )}
+                                        </Combobox>
+                                    </div>
+                                    {/* Z Axis — for Grouped / Stacked modes */}
+                                    {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (mergedConfig.chartMode === 'grouped' || mergedConfig.chartMode === 'stacked') && (
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                                Group By
+                                            </label>
+                                            <Combobox
+                                                value={mergedConfig.zAxis}
+                                                onChange={(val) => updatePendingConfig(chartConfig.id, 'zAxis', val)}
+                                                displayValue={(option) => option?.label || 'None'}
+                                                options={columns}
+                                                dropdownClassName="!z-[500] !min-w-[160px]"
+                                            >
+                                                {(option) => (
+                                                    <ComboboxOption key={`z-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                                        <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                    </ComboboxOption>
+                                                )}
+                                            </Combobox>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Aggregation</label>
+                                        <Combobox
+                                            value={mergedConfig.aggregation}
+                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'aggregation', val)}
+                                            displayValue={(option) => option?.label || 'Select...'}
+                                            options={mergedConfig.chartType?.value === 'number' ? aggregationTypesNumber : aggregationTypes}
+                                            dropdownClassName="!z-[500] !min-w-[160px]"
+                                        >
+                                            {(option) => (
+                                                <ComboboxOption key={`agg-${chartConfig.id}-${option.value}`} value={option}>
+                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                </ComboboxOption>
+                                            )}
+                                        </Combobox>
+                                    </div>
+                                    {/* Date Granularity — only when xAxis is a timestamp field */}
+                                    {isDateXAxis && (
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Granularity</label>
+                                            <Combobox
+                                                value={activeDateGranularityOption}
+                                                onChange={(val) => val && updatePendingConfig(chartConfig.id, 'dateGranularity', val.value)}
+                                                displayValue={(option) => option?.label || 'Daily'}
+                                                options={DATE_GRANULARITY_OPTIONS}
+                                                dropdownClassName="!z-[500] !min-w-[140px]"
+                                            >
+                                                {(option) => (
+                                                    <ComboboxOption key={`gran-${chartConfig.id}-${option.value}`} value={option}>
+                                                        <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                    </ComboboxOption>
+                                                )}
+                                            </Combobox>
+                                        </div>
+                                    )}
+                                </div>
+                                {/* end filter controls */}
+                                <div className="pb-4"></div>
                             </div>{/* end scrollable body */}
                         </>
                     )}
@@ -2591,6 +2664,22 @@ const AnalyticsDashboardPage = () => {
                                 Analytics Dashboard
                             </h1>
                             <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleDownloadPDF}
+                                    disabled={pdfDownloading || charts.length === 0}
+                                    title="Download all charts as PDF"
+                                    className="w-8 h-8 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all flex items-center justify-center disabled:opacity-50"
+                                >
+                                    {pdfDownloading ? (
+                                        <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                                        </svg>
+                                    )}
+                                </button>
                                 <button
                                     onClick={refreshAllCharts}
                                     disabled={globalRefreshing}
