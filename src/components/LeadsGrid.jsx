@@ -618,7 +618,7 @@ const LeadsGrid = () => {
 
 
     return (
-        <div className="h-screen flex flex-col bg-gray-50 overflow-hidden relative">
+        <div className="h-[100dvh] w-[100dvw] flex flex-col bg-gray-50 overflow-hidden relative">
             <LoadingMask loading={isExporting} title="Exporting..." message="Please wait while we export your leads to Excel" />
             <NotificationComponent />
             {/* Navigation Menu */}
@@ -977,13 +977,12 @@ const LeadsGrid = () => {
                         </div>
 
                         {/* Split Panel: Table (left) + Edit Form (right) */}
-                        <div className="flex flex-row gap-4 transition-all duration-300" style={{ alignItems: 'flex-start', width: '100%' }}>
+                        <div className="flex flex-col sm:flex-row gap-4 transition-all duration-300 flex-1 min-h-0 w-full">
 
                             {/* LEFT — Table panel */}
                             {isGridVisible && (
                                 <div
-                                    className={`transition-all duration-300 flex flex-col min-h-0 ${isEditFormVisible ? 'w-2/3' : 'w-full'}`}
-                                    style={{ height: '65vh', minWidth: 0 }}
+                                    className={`transition-all duration-300 flex flex-col min-h-0 h-full ${isEditFormVisible ? 'w-full sm:w-[calc(66.666%-0.5rem)]' : 'w-full'}`}
                                 >
                                     <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-white rounded-lg shadow-2xl border border-gray-200 animate-scale-in">
                                         {error && (
@@ -1217,11 +1216,10 @@ const LeadsGrid = () => {
                             {/* RIGHT — Add / Edit form panel */}
                             {isEditFormVisible && (
                                 <div
-                                    className="w-1/3 p-4 bg-white border border-gray-300 rounded-lg shadow-sm relative overflow-y-auto max-sm:w-full"
-                                    style={{ height: '65vh', minWidth: 0 }}
+                                    className="w-full sm:w-[calc(33.333%-0.5rem)] bg-white border border-gray-300 rounded-lg shadow-sm relative flex flex-col h-full overflow-hidden"
                                 >
                                     {/* Action buttons */}
-                                    <div className="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-gray-200">
+                                    <div className="flex items-center justify-between gap-2 p-4 pb-3 border-b border-gray-200 shrink-0">
                                         <h3 className="text-xs font-bold text-gray-700">
                                             {editLead ? 'Edit Lead' : 'Add New Lead'}
                                         </h3>
@@ -1246,26 +1244,28 @@ const LeadsGrid = () => {
                                     </div>
 
                                     {/* Form fields */}
-                                    <div className="grid grid-cols-1 gap-4">
-                                        {editFields.map(field => {
-                                            const isNumeric = editLead
-                                                ? editLead[field] !== null && editLead[field] !== undefined && editLead[field] !== '' && !isNaN(Number(editLead[field])) && typeof editLead[field] === 'number'
-                                                : false;
-                                            return (
-                                                <div key={field}>
-                                                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                                                        {formatFieldName(field)}
-                                                    </label>
-                                                    <input
-                                                        type={isNumeric ? 'number' : 'text'}
-                                                        value={editForm[field] ?? ''}
-                                                        onChange={e => setEditForm(prev => ({ ...prev, [field]: isNumeric ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
-                                                        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-black focus:border-black transition-colors"
-                                                        disabled={isSaving}
-                                                    />
-                                                </div>
-                                            );
-                                        })}
+                                    <div className="flex-1 overflow-y-auto p-4">
+                                        <div className="grid grid-cols-1 gap-4">
+                                            {editFields.map(field => {
+                                                const isNumeric = editLead
+                                                    ? editLead[field] !== null && editLead[field] !== undefined && editLead[field] !== '' && !isNaN(Number(editLead[field])) && typeof editLead[field] === 'number'
+                                                    : false;
+                                                return (
+                                                    <div key={field}>
+                                                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                                            {formatFieldName(field)}
+                                                        </label>
+                                                        <input
+                                                            type={isNumeric ? 'number' : 'text'}
+                                                            value={editForm[field] ?? ''}
+                                                            onChange={e => setEditForm(prev => ({ ...prev, [field]: isNumeric ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
+                                                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-black focus:border-black transition-colors"
+                                                            disabled={isSaving}
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
                             )}
