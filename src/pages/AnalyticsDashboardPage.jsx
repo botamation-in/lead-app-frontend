@@ -279,7 +279,11 @@ const AnalyticsDashboardPage = () => {
                 zAxis: chart.zAxis || null,
                 chartMode: chart.chartMode || null,
                 chartCategory: chart.chartCategory || null,
-                fieldLabels: chart.fieldLabels || {}
+                fieldLabels: chart.fieldLabels || {},
+                numberSplitCount: chart.numberSplitCount ?? 4,
+                dateGranularity: chart.dateGranularity || 'day',
+                showLegend: chart.showLegend ?? true,
+                showDataLabels: chart.showDataLabels ?? true
             }));
             store[acctKey] = store[acctKey] || {};
             store[acctKey][''] = { filters: chartsToSave };
@@ -1186,7 +1190,7 @@ const AnalyticsDashboardPage = () => {
                                         boxShadow: `0 0 0 2px ${color}28`,
                                     }} />
                                     <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', letterSpacing: 0.1, whiteSpace: 'nowrap' }}>
-                                        {lbl(entry.name)}
+                                        {lbl(entry.name)} ({entry.value.toLocaleString()})
                                     </span>
                                 </div>
                             );
@@ -1553,7 +1557,7 @@ const AnalyticsDashboardPage = () => {
                                         boxShadow: `0 0 0 2px ${color}28`,
                                     }} />
                                     <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', letterSpacing: 0.1, whiteSpace: 'nowrap' }}>
-                                        {lbl(entry.name)}
+                                        {lbl(entry.name)} ({entry.value.toLocaleString()})
                                     </span>
                                 </div>
                             );
