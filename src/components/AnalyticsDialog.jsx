@@ -44,7 +44,7 @@ const renderPieChart = (chartData, yAxisLabel) => (
                 }}
                 formatter={(value, name) => [value, yAxisLabel]}
             />
-            <Legend />
+            <Legend formatter={(value, entry) => `${value} (${entry.payload.value.toLocaleString()})`} />
         </PieChart>
     </ResponsiveContainer>
 );
@@ -240,7 +240,7 @@ const renderNestedPieChartD = (chartData, yAxisLabel) => {
                     {outerData.map((_, i) => <Cell key={i} fill={DCOLORS[i % DCOLORS.length]} opacity={0.7} />)}
                 </Pie>
                 <Tooltip contentStyle={{ backgroundColor: '#fff', border: '2px solid #e0e0e0', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} />
-                <Legend />
+                <Legend formatter={(value, entry) => `${value} (${entry.payload.value.toLocaleString()})`} />
             </PieChart>
         </ResponsiveContainer>
     );
