@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import BrandLogo from './BrandLogo';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import api from '../api/axiosConfig';
 import { useAuth } from '../context/AuthContext';
 import { useAccount } from '../context/AccountContext';
@@ -449,19 +449,34 @@ const LeadsGrid = () => {
                 return row;
             });
 
-            const worksheet = XLSX.utils.json_to_sheet(rows);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'Leads');
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Leads');
 
-            // Auto-size columns
-            const colWidths = Object.keys(rows[0] || {}).map(key => ({
-                wch: Math.max(key.length, ...rows.map(r => String(r[key] ?? '').length)) + 2
+            const headerKeys = Object.keys(rows[0] || {});
+            worksheet.columns = headerKeys.map(key => ({
+                header: key,
+                key,
+                width: Math.max(key.length, ...rows.map(r => String(r[key] ?? '').length)) + 2
             }));
-            worksheet['!cols'] = colWidths;
+            rows.forEach(row => {
+                worksheet.addRow(row);
+            });
 
             const filterSuffix = Object.keys(appliedFilters).length > 0 ? '_filtered' : '';
             const fileName = `leads${filterSuffix}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-            XLSX.writeFile(workbook, fileName);
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = fileName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(url);
             showSuccess(`Exported ${allLeads.length} lead${allLeads.length !== 1 ? 's' : ''} to ${fileName}`);
         } catch (err) {
             showError(err.message || 'Failed to export leads.');
