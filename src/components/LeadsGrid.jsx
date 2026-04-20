@@ -28,7 +28,7 @@ const LeadsGrid = () => {
     } = useAccount();
     const { showSuccess, showError, NotificationComponent } = useNotifications();
     const [leads, setLeads] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
 
     // Edit / Delete state
     const [editLead, setEditLead] = useState(null);
@@ -295,7 +295,10 @@ const LeadsGrid = () => {
     // Fetch leads from API
     const fetchLeads = async () => {
         // Wait until account state is resolved and categories are ready before fetching
-        if (!isAccountLinked || !acctId || !categoriesReady) return;
+        if (!isAccountLinked || !acctId || !categoriesReady) {
+            if (accountsLoaded && !accountsLoading && !isAccountLinked) setLoading(false);
+            return;
+        }
 
         setLoading(true);
         setError(null);
@@ -744,7 +747,7 @@ const LeadsGrid = () => {
             </nav>
 
             {/* Content Area */}
-            <div className="flex-1 overflow-hidden flex flex-col px-3 sm:px-4 py-3">
+            <div className="flex-1 overflow-hidden flex flex-col px-3 sm:px-4 py-3 relative">
                 {/* No Account Linked — full-page prompt */}
                 {accountsLoaded && !accountsLoading && !isAccountLinked && (
                     <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
