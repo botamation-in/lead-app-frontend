@@ -413,7 +413,7 @@ const LeadsGrid = () => {
                     if (field === 'adminId') {
                         row['Admin Name'] = lead.adminName || lead.adminId || '-';
                     } else if (field === 'createdAt' || field.includes('Date') || field.includes('date')) {
-                        row[formatFieldName(field)] = lead[field] ? new Date(lead[field]).toLocaleDateString() : '-';
+                        row[formatFieldName(field)] = lead[field] ? formatDateDDMMYYYY(lead[field]) : '-';
                     } else {
                         row[formatFieldName(field)] = lead[field] ?? '-';
                     }
@@ -478,12 +478,29 @@ const LeadsGrid = () => {
             .trim();
     };
 
+    // Helper to format date as dd.mm.yyyy HH:MM AM/PM
+    const formatDateDDMMYYYY = (dateValue) => {
+        const date = new Date(dateValue);
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+
+        let hours = date.getHours();
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12; // 0 should be 12
+        hours = String(hours).padStart(2, '0');
+
+        return `${day}.${month}.${year} ${hours}:${minutes} ${ampm}`;
+    };
+
     // Helper to format field values
     const formatFieldValue = (field, value) => {
         if (!value) return '-';
 
         if (field === 'createdAt' || field === 'updatedAt' || field.includes('Date') || field.includes('date')) {
-            return new Date(value).toLocaleDateString();
+            return formatDateDDMMYYYY(value);
         }
 
         return value;
