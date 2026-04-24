@@ -143,7 +143,7 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                 // Also refresh in the background to keep cache fresh
                 api.post('/api/ui/accounts/token', { acctId: resolvedAcctId, masked: false })
                     .then(r => { cachedRealToken.current = r.data.apiKey || cachedRealToken.current; })
-                    .catch(() => {});
+                    .catch(() => { });
             } else {
                 // No cache yet — fetch then copy
                 const response = await api.post('/api/ui/accounts/token', {
@@ -180,7 +180,8 @@ const ApiTab = ({ acctId: acctIdProp }) => {
 
     // ── Snippet strings for the accordion ──────────────────────────────────────
     const endpointText = 'POST /api/leads';
-    const headersText = `x-api-key: <your-api-key>\nx-page-id: ${resolvedAcctNo}\nContent-Type: application/json`;
+    const endpointFullUrl = `POST ${window.location.origin}/api/leads`;
+    const headersText = `x-api-key: ${cachedRealToken.current || '<your-api-key>'}\nx-page-id: ${resolvedAcctNo}\nContent-Type: application/json`;
     const singleLeadText = `{
   "data": {
     "name": "John Doe",
@@ -313,7 +314,7 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                         <div>
                             <div className="flex items-center justify-between mb-1">
                                 <p className="font-semibold text-gray-900">Endpoint</p>
-                                <CopyButton text={endpointText} />
+                                <CopyButton text={endpointFullUrl} />
                             </div>
                             <code className="block bg-gray-100 rounded-lg px-3 py-2 font-mono text-[11px] text-gray-800">
                                 {endpointText}
@@ -330,7 +331,7 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                                 <CopyButton text={headersText} />
                             </div>
                             <div className="bg-gray-100 rounded-lg px-3 py-2 font-mono text-[11px] text-gray-800 space-y-0.5">
-                                <p>x-api-key: <span className="text-gray-500">{'<your-api-key>'}</span></p>
+                                <p>x-api-key: <span className="text-gray-500">{cachedRealToken.current || '<your-api-key>'}</span></p>
                                 <p>x-page-id: <span className="text-gray-500">{resolvedAcctNo}</span></p>
                                 <p>Content-Type: application/json</p>
                             </div>
