@@ -26,12 +26,14 @@
         "dev": "vite --mode development",
         "build": "vite build",
         "build:production": "vite build --mode production",
+        "build:uc": "vite build --mode uc",
         "preview": "vite preview"
     },
     "scriptsInfo": {
         "start": "Loads .env.development",
         "dev": "Loads .env.development",
         "build": "Loads .env.production",
+        "build:uc": "Loads .env.uc",
         "preview": "Loads .env.production (previews build output)"
     }
 }
