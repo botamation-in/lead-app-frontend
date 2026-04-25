@@ -48,10 +48,10 @@ export function Combobox({
             'combobox-padding-margin',
             'relative block w-full appearance-none rounded-lg py-1.5',
             'pr-9 pl-3',
-            'text-sm/6 text-zinc-950 placeholder:text-zinc-500',
-            'border border-zinc-950/10 data-hover:border-zinc-950/20 dark:border-white/10 dark:data-hover:border-white/20',
+            'text-xs text-slate-700 placeholder:text-slate-400',
+            'border border-slate-300 data-hover:border-slate-400 dark:border-white/10 dark:data-hover:border-white/20',
             'bg-transparent dark:bg-white/5',
-            'focus:outline-none focus:ring-1 focus:ring-black focus:ring-inset focus:border-black',
+            'focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-inset focus:border-indigo-500',
             'data-invalid:border-red-500 data-invalid:data-hover:border-red-500 dark:data-invalid:border-red-500 dark:data-invalid:data-hover:border-red-500',
             'data-disabled:border-zinc-950/20 dark:data-disabled:border-white/15 dark:data-disabled:bg-white/2.5 dark:data-hover:data-disabled:border-white/15',
             'dark:scheme-dark',
@@ -74,7 +74,7 @@ export function Combobox({
         anchor={anchor}
         className={clsx(
           '[--anchor-gap:0.5rem] [--anchor-padding:1rem] sm:data-[anchor~=start]:[--anchor-offset:-4px]',
-          'isolate scroll-py-1 rounded-xl p-1 pb-2 select-none empty:invisible',
+          'z-50 scroll-py-1 rounded-xl p-1 pb-2 select-none empty:invisible',
           'outline outline-transparent focus:outline-hidden',
           'overflow-y-scroll overscroll-contain',
           'bg-white dark:bg-zinc-800',
@@ -97,20 +97,20 @@ export function ComboboxOption({ children, className, ...props }) {
   let sharedClasses = clsx(
     'flex min-w-0 items-center',
     '*:data-[slot=icon]:size-4 *:data-[slot=icon]:shrink-0',
-    '*:data-[slot=icon]:text-zinc-500 group-data-focus/option:*:data-[slot=icon]:text-white dark:*:data-[slot=icon]:text-zinc-400',
+    '*:data-[slot=icon]:text-zinc-500 group-data-focus/option:*:data-[slot=icon]:text-indigo-700 dark:*:data-[slot=icon]:text-indigo-400',
     'forced-colors:*:data-[slot=icon]:text-[CanvasText] forced-colors:group-data-focus/option:*:data-[slot=icon]:text-[Canvas]',
     '*:data-[slot=avatar]:-mx-0.5 *:data-[slot=avatar]:size-5'
   );
 
   const optionClassName = clsx(
     'combobox-padding-margin',
-    'group/option grid w-full cursor-pointer grid-cols-[1fr_1.25rem] items-baseline gap-x-2 rounded-lg py-2 px-3',
-    'text-sm/6 text-zinc-950 dark:text-white forced-colors:text-[CanvasText]',
-    'outline-hidden data-focus:bg-black data-focus:text-white hover:bg-black hover:text-white dark:hover:bg-black dark:hover:text-white',
+    'group/option grid w-full cursor-pointer grid-cols-[1fr_1.25rem] items-baseline gap-x-2 rounded-lg py-1.5 px-3',
+    'text-xs text-slate-700 dark:text-slate-300 forced-colors:text-[CanvasText]',
+    'outline-hidden data-focus:bg-indigo-50 data-focus:text-indigo-700 hover:bg-indigo-50 hover:text-indigo-700',
     'forced-color-adjust-none forced-colors:data-focus:bg-[Highlight] forced-colors:data-focus:text-[HighlightText]',
     'data-disabled:opacity-50',
     className,
-    props.isLast ? 'mb-2' : '',
+    props.isLast ? 'mb-1' : '',
     '!border-none !outline-none' // Remove border and outline from option
   );
 
@@ -119,7 +119,7 @@ export function ComboboxOption({ children, className, ...props }) {
       {...props}
       className={optionClassName}
     >
-      <span className={sharedClasses + ' group-hover/option:text-white'}>{children}</span>
+      <span className={sharedClasses + ' group-hover/option:text-indigo-700'}>{children}</span>
       <svg
         className="relative col-start-2 hidden size-4 self-center stroke-current group-data-selected/option:inline"
         viewBox="0 0 16 16"

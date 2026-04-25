@@ -956,6 +956,38 @@ const AnalyticsDashboardPage = () => {
 
     // Download all charts as a single PDF (landscape A4)
     const [pdfDownloading, setPdfDownloading] = useState(false);
+
+    // Build a human-readable date range label from a chart config
+    const getChartDateLabel = (cfg) => {
+        const preset = cfg?._datePreset || 'today';
+        const from = cfg?.dateFilterFrom || '';
+        const to = cfg?.dateFilterTo || '';
+        const fmt = (iso) => {
+            const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
+        };
+        switch (preset) {
+            case 'today': return 'Today';
+            case 'yesterday': return 'Yesterday';
+            case 'alltime': return 'All Time';
+            case 'thisweek': return 'This Week';
+            case 'lastweek': return 'Last Week';
+            case 'thismonth': return 'This Month';
+            case 'lastmonth': return 'Last Month';
+            case 'last_n': return `Last ${cfg?._lastNDays || 7} Days`;
+            case 'custom': {
+                if (from && to) return from === to ? fmt(from) : `${fmt(from)} – ${fmt(to)}`;
+                if (from) return `From ${fmt(from)}`;
+                if (to) return `Until ${fmt(to)}`;
+                return 'Custom Range';
+            }
+            default: {
+                if (from && to) return from === to ? fmt(from) : `${fmt(from)} – ${fmt(to)}`;
+                return '';
+            }
+        }
+    };
+
     const handleDownloadPDF = async () => {
         if (pdfDownloading) return;
         const chartIds = charts.map(c => c.id);
@@ -968,41 +1000,77 @@ const AnalyticsDashboardPage = () => {
             const margin = 24;
             let firstPage = true;
 
+            // Off-screen capture container — fixed large size so flex children aren't clipped
+            const offscreenHost = document.createElement('div');
+            offscreenHost.style.cssText = [
+                'position:fixed', 'left:-9999px', 'top:0',
+                'width:1200px',   // wide enough to avoid responsive wrapping
+                'background:#ffffff',
+                'z-index:-1',
+                'pointer-events:none',
+            ].join(';');
+            document.body.appendChild(offscreenHost);
+
             for (const id of chartIds) {
                 const el = cardRefs.current[id];
                 if (!el) continue;
                 const chartConfig = charts.find(c => c.id === id);
                 const title = chartConfig?.chartName?.trim() || `Chart ${id}`;
+                const dateLabel = getChartDateLabel(chartConfig);
 
-                // Capture only the chart content area (excludes the header toolbar)
+                // Grab only the chart content area
                 const contentEl = el.querySelector('[data-pdf-content]') || el;
 
-                // Temporarily lift overflow clipping so chart SVGs aren't cropped
-                const prevOverflow = contentEl.style.overflow;
-                contentEl.style.overflow = 'visible';
+                // Deep-clone into the off-screen host with all computed styles resolved
+                const clone = contentEl.cloneNode(true);
+                // Remove any elements tagged data-pdf-hide from the clone
+                clone.querySelectorAll('[data-pdf-hide]').forEach(n => n.remove());
+                // Release ALL height/overflow constraints so the full flex column renders
+                const releaseConstraints = (node) => {
+                    if (node.style) {
+                        node.style.height = 'auto';
+                        node.style.maxHeight = 'none';
+                        node.style.overflow = 'visible';
+                        node.style.minHeight = '0';
+                    }
+                    // Also strip Tailwind classes that clip height
+                    if (node.classList) {
+                        ['h-full', 'min-h-0', 'overflow-hidden', 'overflow-y-hidden', 'overflow-x-hidden'].forEach(c => node.classList.remove(c));
+                    }
+                };
+                releaseConstraints(clone);
+                // Release first two levels of children (the p-4 wrapper and the chart flex root)
+                clone.querySelectorAll('*').forEach(releaseConstraints);
+                // Give SVGs explicit pixel dimensions so Recharts renders them fully
+                clone.querySelectorAll('svg').forEach(svg => {
+                    const rect = svg.getBoundingClientRect();
+                    if (rect.width > 0) svg.setAttribute('width', rect.width);
+                    if (rect.height > 0) svg.setAttribute('height', rect.height);
+                });
 
-                const canvas = await html2canvas(contentEl, {
+                offscreenHost.innerHTML = '';
+                offscreenHost.appendChild(clone);
+
+                // Allow a tick for the browser to lay out
+                await new Promise(r => setTimeout(r, 80));
+
+                const canvas = await html2canvas(clone, {
                     scale: 2,
                     useCORS: true,
                     backgroundColor: '#ffffff',
                     logging: false,
-                    scrollX: -window.scrollX,
-                    scrollY: -window.scrollY,
-                    windowWidth: document.documentElement.offsetWidth,
-                    windowHeight: document.documentElement.offsetHeight,
-                    ignoreElements: (elem) => elem.hasAttribute('data-pdf-hide'),
+                    width: clone.scrollWidth,
+                    height: clone.scrollHeight,
+                    windowWidth: 1200,
                 });
-
-                // Restore overflow
-                contentEl.style.overflow = prevOverflow;
 
                 const imgData = canvas.toDataURL('image/png');
                 const imgAspect = canvas.width / canvas.height;
 
-                // Available area (leave room for title at top)
-                const titleHeight = 30;
+                // Header block: title + date label
+                const headerH = dateLabel ? 42 : 28;
                 const availW = pageWidth - margin * 2;
-                const availH = pageHeight - margin * 2 - titleHeight;
+                const availH = pageHeight - margin * 2 - headerH;
 
                 let drawW = availW;
                 let drawH = drawW / imgAspect;
@@ -1012,20 +1080,30 @@ const AnalyticsDashboardPage = () => {
                 }
 
                 const x = margin + (availW - drawW) / 2;
-                const y = margin + titleHeight;
+                const y = margin + headerH;
 
                 if (!firstPage) pdf.addPage();
                 firstPage = false;
 
                 // Title
                 pdf.setFontSize(13);
+                pdf.setFont(undefined, 'bold');
                 pdf.setTextColor(30, 30, 30);
                 pdf.text(title, margin, margin + 13);
+
+                // Date label
+                if (dateLabel) {
+                    pdf.setFontSize(9);
+                    pdf.setFont(undefined, 'normal');
+                    pdf.setTextColor(100, 100, 120);
+                    pdf.text(dateLabel, margin, margin + 27);
+                }
 
                 // Chart image
                 pdf.addImage(imgData, 'PNG', x, y, drawW, drawH);
             }
 
+            document.body.removeChild(offscreenHost);
             pdf.save('analytics-charts.pdf');
         } catch (err) {
             console.error('PDF generation failed:', err);
@@ -1466,6 +1544,36 @@ const AnalyticsDashboardPage = () => {
             </div>
         );
     };
+
+    // External legend div — same visual style as legendChips but renders as a plain DOM element
+    // outside the ResponsiveContainer so it is reliably captured in PDF exports.
+    const renderExternalLegend = (items) => (
+        <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: '6px',
+            justifyContent: 'center', padding: '6px 16px 10px',
+            flexShrink: 0,
+        }}>
+            {items.map(({ label, color }, i) => (
+                <div key={i} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    padding: '3px 10px 3px 7px',
+                    borderRadius: 20,
+                    background: `${color}12`,
+                    border: `1px solid ${color}38`,
+                }}>
+                    <span style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: color, flexShrink: 0,
+                        boxShadow: `0 0 0 2px ${color}28`,
+                        display: 'inline-block',
+                    }} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', letterSpacing: 0.1, whiteSpace: 'nowrap' }}>
+                        {label}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
     const DEFAULT_CHART_COLOR = '#6366f1';
     const COLOR_OPTIONS = [
         '#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#3b82f6',
@@ -1638,130 +1746,146 @@ const AnalyticsDashboardPage = () => {
     };
 
     // Render Bar Chart — gradient bars, clean grid
-    const renderBarChart = (chartData, yAxisLabel, orientation = 'vertical', showLegend = true, showDataLabels = true, lbl = (k) => k) => {
+    const fmtDateTick = (v) => {
+        if (!v || typeof v !== 'string') return v;
+        // YYYY-MM-DD → DD.MM.YYYY
+        const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+        return v;
+    };
+
+    const renderBarChart = (chartData, yAxisLabel, orientation = 'vertical', showLegend = true, showDataLabels = true, lbl = (k) => k, fmtTick = (v) => v) => {
         const isHorizontal = orientation === 'horizontal';
+        const legendItems = [{ label: lbl(yAxisLabel), color: COLORS[0] }];
         return (
-            <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                    data={chartData}
-                    layout={isHorizontal ? 'vertical' : 'horizontal'}
-                    margin={isHorizontal
-                        ? { top: 10, right: showDataLabels ? 48 : 30, left: 80, bottom: 10 }
-                        : { top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }
-                    }
-                >
-                    <defs>
-                        {COLORS.map((color, i) => (
-                            <linearGradient key={i} id={`barGrad-${i}`} x1="0" y1="0" x2={isHorizontal ? '1' : '0'} y2={isHorizontal ? '0' : '1'}>
-                                <stop offset="0%" stopColor={color} stopOpacity={1} />
-                                <stop offset="100%" stopColor={color} stopOpacity={0.45} />
-                            </linearGradient>
-                        ))}
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={!isHorizontal} vertical={isHorizontal} />
-                    {isHorizontal ? (
-                        <>
-                            <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                            <YAxis type="category" dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} width={75} />
-                        </>
-                    ) : (
-                        <>
-                            <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} angle={-45} textAnchor="end" height={60} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                        </>
-                    )}
-                    <Tooltip
-                        contentStyle={tooltipStyle.contentStyle}
-                        labelStyle={tooltipStyle.labelStyle}
-                        itemStyle={tooltipStyle.itemStyle}
-                        cursor={tooltipStyle.cursor}
-                        formatter={(value) => [value.toLocaleString(), lbl(yAxisLabel)]}
-                    />
-                    {showLegend && (
-                        <Legend content={legendChips} />
-                    )}
-                    <Bar
-                        dataKey="value"
-                        name={lbl(yAxisLabel)}
-                        radius={isHorizontal ? [0, 8, 8, 0] : [8, 8, 0, 0]}
-                        maxBarSize={60}
-                        isAnimationActive={false}
-                    >
-                        {chartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={`url(#barGrad-${index % COLORS.length})`} />
-                        ))}
-                        {showDataLabels && (
-                            <LabelList
-                                dataKey="value"
-                                position={isHorizontal ? 'right' : 'top'}
-                                formatter={(v) => v.toLocaleString()}
-                                style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+                <div style={{ flex: 1, minHeight: 0 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                            data={chartData}
+                            layout={isHorizontal ? 'vertical' : 'horizontal'}
+                            margin={isHorizontal
+                                ? { top: 10, right: showDataLabels ? 48 : 30, left: 80, bottom: 10 }
+                                : { top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }
+                            }
+                        >
+                            <defs>
+                                {COLORS.map((color, i) => (
+                                    <linearGradient key={i} id={`barGrad-${i}`} x1="0" y1="0" x2={isHorizontal ? '1' : '0'} y2={isHorizontal ? '0' : '1'}>
+                                        <stop offset="0%" stopColor={color} stopOpacity={1} />
+                                        <stop offset="100%" stopColor={color} stopOpacity={0.45} />
+                                    </linearGradient>
+                                ))}
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={!isHorizontal} vertical={isHorizontal} />
+                            {isHorizontal ? (
+                                <>
+                                    <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                    <YAxis type="category" dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} width={75} />
+                                </>
+                            ) : (
+                                <>
+                                    <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} angle={-45} textAnchor="end" height={60} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} tickFormatter={fmtTick} />
+                                    <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                </>
+                            )}
+                            <Tooltip
+                                contentStyle={tooltipStyle.contentStyle}
+                                labelStyle={tooltipStyle.labelStyle}
+                                itemStyle={tooltipStyle.itemStyle}
+                                cursor={tooltipStyle.cursor}
+                                formatter={(value) => [value.toLocaleString(), lbl(yAxisLabel)]}
+                                labelFormatter={fmtTick}
                             />
-                        )}
-                    </Bar>
-                </BarChart>
-            </ResponsiveContainer>
+                            <Bar
+                                dataKey="value"
+                                name={lbl(yAxisLabel)}
+                                radius={isHorizontal ? [0, 8, 8, 0] : [8, 8, 0, 0]}
+                                maxBarSize={60}
+                                isAnimationActive={false}
+                            >
+                                {chartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={`url(#barGrad-${index % COLORS.length})`} />
+                                ))}
+                                {showDataLabels && (
+                                    <LabelList
+                                        dataKey="value"
+                                        position={isHorizontal ? 'right' : 'top'}
+                                        formatter={(v) => v.toLocaleString()}
+                                        style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+                                    />
+                                )}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+                {showLegend && renderExternalLegend(legendItems)}
+            </div>
         );
     };
 
     // Render Line Chart — area chart with gradient fill
-    const renderLineChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR, showLegend = true, showDataLabels = true, lbl = (k) => k) => (
-        <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }}>
-                <defs>
-                    <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-                        <stop offset="95%" stopColor={color} stopOpacity={0} />
-                    </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis
-                    dataKey="name"
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={60}
-                    axisLine={{ stroke: '#e2e8f0' }}
-                    tickLine={false}
-                />
-                <YAxis
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                />
-                <Tooltip
-                    contentStyle={tooltipStyle.contentStyle}
-                    labelStyle={tooltipStyle.labelStyle}
-                    itemStyle={tooltipStyle.itemStyle}
-                    cursor={{ stroke: color, strokeWidth: 1, strokeDasharray: '4 4' }}
-                    formatter={(value) => [value.toLocaleString(), lbl(yAxisLabel)]}
-                />
-                {showLegend && (
-                    <Legend content={legendChips} />
-                )}
-                <Area
-                    type="monotone"
-                    dataKey="value"
-                    name={lbl(yAxisLabel)}
-                    stroke={color}
-                    strokeWidth={3}
-                    fill="url(#areaGrad)"
-                    dot={{ fill: color, stroke: 'white', strokeWidth: 2, r: 5 }}
-                    activeDot={{ r: 7, fill: color, stroke: 'white', strokeWidth: 2 }}
-                    isAnimationActive={false}
-                >
-                    {showDataLabels && (
-                        <LabelList
-                            dataKey="value"
-                            position="top"
-                            offset={8}
-                            formatter={(v) => v.toLocaleString()}
-                            style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+    const renderLineChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR, showLegend = true, showDataLabels = true, lbl = (k) => k, fmtTick = (v) => v) => (
+        <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+            <div style={{ flex: 1, minHeight: 0 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData} margin={{ top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }}>
+                        <defs>
+                            <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+                                <stop offset="95%" stopColor={color} stopOpacity={0} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                        <XAxis
+                            dataKey="name"
+                            tick={{ fill: '#64748b', fontSize: 11 }}
+                            angle={-45}
+                            textAnchor="end"
+                            height={60}
+                            axisLine={{ stroke: '#e2e8f0' }}
+                            tickLine={false}
+                            tickFormatter={fmtTick}
                         />
-                    )}
-                </Area>
-            </AreaChart>
-        </ResponsiveContainer>
+                        <YAxis
+                            tick={{ fill: '#64748b', fontSize: 11 }}
+                            axisLine={false}
+                            tickLine={false}
+                        />
+                        <Tooltip
+                            contentStyle={tooltipStyle.contentStyle}
+                            labelStyle={tooltipStyle.labelStyle}
+                            itemStyle={tooltipStyle.itemStyle}
+                            cursor={{ stroke: color, strokeWidth: 1, strokeDasharray: '4 4' }}
+                            formatter={(value) => [value.toLocaleString(), lbl(yAxisLabel)]}
+                            labelFormatter={fmtTick}
+                        />
+                        <Area
+                            type="monotone"
+                            dataKey="value"
+                            name={lbl(yAxisLabel)}
+                            stroke={color}
+                            strokeWidth={3}
+                            fill="url(#areaGrad)"
+                            dot={{ fill: color, stroke: 'white', strokeWidth: 2, r: 5 }}
+                            activeDot={{ r: 7, fill: color, stroke: 'white', strokeWidth: 2 }}
+                            isAnimationActive={false}
+                        >
+                            {showDataLabels && (
+                                <LabelList
+                                    dataKey="value"
+                                    position="top"
+                                    offset={8}
+                                    formatter={(v) => v.toLocaleString()}
+                                    style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+                                />
+                            )}
+                        </Area>
+                    </AreaChart>
+                </ResponsiveContainer>
+            </div>
+            {showLegend && renderExternalLegend([{ label: lbl(yAxisLabel), color }])}
+        </div>
     );
 
     // Render Heat Map — colored tile grid, intensity proportional to value
@@ -1835,9 +1959,9 @@ const AnalyticsDashboardPage = () => {
     };
 
     // ── Grouped / Stacked Bar ─────────────────────────────────────────────
-    const renderMultiSeriesBarChart = (chartData, yAxisLabel, orientation = 'vertical', stacked = false, showLegend = true, showDataLabels = true, lbl = (k) => k) => {
+    const renderMultiSeriesBarChart = (chartData, yAxisLabel, orientation = 'vertical', stacked = false, showLegend = true, showDataLabels = true, lbl = (k) => k, fmtTick = (v) => v) => {
         const hasZKey = chartData.length > 0 && chartData[0].zKey !== undefined;
-        if (!hasZKey) return renderBarChart(chartData, yAxisLabel, orientation, showLegend, showDataLabels, lbl);
+        if (!hasZKey) return renderBarChart(chartData, yAxisLabel, orientation, showLegend, showDataLabels, lbl, fmtTick);
         const isHorizontal = orientation === 'horizontal';
         const names = [...new Set(chartData.map(d => d.name))];
         const zKeys = [...new Set(chartData.map(d => d.zKey))];
@@ -1849,76 +1973,80 @@ const AnalyticsDashboardPage = () => {
             });
             return entry;
         });
+        const legendItems = zKeys.map((zKey, i) => ({ label: lbl(zKey), color: COLORS[i % COLORS.length] }));
         return (
-            <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                    data={data}
-                    layout={isHorizontal ? 'vertical' : 'horizontal'}
-                    margin={isHorizontal
-                        ? { top: 10, right: showDataLabels ? 48 : 30, left: 80, bottom: 10 }
-                        : { top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }
-                    }
-                >
-                    <defs>
-                        {COLORS.map((color, i) => (
-                            <linearGradient key={i} id={`msBarGrad-${i}`} x1="0" y1="0" x2={isHorizontal ? '1' : '0'} y2={isHorizontal ? '0' : '1'}>
-                                <stop offset="0%" stopColor={color} stopOpacity={1} />
-                                <stop offset="100%" stopColor={color} stopOpacity={0.5} />
-                            </linearGradient>
-                        ))}
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={!isHorizontal} vertical={isHorizontal} />
-                    {isHorizontal ? (
-                        <>
-                            <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                            <YAxis type="category" dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} width={75} />
-                        </>
-                    ) : (
-                        <>
-                            <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} angle={-35} textAnchor="end" height={55} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                        </>
-                    )}
-                    <Tooltip
-                        contentStyle={tooltipStyle.contentStyle}
-                        labelStyle={tooltipStyle.labelStyle}
-                        itemStyle={tooltipStyle.itemStyle}
-                        cursor={tooltipStyle.cursor}
-                        formatter={(value) => [value.toLocaleString()]}
-                    />
-                    {showLegend && (
-                        <Legend content={legendChips} />
-                    )}
-                    {zKeys.map((zKey, i) => (
-                        <Bar
-                            key={zKey}
-                            dataKey={zKey}
-                            name={lbl(zKey)}
-                            fill={`url(#msBarGrad-${i % COLORS.length})`}
-                            stackId={stacked ? 'a' : undefined}
-                            radius={stacked
-                                ? (i === zKeys.length - 1 ? (isHorizontal ? [0, 8, 8, 0] : [8, 8, 0, 0]) : [0, 0, 0, 0])
-                                : (isHorizontal ? [0, 6, 6, 0] : [6, 6, 0, 0])
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+                <div style={{ flex: 1, minHeight: 0 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                            data={data}
+                            layout={isHorizontal ? 'vertical' : 'horizontal'}
+                            margin={isHorizontal
+                                ? { top: 10, right: showDataLabels ? 48 : 30, left: 80, bottom: 10 }
+                                : { top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }
                             }
-                            maxBarSize={stacked ? 80 : 50}
-                            isAnimationActive={false}
                         >
-                            {showDataLabels && (
-                                <LabelList
-                                    dataKey={zKey}
-                                    position={stacked ? 'center' : (isHorizontal ? 'right' : 'top')}
-                                    formatter={(v) => (v > 0 ? v.toLocaleString() : '')}
-                                    style={{
-                                        fontSize: 10,
-                                        fill: stacked ? 'white' : '#374151',
-                                        fontWeight: 600,
-                                    }}
-                                />
+                            <defs>
+                                {COLORS.map((color, i) => (
+                                    <linearGradient key={i} id={`msBarGrad-${i}`} x1="0" y1="0" x2={isHorizontal ? '1' : '0'} y2={isHorizontal ? '0' : '1'}>
+                                        <stop offset="0%" stopColor={color} stopOpacity={1} />
+                                        <stop offset="100%" stopColor={color} stopOpacity={0.5} />
+                                    </linearGradient>
+                                ))}
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={!isHorizontal} vertical={isHorizontal} />
+                            {isHorizontal ? (
+                                <>
+                                    <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                    <YAxis type="category" dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} width={75} />
+                                </>
+                            ) : (
+                                <>
+                                    <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} angle={-35} textAnchor="end" height={55} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} tickFormatter={fmtTick} />
+                                    <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                </>
                             )}
-                        </Bar>
-                    ))}
-                </BarChart>
-            </ResponsiveContainer>
+                            <Tooltip
+                                contentStyle={tooltipStyle.contentStyle}
+                                labelStyle={tooltipStyle.labelStyle}
+                                itemStyle={tooltipStyle.itemStyle}
+                                cursor={tooltipStyle.cursor}
+                                formatter={(value) => [value.toLocaleString()]}
+                                labelFormatter={fmtTick}
+                            />
+                            {zKeys.map((zKey, i) => (
+                                <Bar
+                                    key={zKey}
+                                    dataKey={zKey}
+                                    name={lbl(zKey)}
+                                    fill={`url(#msBarGrad-${i % COLORS.length})`}
+                                    stackId={stacked ? 'a' : undefined}
+                                    radius={stacked
+                                        ? (i === zKeys.length - 1 ? (isHorizontal ? [0, 8, 8, 0] : [8, 8, 0, 0]) : [0, 0, 0, 0])
+                                        : (isHorizontal ? [0, 6, 6, 0] : [6, 6, 0, 0])
+                                    }
+                                    maxBarSize={stacked ? 80 : 50}
+                                    isAnimationActive={false}
+                                >
+                                    {showDataLabels && (
+                                        <LabelList
+                                            dataKey={zKey}
+                                            position={stacked ? 'center' : (isHorizontal ? 'right' : 'top')}
+                                            formatter={(v) => (v > 0 ? v.toLocaleString() : '')}
+                                            style={{
+                                                fontSize: 10,
+                                                fill: stacked ? 'white' : '#374151',
+                                                fontWeight: 600,
+                                            }}
+                                        />
+                                    )}
+                                </Bar>
+                            ))}
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+                {showLegend && renderExternalLegend(legendItems)}
+            </div>
         );
     };
 
@@ -2008,12 +2136,13 @@ const AnalyticsDashboardPage = () => {
         const chartData = getChartData(chartConfig, chartConfig.id);
         const yAxisLabel = chartConfig.yAxis?.label || 'Value';
         const height = chartConfig.chartHeight || 320;
+        const isDateXAxis = DATE_AXIS_FIELDS.includes(chartConfig.xAxis?.value);
 
         if (isLoading) return (
             <div className="flex flex-col items-center justify-center w-full h-full gap-2">
                 <div className="relative">
                     <div className="animate-spin rounded-full h-7 w-7 border-2 border-gray-200"></div>
-                    <div className="animate-spin rounded-full h-7 w-7 border-2 border-gray-800 border-t-transparent absolute top-0"></div>
+                    <div className="animate-spin rounded-full h-7 w-7 border-2 border-indigo-600 border-t-transparent absolute top-0"></div>
                 </div>
                 <span className="text-[11px] text-gray-400 font-medium">Loading chart...</span>
             </div>
@@ -2041,12 +2170,12 @@ const AnalyticsDashboardPage = () => {
                     : renderPieChart(chartData, displayYLabel, showLegend, showDataLabels, lbl);
             case 'bar':
                 return mode === 'grouped'
-                    ? renderMultiSeriesBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', false, showLegend, showDataLabels, lbl)
+                    ? renderMultiSeriesBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', false, showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined)
                     : mode === 'stacked'
-                        ? renderMultiSeriesBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', true, showLegend, showDataLabels, lbl)
-                        : renderBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', showLegend, showDataLabels, lbl);
+                        ? renderMultiSeriesBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', true, showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined)
+                        : renderBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined);
             case 'line':
-                return renderLineChart(chartData, displayYLabel, chartColor, showLegend, showDataLabels, lbl);
+                return renderLineChart(chartData, displayYLabel, chartColor, showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined);
             case 'heatmap':
                 return renderHeatmapChart(chartData, displayYLabel, chartColor);
             case 'number':
@@ -2218,7 +2347,7 @@ const AnalyticsDashboardPage = () => {
                 }}
             >
                 {/* ── Always-visible name bar with drag handle ── */}
-                <div data-pdf-hide="true" className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-b border-gray-800 cursor-grab active:cursor-grabbing select-none">
+                <div data-pdf-hide="true" className="flex items-center gap-2 px-3 py-2 border-b border-indigo-500/20 cursor-grab active:cursor-grabbing select-none" style={{background: 'linear-gradient(180deg, #334155 0%, #1e293b 100%)'}}>
                     <svg className="w-4 h-4 text-gray-500 shrink-0" fill="currentColor" viewBox="0 0 16 16">
                         <circle cx="5" cy="4" r="1.2" /><circle cx="11" cy="4" r="1.2" />
                         <circle cx="5" cy="8" r="1.2" /><circle cx="11" cy="8" r="1.2" />
@@ -2270,12 +2399,12 @@ const AnalyticsDashboardPage = () => {
                                 value={chartConfig.chartWidthPx || 500}
                                 onCommit={(v) => updateChartConfig(chartConfig.id, 'chartWidthPx', v)}
                                 min={200} max={2400}
-                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-gray-800 m-0"
+                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-slate-800 m-0"
                             />
                             <button
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartWidthPx', Math.min(2400, (chartConfig.chartWidthPx || 500) + 40)); }}
-                                className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
+                                className="px-1.5 py-0.5 text-gray-400 hover:bg-slate-700 hover:text-white font-bold text-xs transition-all"
                             >+</button>
                         </div>
                         <div className="flex items-center border border-gray-700 rounded overflow-hidden" title="Chart Height">
@@ -2288,7 +2417,7 @@ const AnalyticsDashboardPage = () => {
                                 value={chartConfig.chartHeight || 320}
                                 onCommit={(v) => updateChartConfig(chartConfig.id, 'chartHeight', v)}
                                 min={180} max={800}
-                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-gray-800 m-0"
+                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-slate-800 m-0"
                             />
                             <button
                                 onMouseDown={(e) => e.stopPropagation()}
@@ -2472,9 +2601,9 @@ const AnalyticsDashboardPage = () => {
                                         }}
                                         disabled={!isChartConfigured(mergedConfig) || !isChartDirty(mergedConfig, chartConfig) || !!chartLoadingState[chartConfig.id]}
                                         className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
-                                            ? 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-md shadow-emerald-200'
+                                            ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-500/30'
                                             : updateSuccess[chartConfig.id]
-                                                ? 'bg-emerald-500 text-white'
+                                                ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white'
                                                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             }`}
                                         title={!isChartConfigured(mergedConfig)
@@ -2537,9 +2666,9 @@ const AnalyticsDashboardPage = () => {
                                         }}
                                         disabled={!isChartConfigured(mergedConfig) || !isChartDirty(mergedConfig, chartConfig) || !!chartLoadingState[chartConfig.id]}
                                         className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
-                                            ? 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-md shadow-emerald-200'
+                                            ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-500/30'
                                             : updateSuccess[chartConfig.id]
-                                                ? 'bg-emerald-500 text-white'
+                                                ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white'
                                                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             }`}
                                         title={!isChartConfigured(mergedConfig)
@@ -2686,18 +2815,18 @@ const AnalyticsDashboardPage = () => {
                                                         <span className="text-[11px] font-semibold text-gray-600 shrink-0">Legend</span>
                                                         <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
                                                             <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', true)}
-                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend !== false ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>On</button>
                                                             <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', false)}
-                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend === false ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>Off</button>
                                                         </div>
                                                     </div>
                                                     <div className="flex items-center gap-1.5 shrink-0">
                                                         <span className="text-[11px] font-semibold text-gray-600 shrink-0">Data Labels</span>
                                                         <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
                                                             <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', true)}
-                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels !== false ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>On</button>
                                                             <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', false)}
-                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels === false ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>Off</button>
                                                         </div>
                                                     </div>
                                                 </>
@@ -2720,7 +2849,7 @@ const AnalyticsDashboardPage = () => {
                                                     <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
                                                         {[{ v: null, label: 'Simple' }, { v: 'grouped', label: 'Grouped' }, { v: 'stacked', label: 'Stacked' }].map(({ v, label }) => (
                                                             <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'chartMode', v)}
-                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.chartMode === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.chartMode === v ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>
                                                                 {label}
                                                             </button>
                                                         ))}
@@ -2733,7 +2862,7 @@ const AnalyticsDashboardPage = () => {
                                                     <span className="text-[11px] font-semibold text-gray-600 shrink-0">Orientation</span>
                                                     <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
                                                         <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'vertical')}
-                                                            className={`flex items-center gap-1 px-2 py-0.5 transition-all ${(mergedConfig.barOrientation || 'vertical') === 'vertical' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                            className={`flex items-center gap-1 px-2 py-0.5 transition-all ${(mergedConfig.barOrientation || 'vertical') === 'vertical' ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>
                                                             <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
                                                                 <rect x="1" y="4" width="2.5" height="7" rx="0.5" />
                                                                 <rect x="4.75" y="2" width="2.5" height="9" rx="0.5" />
@@ -2742,7 +2871,7 @@ const AnalyticsDashboardPage = () => {
                                                             Vertical
                                                         </button>
                                                         <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'horizontal')}
-                                                            className={`flex items-center gap-1 px-2 py-0.5 transition-all ${mergedConfig.barOrientation === 'horizontal' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                            className={`flex items-center gap-1 px-2 py-0.5 transition-all ${mergedConfig.barOrientation === 'horizontal' ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>
                                                             <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
                                                                 <rect x="0" y="1" width="7" height="2.5" rx="0.5" />
                                                                 <rect x="0" y="4.75" width="9" height="2.5" rx="0.5" />
@@ -2760,7 +2889,7 @@ const AnalyticsDashboardPage = () => {
                                                     <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
                                                         {[{ v: 0, label: 'None' }, ...Array.from({ length: 10 }, (_, i) => ({ v: i + 1, label: String(i + 1) }))].map(({ v, label }) => (
                                                             <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'numberSplitCount', v)}
-                                                                className={`px-2 py-0.5 transition-all ${(mergedConfig.numberSplitCount ?? 4) === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                                className={`px-2 py-0.5 transition-all ${(mergedConfig.numberSplitCount ?? 4) === v ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>
                                                                 {label}
                                                             </button>
                                                         ))}
@@ -2778,10 +2907,10 @@ const AnalyticsDashboardPage = () => {
                                 <div className="flex items-center gap-2 mb-2 px-5">
                                     <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
                                         <button onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', null)}
-                                            className={`px-2 py-0.5 transition-all ${!mergedConfig.autoRefreshMins ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
+                                            className={`px-2 py-0.5 transition-all ${!mergedConfig.autoRefreshMins ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>Off</button>
                                         {[{ v: 10 / 60, label: '10s' }, { v: 0.5, label: '30s' }, { v: 1, label: '1m' }, { v: 2, label: '2m' }, { v: 3, label: '3m' }, { v: 5, label: '5m' }, { v: 10, label: '10m' }, { v: 15, label: '15m' }, { v: 30, label: '30m' }, { v: 60, label: '1h' }].map(({ v, label }) => (
                                             <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', v)}
-                                                className={`px-2 py-0.5 transition-all ${mergedConfig.autoRefreshMins === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                                                className={`px-2 py-0.5 transition-all ${mergedConfig.autoRefreshMins === v ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>
                                                 {label}
                                             </button>
                                         ))}
@@ -3197,14 +3326,14 @@ const AnalyticsDashboardPage = () => {
                                     onClick={handleDownloadPDF}
                                     disabled={pdfDownloading || charts.length === 0}
                                     title="Download all charts as PDF"
-                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-emerald-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-emerald-500 focus:ring-1 focus:ring-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-indigo-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-indigo-500 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     {pdfDownloading ? (
-                                        <svg className="w-4 h-4 text-emerald-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg className="w-4 h-4 text-indigo-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                         </svg>
                                     ) : (
-                                        <svg className="w-4 h-4 text-gray-600 group-hover:text-emerald-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg className="w-4 h-4 text-gray-600 group-hover:text-indigo-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
                                         </svg>
                                     )}
@@ -3360,7 +3489,7 @@ const AnalyticsDashboardPage = () => {
                             {!isViewingOtherAdmin && (
                             <button
                                 onClick={addChart}
-                                className="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5"
+                                className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5 shadow-md shadow-indigo-500/30"
                             >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

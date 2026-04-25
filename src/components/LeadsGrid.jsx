@@ -335,6 +335,7 @@ const LeadsGrid = () => {
                 limit: pageSize,
                 ...(sortField && { sortBy: sortField, sortOrder }),
                 ...(acctId && { acctId }),
+                ...(selectedCategory && { categoryId: selectedCategory }),
                 ...safeFilters
             };
 
@@ -437,11 +438,13 @@ const LeadsGrid = () => {
     const handleExportExcel = async () => {
         setIsExporting(true);
         try {
+            const { categoryId: _exportOmit, ...exportFilters } = appliedFilters;
             const params = {
                 limit: 100000, // fetch all matching records
                 ...(sortField && { sortBy: sortField, sortOrder }),
                 ...(acctId && { acctId }),
-                ...appliedFilters
+                ...(selectedCategory && { categoryId: selectedCategory }),
+                ...exportFilters
             };
 
             const response = await api.get('/api/ui/leads', { params, timeout: 120000 });
@@ -622,17 +625,17 @@ const LeadsGrid = () => {
     const renderSortIcon = (field) => {
         if (sortField !== field) {
             return (
-                <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="absolute -right-4 w-3 h-3 text-indigo-400 opacity-0 group-hover/sort:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                 </svg>
             );
         }
         return sortOrder === 'asc' ? (
-            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="absolute -right-4 w-3 h-3 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
             </svg>
         ) : (
-            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="absolute -right-4 w-3 h-3 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
         );
@@ -677,12 +680,38 @@ const LeadsGrid = () => {
 
 
 
+    const getColumnAlignClass = (field, type) => {
+        const align = 'center'; // Center align all columns
+        
+        if (type === 'th') return align === 'left' ? 'text-left' : 'text-center';
+        if (type === 'flex') return align === 'left' ? 'justify-start' : 'justify-center';
+        if (type === 'td') return align === 'left' ? 'text-left' : 'text-center';
+        if (type === 'input') return align === 'left' ? 'text-left' : 'text-center';
+        
+        return '';
+    };
+
+    const isEditFormDirty = (() => {
+        if (!editForm) return false;
+        if (!editLead) {
+            // New lead - check if any field has been filled
+            return Object.values(editForm).some(val => val && val.toString().trim() !== '');
+        }
+        // Existing lead - compare each editable field to its original value
+        return Object.keys(editForm).some(key => {
+            if (key === 'adminId' || key === 'adminName') return false; // Ignore readonly/system fields in comparison
+            const originalVal = editLead[key] == null ? '' : String(editLead[key]);
+            const currentVal = editForm[key] == null ? '' : String(editForm[key]);
+            return currentVal !== originalVal;
+        });
+    })();
+
     return (
         <div className="h-[100dvh] w-[100dvw] flex flex-col bg-gray-50 overflow-hidden relative">
             <LoadingMask loading={isExporting} title="Exporting..." message="Please wait while we export your leads to Excel" />
             <NotificationComponent />
             {/* Navigation Menu */}
-            <nav className="bg-black border-b border-gray-800 animate-fade-in shadow-lg flex-shrink-0">
+            <nav className="bg-gradient-to-b from-slate-900 to-slate-800 border-b border-slate-700/60 animate-fade-in shadow-xl flex-shrink-0" style={{boxShadow:'0 4px 24px 0 rgba(99,102,241,0.10),0 1px 0 0 rgba(255,255,255,0.04) inset'}}>
                 <div className="container mx-auto px-4">
                     <div className="flex items-center gap-4">
                         {/* Logo */}
@@ -693,7 +722,7 @@ const LeadsGrid = () => {
                         {/* Menu Items */}
                         <div className="flex items-center gap-1">
                             <button
-                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative bg-gray-900 text-white shadow-lg"
+                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative bg-gradient-to-b from-slate-700/80 to-slate-800/80 text-white shadow-lg"
                             >
                                 <div className="flex items-center gap-1.5">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -701,11 +730,11 @@ const LeadsGrid = () => {
                                     </svg>
                                     Leads
                                 </div>
-                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-t-full"></div>
+                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-indigo-400 to-violet-400 rounded-t-full"></div>
                             </button>
                             <button
                                 onClick={() => navigate('/admin')}
-                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-gray-400 hover:bg-gray-900 hover:text-white"
+                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white"
                             >
                                 <div className="flex items-center gap-1.5">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -716,7 +745,7 @@ const LeadsGrid = () => {
                             </button>
                             <button
                                 onClick={() => navigate('/settings')}
-                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-gray-400 hover:bg-gray-900 hover:text-white"
+                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white"
                             >
                                 <div className="flex items-center gap-1.5">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -747,14 +776,14 @@ const LeadsGrid = () => {
                             <div className="relative" ref={userMenuRef}>
                                 <button
                                     onClick={() => { setShowUserMenu(v => !v); }}
-                                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 transition-all duration-300 border border-gray-700"
+                                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 transition-all duration-300 border border-slate-600/70 backdrop-blur-sm"
                                 >
                                     {(() => {
                                         const imgUrl = userDetails?.profileImageUrl || '';
                                         const src = imgUrl;
                                         return src
                                             ? <img src={src} alt="avatar" className="w-6 h-6 rounded-full object-cover border border-gray-600 flex-shrink-0" />
-                                            : <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-xs font-bold shadow-lg border border-gray-600">
+                                            : <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold shadow-lg border border-indigo-400/40">
                                                 {userDetails?.name?.charAt(0)?.toUpperCase() || user?.name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
                                             </div>;
                                     })()}
@@ -773,7 +802,7 @@ const LeadsGrid = () => {
                                         </div>
                                         <button
                                             onClick={() => { setShowUserMenu(false); navigate('/profile'); }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-gray-900 hover:bg-gray-100 transition-colors flex items-center gap-1.5"
+                                            className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
                                         >
                                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -785,7 +814,7 @@ const LeadsGrid = () => {
                                                 setShowUserMenu(false);
                                                 logout();
                                             }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-gray-900 hover:bg-gray-100 transition-colors flex items-center gap-1.5"
+                                            className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
                                         >
                                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -820,7 +849,7 @@ const LeadsGrid = () => {
                             </p>
                             <button
                                 onClick={() => setIsLinkDialogOpen(true)}
-                                className="px-5 py-2.5 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-800 transition-colors"
+                                className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-semibold rounded-lg hover:from-indigo-500 hover:to-violet-500 transition-all shadow-md shadow-indigo-500/25"
                             >
                                 Link Account
                             </button>
@@ -887,10 +916,14 @@ const LeadsGrid = () => {
                                         setCurrentPage(1);
                                     }}
                                     disabled={loading || Object.keys(appliedFilters).filter(k => k !== 'categoryId').length === 0}
-                                    className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-red-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-red-400 focus:ring-1 focus:ring-red-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 disabled:opacity-40 disabled:cursor-not-allowed ${
+                                        Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0
+                                            ? 'bg-red-50 border-red-400 focus:ring-red-300'
+                                            : 'bg-transparent border-gray-300 hover:bg-red-50 hover:border-red-400 focus:ring-red-300'
+                                    }`}
                                     title={Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? `Clear ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length} active filter${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length !== 1 ? 's' : ''}` : 'No active filters'}
                                 >
-                                    <svg className="w-4 h-4 text-gray-600 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className={`w-4 h-4 transition-colors ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? 'text-red-500' : 'text-gray-600 group-hover:text-red-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12" />
                                     </svg>
@@ -918,17 +951,25 @@ const LeadsGrid = () => {
                                 <div className="relative" ref={columnSelectorRef}>
                                     <button
                                         onClick={() => setShowColumnSelector(v => !v)}
-                                        className={`group relative w-8 h-8 bg-transparent rounded-lg transition-all duration-300 flex items-center justify-center hover:scale-110 border focus:ring-1 focus:ring-orange-400 hover:bg-orange-50 hover:border-orange-500 ${showColumnSelector ? 'bg-orange-50 border-orange-500' : 'border-gray-300'}`}
+                                        className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 focus:ring-indigo-400 ${
+                                            (visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
+                                                ? 'bg-indigo-50 border-indigo-400'
+                                                : 'bg-transparent border-gray-300 hover:bg-indigo-50 hover:border-indigo-400'
+                                        }`}
                                         title="Show / hide columns"
                                     >
                                         <svg
-                                            className={`w-4 h-4 transition-colors ${showColumnSelector ? 'text-orange-600' : 'text-gray-600 group-hover:text-orange-600'}`}
+                                            className={`w-4 h-4 transition-colors ${
+                                                (visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
+                                                    ? 'text-indigo-600'
+                                                    : 'text-gray-600 group-hover:text-indigo-600'
+                                            }`}
                                             fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                         >
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 6h18M3 14h18M3 18h18" />
                                         </svg>
                                         {visibleFields !== null && visibleFields.length !== fields.length && (
-                                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-black rounded-full text-white text-[8px] flex items-center justify-center font-bold leading-none">
+                                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-indigo-600 rounded-full text-white text-[8px] flex items-center justify-center font-bold leading-none">
                                                 {visibleFields.length}
                                             </span>
                                         )}
@@ -939,7 +980,7 @@ const LeadsGrid = () => {
                                             <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
                                                 <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Columns</span>
                                                 <div className="flex gap-2">
-                                                    <button onClick={() => updateVisibleFields(null)} className="text-[10px] text-black hover:text-gray-600 font-semibold">All</button>
+                                                    <button onClick={() => updateVisibleFields(null)} className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold">All</button>
                                                     <span className="text-gray-300 text-[10px]">|</span>
                                                     <button onClick={() => updateVisibleFields(fields.slice(0, 1))} className="text-[10px] text-gray-400 hover:text-gray-700 font-semibold">None</button>
                                                 </div>
@@ -963,7 +1004,7 @@ const LeadsGrid = () => {
                                                                     }
                                                                     updateVisibleFields(next);
                                                                 }}
-                                                                className="w-3.5 h-3.5 accent-black cursor-pointer flex-shrink-0"
+                                                                className="w-3.5 h-3.5 accent-indigo-600 cursor-pointer flex-shrink-0"
                                                             />
                                                             <span className="text-[11px] text-gray-700 font-medium truncate">{formatFieldName(field)}</span>
                                                         </label>
@@ -1014,7 +1055,7 @@ const LeadsGrid = () => {
                             <button
                                 onClick={handleAdd}
                                 disabled={loading || fields.length === 0}
-                                className="group relative h-8 px-3 flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700 text-white rounded-lg transition-all duration-300 hover:scale-105 focus:ring-1 focus:ring-gray-500 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium"
+                                className="group relative h-8 px-3 flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-all duration-300 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium shadow-md shadow-indigo-500/30"
                                 title="Add New Lead"
                             >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1035,7 +1076,7 @@ const LeadsGrid = () => {
                                 >
                                     <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-white rounded-lg shadow-2xl border border-gray-200 animate-scale-in">
                                         {error && (
-                                            <div className="bg-gray-100 border-l-4 border-black text-gray-900 px-3 py-2 m-3 rounded-lg">
+                                            <div className="bg-indigo-50 border-l-4 border-indigo-500 text-indigo-900 px-3 py-2 m-3 rounded-lg">
                                                 <div className="flex items-center justify-between gap-2">
                                                     <div className="flex items-center gap-2">
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1053,45 +1094,69 @@ const LeadsGrid = () => {
                                             </div>
                                         )}
 
-                                        <div className="flex-1 overflow-auto min-h-0">
+                                        <div className="flex-1 overflow-y-scroll overflow-x-auto min-h-0">
                                             <table className="min-w-full divide-y divide-gray-200">
-                                                <thead className="bg-black sticky top-0 z-10">
-                                                    <tr>
-                                                        {(visibleFields ?? fields).map((field) => (
-                                                            <th key={field} className="px-3 py-2 text-center">
-                                                                <div
-                                                                    className="flex items-center justify-center gap-1 cursor-pointer hover:text-gray-300 mb-1.5 transition-colors group"
-                                                                    onClick={() => handleSort(field)}
-                                                                >
-                                                                    <span className="text-[10px] font-bold text-white uppercase tracking-wider">
-                                                                        {formatFieldName(field)}
-                                                                    </span>
-                                                                    {renderSortIcon(field)}
-                                                                </div>
-                                                                <input
-                                                                    type="text"
-                                                                    placeholder="Filter..."
-                                                                    value={filters[field] || ''}
-                                                                    onChange={(e) => handleFilterChange(field, e.target.value)}
-                                                                    onKeyDown={(e) => handleFilterKeyDown(e, field)}
-                                                                    onClick={(e) => e.stopPropagation()}
-                                                                    className="w-full px-2 py-1 text-[10px] border border-gray-700 bg-gray-900 text-white rounded focus:ring-1 focus:ring-gray-500 focus:border-transparent placeholder-gray-500 transition-all text-center"
-                                                                />
-                                                            </th>
-                                                        ))}
-                                                        <th className="px-3 py-2 text-center w-20">
-                                                            <span className="text-[10px] font-bold text-white uppercase tracking-wider">Actions</span>
-                                                        </th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="bg-white divide-y divide-gray-100">
-                                                    {loading ? (
+<thead className="sticky top-0 z-10 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] transition-all group/header">
+                                <tr>
+                                    {(visibleFields ?? fields).map((field) => (
+                                        <th key={field} className={`px-3 py-2.5 relative align-bottom ${getColumnAlignClass(field, 'th')}`}>
+                                            <div
+                                                className={`flex items-center cursor-pointer group/sort mb-1.5 transition-colors ${getColumnAlignClass(field, 'flex')}`}
+                                                onClick={() => handleSort(field)}
+                                            >
+                                                <div className="relative inline-flex items-center">
+                                                    <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider group-hover/sort:text-indigo-600 transition-colors">
+                                                        {formatFieldName(field)}
+                                                    </span>
+                                                    {renderSortIcon(field)}
+                                                </div>
+                                            </div>
+                                            <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
+                                                <div className="overflow-hidden">
+                                                    <div className="pb-1 pt-0.5 px-0.5">
+                                                        <div className="relative rounded-md bg-slate-200/80 focus-within:bg-gradient-to-r focus-within:from-indigo-500 focus-within:via-violet-400 focus-within:to-indigo-500 p-[1px] transition-all duration-300 shadow-sm focus-within:shadow-[0_0_10px_rgba(99,102,241,0.3)]">
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Filter..."
+                                                                value={filters[field] || ''}
+                                                                onChange={(e) => handleFilterChange(field, e.target.value)}
+                                                                onKeyDown={(e) => handleFilterKeyDown(e, field)}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className={`w-full px-2 py-1 text-[10px] bg-white/70 focus:bg-white text-slate-700 rounded-[5px] outline-none placeholder-slate-400 transition-all ${getColumnAlignClass(field, 'input')}`}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </th>
+                                    ))}
+                                    <th className="px-3 py-2.5 text-center w-20 align-bottom">
+                                        <div className="flex items-center justify-center gap-1 mb-1.5">
+                                            <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Actions</span>
+                                        </div>
+                                        <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
+                                            <div className="overflow-hidden">
+                                                <div className="pb-1 pt-0.5 px-0.5 opacity-0 pointer-events-none">
+                                                    <div className="p-[1px]">
+                                                        <input type="text" className="w-full px-2 py-1 text-[10px]" disabled />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </th>
+                                </tr>
+                                <tr>
+                                    <th colSpan="100" className="p-0 h-[3px] bg-gradient-to-r from-indigo-500 via-violet-400 to-indigo-500 border-none shadow-[0_0_15px_rgba(99,102,241,0.6)] relative z-20"></th>
+                                </tr>
+                            </thead>
+                                                <tbody className={`bg-white divide-y divide-gray-100 transition-opacity duration-200 ${loading && leads.length > 0 ? 'opacity-50 pointer-events-none' : ''}`}>
+                                                    {loading && leads.length === 0 ? (
                                                         <tr>
                                                             <td colSpan={(visibleFields ?? fields).length + 1} className="px-3 py-6 text-center">
                                                                 <div className="flex flex-col justify-center items-center gap-2">
                                                                     <div className="relative">
                                                                         <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-300"></div>
-                                                                        <div className="animate-spin rounded-full h-8 w-8 border-4 border-black border-t-transparent absolute top-0"></div>
+                                                                        <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent absolute top-0"></div>
                                                                     </div>
                                                                     <span className="text-gray-600 text-xs font-medium">Loading leads...</span>
                                                                 </div>
@@ -1115,7 +1180,7 @@ const LeadsGrid = () => {
                                                                     if (field === 'adminId') {
                                                                         if (!lead.adminId) {
                                                                             return (
-                                                                                <td key={field} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">-</td>
+                                                                                <td key={field} className={`px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium ${getColumnAlignClass(field, 'td')}`}>-</td>
                                                                             );
                                                                         }
                                                                         const imgUrl = lead.adminImage || lead.adminProfileImage || null;
@@ -1124,11 +1189,11 @@ const LeadsGrid = () => {
 
                                                                         const avatarColor = initial ? COLORS[(initial.charCodeAt(0) || 0) % COLORS.length] : null;
                                                                         return (
-                                                                            <td key={field} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">
+                                                                            <td key={field} className={`px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium ${getColumnAlignClass(field, 'td')}`}>
                                                                                 {adminName === '-' ? (
                                                                                     <span>-</span>
                                                                                 ) : (
-                                                                                    <div className="flex items-center justify-center gap-1.5">
+                                                                                    <div className={`flex items-center gap-1.5 ${getColumnAlignClass(field, 'flex')}`}>
                                                                                         {imgUrl ? (
                                                                                             <img
                                                                                                 src={imgUrl}
@@ -1148,7 +1213,7 @@ const LeadsGrid = () => {
                                                                         );
                                                                     }
                                                                     return (
-                                                                        <td key={field} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">
+                                                                        <td key={field} className={`px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium ${getColumnAlignClass(field, 'td')}`}>
                                                                             {formatFieldValue(field, lead[field])}
                                                                         </td>
                                                                     );
@@ -1203,11 +1268,11 @@ const LeadsGrid = () => {
                                             <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                                                 <div>
                                                     <p className="text-xs text-gray-700 font-medium">
-                                                        Showing <span className="font-bold text-black">{(currentPage - 1) * pageSize + 1}</span> to{' '}
-                                                        <span className="font-bold text-black">
+                                                        Showing <span className="font-bold text-indigo-700">{(currentPage - 1) * pageSize + 1}</span> to{' '}
+                                                        <span className="font-bold text-indigo-700">
                                                             {Math.min(currentPage * pageSize, totalRecords)}
                                                         </span> of{' '}
-                                                        <span className="font-bold text-black">{totalRecords}</span> results
+                                                        <span className="font-bold text-indigo-700">{totalRecords}</span> results
                                                     </p>
                                                 </div>
                                                 <div>
@@ -1231,7 +1296,7 @@ const LeadsGrid = () => {
                                                                         key={page}
                                                                         onClick={() => goToPage(page)}
                                                                         className={`relative inline-flex items-center px-2 py-1 border text-xs font-medium transition-all ${currentPage === page
-                                                                            ? 'z-10 bg-black border-black text-white shadow-lg'
+                                                                            ? 'z-10 bg-gradient-to-b from-indigo-500 to-indigo-700 border-indigo-600 text-white shadow-lg shadow-indigo-500/30'
                                                                             : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
                                                                             }`}
                                                                     >
@@ -1276,8 +1341,13 @@ const LeadsGrid = () => {
                                             <button
                                                 type="button"
                                                 onClick={handleEditSave}
-                                                disabled={isSaving}
-                                                className={`rounded-md px-3 py-1.5 text-xs font-semibold shadow-sm ${isSaving ? 'bg-gray-400 text-gray-700 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-700'}`}
+                                                disabled={isSaving || !isEditFormDirty}
+                                                className={`rounded-md px-3 py-1.5 text-xs font-semibold shadow-sm transition-all duration-200 ${isSaving 
+                                                    ? 'bg-gray-400 text-gray-700 cursor-not-allowed' 
+                                                    : !isEditFormDirty 
+                                                        ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                                                        : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 shadow-indigo-500/25 cursor-pointer'
+                                                }`}
                                             >
                                                 {isSaving ? 'Saving...' : 'Save'}
                                             </button>
@@ -1308,7 +1378,7 @@ const LeadsGrid = () => {
                                                             type={isNumeric ? 'number' : 'text'}
                                                             value={editForm[field] ?? ''}
                                                             onChange={e => setEditForm(prev => ({ ...prev, [field]: isNumeric ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
-                                                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-black focus:border-black transition-colors"
+                                                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
                                                             disabled={isSaving}
                                                         />
                                                     </div>
