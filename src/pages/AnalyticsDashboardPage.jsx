@@ -85,6 +85,7 @@ const AnalyticsDashboardPage = () => {
     const [viewAsAdmins, setViewAsAdmins] = useState([]);
     const [viewAsAdmin, setViewAsAdmin] = useState(null);
     const [viewAsOpen, setViewAsOpen] = useState(false);
+    const [viewAsAvatarError, setViewAsAvatarError] = useState(false);
     const [viewingAs, setViewingAs] = useState(() => {
         // Prefer the email-matched admin set during account link; fall back to userId
         try {
@@ -392,6 +393,7 @@ const AnalyticsDashboardPage = () => {
     const chartsForTimerRef = React.useRef([]);
     const acctIdRef = React.useRef(acctId);
     const viewingAsRef = React.useRef(null);
+    const skipViewingAsEffectRef = React.useRef(false); // set by handleViewAsChange when it already loaded charts, to prevent the viewingAs useEffect from doing duplicate work
     const draggedIdRef = React.useRef(null);
     const [dragOverId, setDragOverId] = useState(null);
     const [isDraggingAny, setIsDraggingAny] = useState(false);
@@ -807,6 +809,11 @@ const AnalyticsDashboardPage = () => {
     const [schemaSaving, setSchemaSaving] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [saveWarningOpen, setSaveWarningOpen] = useState(false);
+    // Admin-switch unsaved-changes guard
+    const [switchAdminWarningOpen, setSwitchAdminWarningOpen] = useState(false);
+    const [pendingViewAsAdmin, setPendingViewAsAdmin] = useState(null);
+    // Pull-overwrite warning (same admin, unsaved changes)
+    const [pullOverwriteWarningOpen, setPullOverwriteWarningOpen] = useState(false);
 
     // Fetch schema from backend, save to localStorage, and load charts.
     // Called when localStorage has no charts for the current viewingAs user.
@@ -861,6 +868,8 @@ const AnalyticsDashboardPage = () => {
                         fetchChartDataFromBackend(chart.id, chart, true);
                     }
                 });
+                // Pull overwrites local state — nothing new to save
+                setHasUnsavedChanges(false);
             } else {
                 // Backend returned null/no schema — clear localStorage entry and empty the dashboard
                 const store = readStore();
@@ -874,6 +883,8 @@ const AnalyticsDashboardPage = () => {
                 setNextChartId(1);
                 setChartRequestSignatures({});
                 setChartDataCache({});
+                // Nothing to save after clearing
+                setHasUnsavedChanges(false);
             }
         } catch (err) {
             console.error('Schema sync failed:', err);
@@ -1116,6 +1127,13 @@ const AnalyticsDashboardPage = () => {
     // Load charts whenever account or viewingAs changes
     useEffect(() => {
         if (!acctId || !viewingAs) return;
+
+        // handleViewAsChange already loaded charts for this viewingAs — skip to avoid a double render
+        if (skipViewingAsEffectRef.current) {
+            skipViewingAsEffectRef.current = false;
+            return;
+        }
+
         skipSaveRef.current = true;
         const saved = loadCharts(acctId, viewingAs);
 
@@ -1261,6 +1279,32 @@ const AnalyticsDashboardPage = () => {
             return;
         }
 
+        // If there are unsaved changes, hold the switch and show the warning modal
+        if (hasUnsavedChanges) {
+            setPendingViewAsAdmin(selectedAdmin);
+            setSwitchAdminWarningOpen(true);
+            setViewAsOpen(false);
+            return;
+        }
+
+        await executeViewAsChange(selectedAdmin);
+    };
+
+    // The actual admin switch — called either directly or after the user confirms the warning
+    const executeViewAsChange = async (selectedAdmin) => {
+        const currentUserId = localStorage.getItem('userId');
+
+        if (!acctId) {
+            console.error('Cannot change view: no account selected');
+            return;
+        }
+
+        // Close dropdown and update selected admin immediately for instant UI feedback
+        setViewAsAdmin(selectedAdmin);
+        setViewAsAvatarError(false);
+        setViewAsOpen(false);
+        setChartsReady(false);
+
         try {
             // Extract the selected user's ID
             const selectedUserId = selectedAdmin
@@ -1306,34 +1350,28 @@ const AnalyticsDashboardPage = () => {
                         fetchChartDataFromBackend(chart.id, chart, true);
                     }
                 });
+
+                // Charts already loaded above — tell the viewingAs useEffect to skip duplicate work
+                skipViewingAsEffectRef.current = true;
             } else if (viewingAsId) {
-                // Backend returned null schema for this admin — clear stale localStorage entry and empty the dashboard
+                // Backend returned no schema inline — clean up any stale localStorage entry.
+                // Do NOT clear charts yet; handleSchemaSync (triggered via the viewingAs useEffect)
+                // will fetch from the backend and either populate with real charts or clear to empty
+                // only once it's confirmed there is truly no schema. This prevents a blank flash.
                 const store = readStore();
                 if (store[acctId]) {
                     delete store[acctId][viewingAsId];
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
                 }
-                skipSaveRef.current = true;
-                chartsRef.current = [];
-                setCharts([]);
-                setNextChartId(1);
-                setChartRequestSignatures({});
-                setChartDataCache({});
             }
 
-            // Update the viewingAs state (this will trigger the useEffect to load charts if no schema was provided)
+            // Update the viewingAs state (triggers the useEffect to load charts when no schema was provided by the branch above)
             setViewingAs(viewingAsId);
-
-            // Update the UI state
-            setViewAsAdmin(selectedAdmin);
-            setViewAsOpen(false);
 
             console.log('View As changed:', selectedAdmin ? getAdminDisplayName(selectedAdmin) : 'All Admins', '| viewingAs:', viewingAsId);
         } catch (error) {
             console.error('Error changing view:', error);
-            // Still update UI even if backend call fails
-            setViewAsAdmin(selectedAdmin);
-            setViewAsOpen(false);
+            setChartsReady(true); // Unblock UI if backend call fails
         }
     };
 
@@ -2033,6 +2071,17 @@ const AnalyticsDashboardPage = () => {
         }
     };
 
+    // True when the current user is viewing another admin's dashboard (read-only mode)
+    const isViewingOtherAdmin = (() => {
+        try {
+            const currentUserId = localStorage.getItem('userId');
+            const currentAdminId = localStorage.getItem('currentUserAdmin') || currentUserId;
+            return !!(viewingAs && currentAdminId && viewingAs !== currentAdminId);
+        } catch {
+            return false;
+        }
+    })();
+
     // Render single chart card
     const renderChartCard = (chartConfig) => {
         // mergedConfig = committed state + any pending (draft) changes from the slider
@@ -2202,6 +2251,7 @@ const AnalyticsDashboardPage = () => {
                     />
 
                     {/* Settings toggle button */}
+                    {!isViewingOtherAdmin && (
                     <button
                         title={filterIsVisible ? 'Close settings' : 'Open settings'}
                         onMouseDown={(e) => e.stopPropagation()}
@@ -2220,8 +2270,10 @@ const AnalyticsDashboardPage = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                         </svg>
                     </button>
+                    )}
 
                     {/* Width + height controls */}
+                    {!isViewingOtherAdmin && (
                     <div className="flex items-center gap-1 shrink-0">
                         <div className="flex items-center border border-gray-700 rounded overflow-hidden text-[10px] font-semibold" title="Chart Width">
                             <button
@@ -2260,8 +2312,10 @@ const AnalyticsDashboardPage = () => {
                             >+</button>
                         </div>
                     </div>
+                    )}
 
-                    {/* Settings toggle button */}
+                    {/* Per-chart refresh button */}
+                    {!isViewingOtherAdmin && (
                     <button
                         title="Refresh chart"
                         onMouseDown={(e) => e.stopPropagation()}
@@ -2272,8 +2326,10 @@ const AnalyticsDashboardPage = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                     </button>
+                    )}
 
                     {/* Delete button */}
+                    {!isViewingOtherAdmin && (
                     <button
                         title="Delete chart"
                         onMouseDown={(e) => e.stopPropagation()}
@@ -2284,6 +2340,7 @@ const AnalyticsDashboardPage = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                     </button>
+                    )}
 
                     {/* Auto-refresh countdown arc — only shown when auto-refresh is enabled */}
                     {chartConfig.autoRefreshMins && (() => {
@@ -2928,6 +2985,7 @@ const AnalyticsDashboardPage = () => {
                         />
                     )}
                     {/* Right edge — horizontal resize */}
+                    {!isViewingOtherAdmin && (
                     <div
                         data-pdf-hide="true"
                         className="absolute top-0 right-0 bottom-0 w-3 cursor-ew-resize z-10 flex items-center justify-end pr-0.5 group/rh hover:bg-gray-100 transition-colors"
@@ -2935,7 +2993,9 @@ const AnalyticsDashboardPage = () => {
                     >
                         <div className="h-10 w-1 rounded-full bg-gray-300 group-hover/rh:bg-gray-700 transition-colors" />
                     </div>
+                    )}
                     {/* Bottom-right corner — both directions */}
+                    {!isViewingOtherAdmin && (
                     <div
                         data-pdf-hide="true"
                         className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-30"
@@ -2950,15 +3010,18 @@ const AnalyticsDashboardPage = () => {
                             <circle cx="13" cy="3" r="1.2" />
                         </svg>
                     </div>
+                    )}
                 </div>
 
                 {/* Bottom edge — vertical resize */}
+                {!isViewingOtherAdmin && (
                 <div
                     className="h-3 cursor-ns-resize flex items-center justify-center bg-white border-t border-gray-100 group/resize hover:bg-gray-100 transition-colors shrink-0 z-10"
                     onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, 0, 'y')}
                 >
                     <div className="w-12 h-1 rounded-full bg-gray-300 group-hover/resize:bg-gray-700 transition-colors" />
                 </div>
+                )}
             </div>
         );
     };
@@ -3027,6 +3090,91 @@ const AnalyticsDashboardPage = () => {
                     </div>
                 </div>
             )}
+            {/* ── Admin-switch unsaved-changes warning modal ── */}
+            {switchAdminWarningOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
+                        <div className="flex items-start gap-3 mb-4">
+                            <div className="flex-shrink-0 w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900 mb-1">Unsaved changes</h3>
+                                <p className="text-xs text-gray-500 leading-relaxed">
+                                    You have unsaved changes in the current dashboard. Switching to{' '}
+                                    <span className="font-semibold text-gray-700">
+                                        {pendingViewAsAdmin ? getAdminDisplayName(pendingViewAsAdmin) : 'another admin'}
+                                    </span>
+                                    's view will discard them. Save your changes first or proceed and lose them.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => {
+                                    setSwitchAdminWarningOpen(false);
+                                    setPendingViewAsAdmin(null);
+                                }}
+                                className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    setSwitchAdminWarningOpen(false);
+                                    await executeSchemaSave(viewingAs);
+                                    if (pendingViewAsAdmin) {
+                                        await executeViewAsChange(pendingViewAsAdmin);
+                                    }
+                                    setPendingViewAsAdmin(null);
+                                }}
+                                className="px-4 py-2 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors"
+                            >
+                                Save &amp; proceed
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* ── Pull-overwrite warning modal (unsaved changes exist when pulling) ── */}
+            {pullOverwriteWarningOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
+                        <div className="flex items-start gap-3 mb-4">
+                            <div className="flex-shrink-0 w-9 h-9 rounded-full bg-red-100 flex items-center justify-center">
+                                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900 mb-1">Overwrite unsaved changes?</h3>
+                                <p className="text-xs text-gray-500 leading-relaxed">
+                                    Pulling from the collection will overwrite your current unsaved changes. This cannot be undone.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => setPullOverwriteWarningOpen(false)}
+                                className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setPullOverwriteWarningOpen(false);
+                                    handleSchemaSync(acctId, viewingAs);
+                                }}
+                                className="px-4 py-2 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
+                            >
+                                Pull &amp; overwrite
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <div className="min-h-screen bg-gray-50 relative">
                 <LoadingMask loading={!chartsReady} title="Loading..." message="Please wait while we fetch your data" />
                 <div
@@ -3047,6 +3195,19 @@ const AnalyticsDashboardPage = () => {
                                 Analytics Dashboard
                             </h1>
                             <div className="flex items-center gap-2">
+                                {!isViewingOtherAdmin && (
+                                <button
+                                    onClick={refreshAllCharts}
+                                    disabled={globalRefreshing}
+                                    title="Refresh all charts"
+                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-gray-100 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <svg className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${globalRefreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                </button>
+                                )}
+                                {!isViewingOtherAdmin && (
                                 <button
                                     onClick={handleDownloadPDF}
                                     disabled={pdfDownloading || charts.length === 0}
@@ -3063,38 +3224,51 @@ const AnalyticsDashboardPage = () => {
                                         </svg>
                                     )}
                                 </button>
-                                {/* Synchronize schema from collection */}
+                                )}
+                                {/* Pull changes from collection */}
                                 <button
-                                    onClick={() => handleSchemaSync(acctId, viewingAs)}
+                                    onClick={() => {
+                                        // If viewing own dashboard and there are unsaved changes, warn before overwriting
+                                        if (hasUnsavedChanges) {
+                                            setPullOverwriteWarningOpen(true);
+                                        } else {
+                                            handleSchemaSync(acctId, viewingAs);
+                                        }
+                                    }}
                                     disabled={schemaSyncing}
-                                    title="Synchronize schema from collection"
+                                    title="Pull changes"
                                     className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-blue-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-blue-500 focus:ring-1 focus:ring-blue-400 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     <svg className={`w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors ${schemaSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
                                     </svg>
                                 </button>
-                                {/* Save schema to collection */}
+                                {/* Save changes — hidden when viewing another admin */}
+                                {!isViewingOtherAdmin && (
                                 <button
                                     onClick={handleSchemaSave}
                                     disabled={schemaSaving || !hasUnsavedChanges}
-                                    title={hasUnsavedChanges ? 'Save changes to collection' : 'No unsaved changes'}
+                                    title={hasUnsavedChanges ? 'Save changes' : 'No unsaved changes'}
                                     className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-yellow-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-yellow-400 focus:ring-1 focus:ring-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     <svg className={`w-4 h-4 text-gray-600 group-hover:text-yellow-600 transition-colors ${schemaSaving ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                                     </svg>
                                 </button>
+                                )}
+                                {/* Copy to my dashboard — only visible when viewing another admin */}
+                                {isViewingOtherAdmin && (
                                 <button
-                                    onClick={refreshAllCharts}
-                                    disabled={globalRefreshing}
-                                    title="Refresh all charts"
-                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-gray-100 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    onClick={handleSchemaSave}
+                                    disabled={schemaSaving}
+                                    title="Copy analytics to my dashboard"
+                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-purple-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-purple-400 focus:ring-1 focus:ring-purple-300 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
-                                    <svg className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${globalRefreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    <svg className={`w-4 h-4 text-gray-600 group-hover:text-purple-600 transition-colors ${schemaSaving ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                     </svg>
                                 </button>
+                                )}
                                 {/* View As dropdown */}
                                 <div ref={viewAsRef} className="relative">
                                     <button
@@ -3103,18 +3277,13 @@ const AnalyticsDashboardPage = () => {
                                         title="View As"
                                     >
                                         {viewAsAdmin ? (
-                                            getAdminAvatar(viewAsAdmin) ? (
-                                                <>
-                                                    <img
-                                                        src={getAdminAvatar(viewAsAdmin)}
-                                                        alt=""
-                                                        className="w-5 h-5 rounded-full object-cover flex-shrink-0"
-                                                        onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
-                                                    />
-                                                    <span style={{ display: 'none', background: getAdminColor(viewAsAdmin) }} className="w-5 h-5 rounded-full items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
-                                                        {getAdminInitials(viewAsAdmin)}
-                                                    </span>
-                                                </>
+                                            getAdminAvatar(viewAsAdmin) && !viewAsAvatarError ? (
+                                                <img
+                                                    src={getAdminAvatar(viewAsAdmin)}
+                                                    alt=""
+                                                    className="w-5 h-5 rounded-full object-cover flex-shrink-0"
+                                                    onError={() => setViewAsAvatarError(true)}
+                                                />
                                             ) : (
                                                 <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ background: getAdminColor(viewAsAdmin) }}>
                                                     {getAdminInitials(viewAsAdmin)}
@@ -3138,11 +3307,18 @@ const AnalyticsDashboardPage = () => {
                                                 const currentUserId = localStorage.getItem('userId');
                                                 const adminId = admin._id || admin.id || admin.adminId || admin.userId || admin.authId || admin.authUserId;
                                                 return adminId !== currentUserId;
-                                            }).map((admin, idx) => (
+                                            }).map((admin, idx) => {
+                                                const isSelected = viewAsAdmin?._id === admin._id;
+                                                return (
                                                 <button
                                                     key={admin._id || idx}
-                                                    onClick={() => handleViewAsChange(admin)}
-                                                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-gray-50 transition-colors ${viewAsAdmin?._id === admin._id ? 'font-semibold text-gray-900 bg-gray-50' : 'text-gray-600'}`}
+                                                    onClick={() => !isSelected && handleViewAsChange(admin)}
+                                                    disabled={isSelected}
+                                                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors
+                                                        ${isSelected
+                                                            ? 'font-semibold text-gray-900 bg-gray-100 cursor-not-allowed opacity-60'
+                                                            : 'text-gray-600 hover:bg-gray-50 cursor-pointer'
+                                                        }`}
                                                 >
                                                     {getAdminAvatar(admin) ? (
                                                         <>
@@ -3161,9 +3337,15 @@ const AnalyticsDashboardPage = () => {
                                                             {getAdminInitials(admin)}
                                                         </span>
                                                     )}
-                                                    <span className="truncate">{getAdminDisplayName(admin)}</span>
+                                                    <span className="truncate flex-1">{getAdminDisplayName(admin)}</span>
+                                                    {isSelected && (
+                                                        <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                    )}
                                                 </button>
-                                            ))}
+                                                );
+                                            })}
                                             {viewAsAdmins.filter(admin => {
                                                 const currentUserId = localStorage.getItem('userId');
                                                 const adminId = admin._id || admin.id || admin.adminId || admin.userId || admin.authId || admin.authUserId;
@@ -3189,7 +3371,8 @@ const AnalyticsDashboardPage = () => {
                                 </svg>
                             </div>
                             <h3 className="text-sm font-semibold text-gray-700 mb-1">No Charts Yet</h3>
-                            <p className="text-xs text-gray-400 mb-5">Add a chart to start visualizing your data</p>
+                            <p className="text-xs text-gray-400 mb-5">{isViewingOtherAdmin ? 'This admin has no charts configured' : 'Add a chart to start visualizing your data'}</p>
+                            {!isViewingOtherAdmin && (
                             <button
                                 onClick={addChart}
                                 className="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5"
@@ -3199,6 +3382,7 @@ const AnalyticsDashboardPage = () => {
                                 </svg>
                                 Add Your First Chart
                             </button>
+                            )}
                         </div>
                     ) : (
                         <>
@@ -3206,7 +3390,8 @@ const AnalyticsDashboardPage = () => {
                                 {charts.map(chart => renderChartCard(chart))}
                             </div>
 
-                            {/* Floating Add Chart Button */}
+                            {/* Floating Add Chart Button — hidden when viewing another admin */}
+                            {!isViewingOtherAdmin && (
                             <div className="flex justify-center mt-6">
                                 <button
                                     onClick={addChart}
@@ -3218,6 +3403,7 @@ const AnalyticsDashboardPage = () => {
                                     Add Another Chart
                                 </button>
                             </div>
+                            )}
                         </>
                     )}
                 </div>
