@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/axiosConfig';
 import { useAccount } from '../context/AccountContext';
+import { useAuth } from '../context/AuthContext';
 import { resolveActiveAcctNo, getAcctIdFromLocalStorage } from '../utils/accountHelpers';
 import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
 import {
@@ -10,6 +11,8 @@ import {
 } from 'recharts';
 import LoadingMask from '../components/LoadingMask';
 import DeleteConfirmation from '../components/DeleteConfirmation';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 // ── Controlled dimension input for width/height ──
 const DimensionInput = ({ value, onCommit, min, max, className }) => {
@@ -62,8 +65,10 @@ const AnalyticsDashboardPage = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { acctNo, acctId, accountsLoaded } = useAccount();
+    const { userDetails } = useAuth();
     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [chartsReady, setChartsReady] = useState(false);
     const [categoryFieldsCache, setCategoryFieldsCache] = useState({});
     const fieldsFetchPromisesRef = useRef({});
 
@@ -75,6 +80,42 @@ const AnalyticsDashboardPage = () => {
     const [headerVisible, setHeaderVisible] = useState(true);
     const lastScrollY = useRef(0);
     const inactivityTimer = useRef(null);
+
+    // View As — admin selector
+    const [viewAsAdmins, setViewAsAdmins] = useState([]);
+    const [viewAsAdmin, setViewAsAdmin] = useState(null);
+    const [viewAsOpen, setViewAsOpen] = useState(false);
+    const [viewAsAvatarError, setViewAsAvatarError] = useState(false);
+    const [viewingAs, setViewingAs] = useState(() => {
+        // Prefer the email-matched admin set during account link; fall back to userId
+        try {
+            return localStorage.getItem('currentUserAdmin') || localStorage.getItem('userId') || null;
+        } catch {
+            return null;
+        }
+    }); // Stores the viewingAs ID from backend response
+    const viewAsRef = useRef(null);
+
+    const VIEW_AS_IMAGE_KEYS = ['profileImage', 'profileImageUrl', 'avatar', 'photo', 'image'];
+    const VIEW_AS_AVATAR_COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0284c7'];
+    const getAdminDisplayName = (a) => {
+        if (!a) return '';
+        if (a.firstName && a.lastName) return `${a.firstName} ${a.lastName}`;
+        if (a.firstName) return a.firstName;
+        const k = Object.keys(a).find(key => ['name', 'fullName', 'username', 'displayName'].includes(key));
+        return k ? a[k] : 'Admin';
+    };
+    const getAdminAvatar = (a) => {
+        if (!a) return null;
+        const k = Object.keys(a).find(key => VIEW_AS_IMAGE_KEYS.map(s => s.toLowerCase()).includes(key.toLowerCase()));
+        return k ? a[k] : null;
+    };
+    const getAdminInitials = (a) => {
+        const name = getAdminDisplayName(a);
+        const parts = name.trim().split(' ');
+        return parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
+    };
+    const getAdminColor = (a) => VIEW_AS_AVATAR_COLORS[(getAdminDisplayName(a).charCodeAt(0) || 0) % VIEW_AS_AVATAR_COLORS.length];
 
     useEffect(() => {
         const resetInactivityTimer = () => {
@@ -153,10 +194,10 @@ const AnalyticsDashboardPage = () => {
     ];
 
     const DATE_GRANULARITY_OPTIONS = [
-        { value: 'hour',  label: 'Hourly' },
-        { value: 'day',   label: 'Daily' },
+        { value: 'hour', label: 'Hourly' },
+        { value: 'day', label: 'Daily' },
         { value: 'month', label: 'Monthly' },
-        { value: 'year',  label: 'Yearly' },
+        { value: 'year', label: 'Yearly' },
     ];
 
     // Fields that represent timestamps and should trigger date granularity bucketing
@@ -195,7 +236,7 @@ const AnalyticsDashboardPage = () => {
 
     const STORAGE_KEY = 'analyticsDashboard_charts';
 
-    // Read the full nested store: { acctId: { catId: { filters: [...] } } }
+    // Read the full nested store: { acctId: { viewingAsUserId: { filters: [...] } } }
     const readStore = () => {
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
@@ -207,56 +248,24 @@ const AnalyticsDashboardPage = () => {
         }
     };
 
-    const loadCharts = (acct) => {
+    const loadCharts = (acct, viewingAsUserId) => {
         try {
-            // Migrate old per-account keys into the new format on first read
-            const oldKey = `analyticsDashboard_charts_${acct || 'default'}`;
-            const oldRaw = localStorage.getItem(oldKey);
-            if (oldRaw) {
-                const oldParsed = JSON.parse(oldRaw);
-                if (Array.isArray(oldParsed)) {
-                    const store = readStore();
-                    const acctKey = acct || 'default';
-                    store[acctKey] = store[acctKey] || {};
-                    oldParsed.forEach(entry => {
-                        const catKey = entry.category || '';
-                        store[acctKey][catKey] = { filters: entry.filter || [] };
-                    });
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-                    localStorage.removeItem(oldKey);
-                }
-            }
-
             const store = readStore();
             const acctKey = acct || 'default';
+            const viewingKey = viewingAsUserId || 'default';
             const acctData = store[acctKey] || {};
-
-            let allCharts = [];
-            let needsMigration = false;
-
-            const keys = Object.keys(acctData);
-            if (keys.length > 0 && !(keys.length === 1 && keys[0] === '')) {
-                needsMigration = true;
-                keys.forEach(k => {
-                    allCharts.push(...(acctData[k].filters || []));
-                });
-                // Reassign IDs to avoid collisions
-                allCharts = allCharts.map((c, i) => ({ ...c, id: i + 1 }));
-                store[acctKey] = { '': { filters: allCharts } };
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-            } else {
-                allCharts = acctData['']?.filters || [];
-            }
-            return allCharts;
+            const viewingData = acctData[viewingKey] || {};
+            return viewingData.filters || [];
         } catch {
             return [];
         }
     };
 
-    const saveCharts = (acct, chartsData) => {
+    const saveCharts = (acct, viewingAsUserId, chartsData) => {
         try {
             const store = readStore();
             const acctKey = acct || 'default';
+            const viewingKey = viewingAsUserId || 'default';
             const chartsToSave = chartsData.map(chart => ({
                 id: chart.id,
                 chartType: chart.chartType,
@@ -286,11 +295,7 @@ const AnalyticsDashboardPage = () => {
                 showDataLabels: chart.showDataLabels ?? true
             }));
             store[acctKey] = store[acctKey] || {};
-            store[acctKey][''] = { filters: chartsToSave };
-            // Ensure no other category keys remain
-            Object.keys(store[acctKey]).forEach(k => {
-                if (k !== '') delete store[acctKey][k];
-            });
+            store[acctKey][viewingKey] = { filters: chartsToSave };
             localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
         } catch {
             // ignore storage errors
@@ -369,13 +374,15 @@ const AnalyticsDashboardPage = () => {
     // State for charts — local to account
     const [charts, setCharts] = useState(() => {
         const initAcctId = getAcctIdFromLocalStorage();
-        const saved = loadCharts(initAcctId);
+        const initViewingAs = localStorage.getItem('currentUserAdmin') || localStorage.getItem('userId') || 'default';
+        const saved = loadCharts(initAcctId, initViewingAs);
         return saved.map(entry => normalizeChart(entry));
     });
     const [chartRequestSignatures, setChartRequestSignatures] = useState({});
     const [nextChartId, setNextChartId] = useState(() => {
         const initAcctId = getAcctIdFromLocalStorage();
-        const saved = loadCharts(initAcctId);
+        const initViewingAs = localStorage.getItem('currentUserAdmin') || localStorage.getItem('userId') || 'default';
+        const saved = loadCharts(initAcctId, initViewingAs);
         return saved.length > 0 ? Math.max(...saved.map(c => c.id)) + 1 : 1;
     });
     const [chartDataCache, setChartDataCache] = useState({});
@@ -385,6 +392,8 @@ const AnalyticsDashboardPage = () => {
     const autoRefreshIntervalsRef = React.useRef({});
     const chartsForTimerRef = React.useRef([]);
     const acctIdRef = React.useRef(acctId);
+    const viewingAsRef = React.useRef(null);
+    const skipViewingAsEffectRef = React.useRef(false); // set by handleViewAsChange when it already loaded charts, to prevent the viewingAs useEffect from doing duplicate work
     const draggedIdRef = React.useRef(null);
     const [dragOverId, setDragOverId] = useState(null);
     const [isDraggingAny, setIsDraggingAny] = useState(false);
@@ -458,7 +467,7 @@ const AnalyticsDashboardPage = () => {
         };
         window.addEventListener('resize', handler);
         window.addEventListener('scroll', handler, true);
-        
+
         const observer = new ResizeObserver((entries) => {
             setFilterVisible(prev => {
                 const openIds = Object.keys(prev);
@@ -477,7 +486,7 @@ const AnalyticsDashboardPage = () => {
                 return prev;
             });
         });
-        
+
         Object.values(cardRefs.current).forEach(el => {
             if (el) observer.observe(el);
         });
@@ -697,6 +706,7 @@ const AnalyticsDashboardPage = () => {
             }
             return chart;
         }));
+        setHasUnsavedChanges(true);
     };
 
     // Update multiple fields at once — triggers at most one API call
@@ -707,6 +717,7 @@ const AnalyticsDashboardPage = () => {
             }
             return chart;
         }));
+        setHasUnsavedChanges(true);
     };
 
     // Fetch chart data from backend API
@@ -737,7 +748,8 @@ const AnalyticsDashboardPage = () => {
                 ...((chartConfig.chartMode === 'grouped' || chartConfig.chartMode === 'stacked') && chartConfig.zAxis ? { zAxis: chartConfig.zAxis.value } : {}),
                 ...(chartConfig.dateFilterFrom && { dateFrom: chartConfig.dateFilterFrom }),
                 ...(chartConfig.dateFilterTo && { dateTo: chartConfig.dateFilterTo }),
-                ...(isDateAxis ? { dateGranularity: chartConfig.dateGranularity || 'day' } : {})
+                ...(isDateAxis ? { dateGranularity: chartConfig.dateGranularity || 'day' } : {}),
+                ...(viewingAsRef.current && { viewingAs: viewingAsRef.current })
             };
 
             const response = await api.post('/api/ui/analytics/chart-data', params);
@@ -778,6 +790,7 @@ const AnalyticsDashboardPage = () => {
         setCharts(prev => [...prev, newChart]);
         setChartRequestSignatures(prev => ({ ...prev, [nextChartId]: getChartRequestSignature(newChart) }));
         setNextChartId(prev => prev + 1);
+        setHasUnsavedChanges(true);
     };
 
     // Remove chart
@@ -788,6 +801,147 @@ const AnalyticsDashboardPage = () => {
             delete next[chartId];
             return next;
         });
+        setHasUnsavedChanges(true);
+    };
+
+    // Schema sync / save
+    const [schemaSyncing, setSchemaSyncing] = useState(false);
+    const [schemaSaving, setSchemaSaving] = useState(false);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const [saveWarningOpen, setSaveWarningOpen] = useState(false);
+    // Admin-switch unsaved-changes guard
+    const [switchAdminWarningOpen, setSwitchAdminWarningOpen] = useState(false);
+    const [pendingViewAsAdmin, setPendingViewAsAdmin] = useState(null);
+    // Pull-overwrite warning (same admin, unsaved changes)
+    const [pullOverwriteWarningOpen, setPullOverwriteWarningOpen] = useState(false);
+
+    // Fetch schema from backend, save to localStorage, and load charts.
+    // Called when localStorage has no charts for the current viewingAs user.
+    const handleSchemaSync = async (acctIdOverride, viewingAsOverride) => {
+        const targetAcctId = acctIdOverride || acctId;
+        // Always use the dropdown-selected admin's actual _id so get-schema matches the correct adminId
+        const selectedAdminId = viewAsAdmin
+            ? (viewAsAdmin._id || viewAsAdmin.id || viewAsAdmin.adminId || viewAsAdmin.userId || viewAsAdmin.authId || viewAsAdmin.authUserId)
+            : null;
+        const targetViewingAs = selectedAdminId || viewingAsOverride || viewingAs;
+        if (!targetAcctId || !targetViewingAs) return;
+        setSchemaSyncing(true);
+        setChartsReady(false);
+        try {
+            const userId = localStorage.getItem('userId');
+            const res = await api.get('/api/ui/analytics/get-schema', {
+                params: {
+                    userId,
+                    acctId: targetAcctId,
+                    viewingAs: targetViewingAs,
+                    selectedUserId: targetViewingAs   // explicit: fetch schema for this selected admin
+                }
+            });
+            const responseData = res.data?.data;
+            const responseAdminId = responseData?.adminId;
+            // Only load if the response adminId matches the requested admin — never show another admin's charts
+            const adminIdMatches = responseAdminId && responseAdminId === targetViewingAs;
+
+            if (res.data?.success && adminIdMatches && responseData?.schema) {
+                const remoteSchema = responseData.schema;
+                const store = readStore();
+                store[targetAcctId] = store[targetAcctId] || {};
+                store[targetAcctId][targetViewingAs] = remoteSchema;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+
+                // Load charts for the viewingAs user
+                const filters = remoteSchema?.filters || [];
+                const restored = filters.map(entry => normalizeChart(entry));
+                skipSaveRef.current = true;
+                chartsRef.current = restored;
+                setCharts(restored);
+                setNextChartId(restored.length > 0 ? Math.max(...restored.map(c => c.id)) + 1 : 1);
+                setChartRequestSignatures(Object.fromEntries(restored.map(chart => [chart.id, getChartRequestSignature(chart)])));
+                setChartDataCache({});
+
+                // Fetch field schemas and chart data for restored charts
+                const usedCategories = [...new Set(restored.map(c => c.chartCategory?._id || c.chartCategory).filter(Boolean))];
+                usedCategories.forEach(catId => fetchFieldsForCategory(catId));
+                restored.forEach(chart => {
+                    const isNum = chart.chartType?.value === 'number';
+                    if (isNum ? (chart.yAxis && chart.aggregation) : (chart.xAxis && chart.yAxis && chart.aggregation)) {
+                        fetchChartDataFromBackend(chart.id, chart, true);
+                    }
+                });
+                // Pull overwrites local state — nothing new to save
+                setHasUnsavedChanges(false);
+            } else {
+                // Backend returned null/no schema — clear localStorage entry and empty the dashboard
+                const store = readStore();
+                if (store[targetAcctId]) {
+                    delete store[targetAcctId][targetViewingAs];
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+                }
+                skipSaveRef.current = true;
+                chartsRef.current = [];
+                setCharts([]);
+                setNextChartId(1);
+                setChartRequestSignatures({});
+                setChartDataCache({});
+                // Nothing to save after clearing
+                setHasUnsavedChanges(false);
+            }
+        } catch (err) {
+            console.error('Schema sync failed:', err);
+        } finally {
+            setSchemaSyncing(false);
+            setChartsReady(true);
+        }
+    };
+    const handleSchemaSave = async () => {
+        if (!acctId) {
+            console.error('Cannot save schema: no account selected');
+            return;
+        }
+
+        // If currently viewing as a different admin, warn before saving
+        const currentUserAdminId = localStorage.getItem('currentUserAdmin');
+        const isViewingOtherAdmin = viewingAs && currentUserAdminId && viewingAs !== currentUserAdminId;
+        if (isViewingOtherAdmin) {
+            setSaveWarningOpen(true);
+            return;
+        }
+
+        await executeSchemaSave(viewingAs);
+    };
+
+    // Performs the actual save — always targets the current user's own viewingAs key
+    const executeSchemaSave = async (saveAsKey) => {
+        if (!acctId) return;
+        setSchemaSaving(true);
+        try {
+            const userId = localStorage.getItem('userId');
+
+            // Always save under the current logged-in user's admin ID, never the dropdown-selected admin's ID
+            const adminId = localStorage.getItem('currentUserAdmin') || userId;
+
+            const schema = readStore();
+            const acctKey = acctId || 'default';
+            // Always read charts from the key we're currently viewing
+            const viewingKey = viewingAs || 'default';
+            const userSchema = schema[acctKey]?.[viewingKey] || { filters: [] };
+
+            // Always save under currentUserAdmin — never under the dropdown-selected admin
+            await api.post('/api/ui/analytics/save-schema', {
+                userId: userId,
+                acctId: acctId,
+                adminId: adminId,
+                viewingAs: adminId,
+                schema: userSchema
+            });
+
+            setHasUnsavedChanges(false);
+            console.log('Analytics schema saved successfully');
+        } catch (error) {
+            console.error('Error saving analytics schema:', error);
+        } finally {
+            setSchemaSaving(false);
+        }
     };
 
     // Refresh all charts — re-fetches live data for every configured chart
@@ -800,6 +954,164 @@ const AnalyticsDashboardPage = () => {
         setGlobalRefreshing(false);
     };
 
+    // Download all charts as a single PDF (landscape A4)
+    const [pdfDownloading, setPdfDownloading] = useState(false);
+
+    // Build a human-readable date range label from a chart config
+    const getChartDateLabel = (cfg) => {
+        const preset = cfg?._datePreset || 'today';
+        const from = cfg?.dateFilterFrom || '';
+        const to = cfg?.dateFilterTo || '';
+        const fmt = (iso) => {
+            const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
+        };
+        switch (preset) {
+            case 'today': return 'Today';
+            case 'yesterday': return 'Yesterday';
+            case 'alltime': return 'All Time';
+            case 'thisweek': return 'This Week';
+            case 'lastweek': return 'Last Week';
+            case 'thismonth': return 'This Month';
+            case 'lastmonth': return 'Last Month';
+            case 'last_n': return `Last ${cfg?._lastNDays || 7} Days`;
+            case 'custom': {
+                if (from && to) return from === to ? fmt(from) : `${fmt(from)} – ${fmt(to)}`;
+                if (from) return `From ${fmt(from)}`;
+                if (to) return `Until ${fmt(to)}`;
+                return 'Custom Range';
+            }
+            default: {
+                if (from && to) return from === to ? fmt(from) : `${fmt(from)} – ${fmt(to)}`;
+                return '';
+            }
+        }
+    };
+
+    const handleDownloadPDF = async () => {
+        if (pdfDownloading) return;
+        const chartIds = charts.map(c => c.id);
+        if (!chartIds.length) return;
+        setPdfDownloading(true);
+        try {
+            const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 24;
+            let firstPage = true;
+
+            // Off-screen capture container — fixed large size so flex children aren't clipped
+            const offscreenHost = document.createElement('div');
+            offscreenHost.style.cssText = [
+                'position:fixed', 'left:-9999px', 'top:0',
+                'width:1200px',   // wide enough to avoid responsive wrapping
+                'background:#ffffff',
+                'z-index:-1',
+                'pointer-events:none',
+            ].join(';');
+            document.body.appendChild(offscreenHost);
+
+            for (const id of chartIds) {
+                const el = cardRefs.current[id];
+                if (!el) continue;
+                const chartConfig = charts.find(c => c.id === id);
+                const title = chartConfig?.chartName?.trim() || `Chart ${id}`;
+                const dateLabel = getChartDateLabel(chartConfig);
+
+                // Grab only the chart content area
+                const contentEl = el.querySelector('[data-pdf-content]') || el;
+
+                // Deep-clone into the off-screen host with all computed styles resolved
+                const clone = contentEl.cloneNode(true);
+                // Remove any elements tagged data-pdf-hide from the clone
+                clone.querySelectorAll('[data-pdf-hide]').forEach(n => n.remove());
+                // Release ALL height/overflow constraints so the full flex column renders
+                const releaseConstraints = (node) => {
+                    if (node.style) {
+                        node.style.height = 'auto';
+                        node.style.maxHeight = 'none';
+                        node.style.overflow = 'visible';
+                        node.style.minHeight = '0';
+                    }
+                    // Also strip Tailwind classes that clip height
+                    if (node.classList) {
+                        ['h-full', 'min-h-0', 'overflow-hidden', 'overflow-y-hidden', 'overflow-x-hidden'].forEach(c => node.classList.remove(c));
+                    }
+                };
+                releaseConstraints(clone);
+                // Release first two levels of children (the p-4 wrapper and the chart flex root)
+                clone.querySelectorAll('*').forEach(releaseConstraints);
+                // Give SVGs explicit pixel dimensions so Recharts renders them fully
+                clone.querySelectorAll('svg').forEach(svg => {
+                    const rect = svg.getBoundingClientRect();
+                    if (rect.width > 0) svg.setAttribute('width', rect.width);
+                    if (rect.height > 0) svg.setAttribute('height', rect.height);
+                });
+
+                offscreenHost.innerHTML = '';
+                offscreenHost.appendChild(clone);
+
+                // Allow a tick for the browser to lay out
+                await new Promise(r => setTimeout(r, 80));
+
+                const canvas = await html2canvas(clone, {
+                    scale: 2,
+                    useCORS: true,
+                    backgroundColor: '#ffffff',
+                    logging: false,
+                    width: clone.scrollWidth,
+                    height: clone.scrollHeight,
+                    windowWidth: 1200,
+                });
+
+                const imgData = canvas.toDataURL('image/png');
+                const imgAspect = canvas.width / canvas.height;
+
+                // Header block: title + date label
+                const headerH = dateLabel ? 42 : 28;
+                const availW = pageWidth - margin * 2;
+                const availH = pageHeight - margin * 2 - headerH;
+
+                let drawW = availW;
+                let drawH = drawW / imgAspect;
+                if (drawH > availH) {
+                    drawH = availH;
+                    drawW = drawH * imgAspect;
+                }
+
+                const x = margin + (availW - drawW) / 2;
+                const y = margin + headerH;
+
+                if (!firstPage) pdf.addPage();
+                firstPage = false;
+
+                // Title
+                pdf.setFontSize(13);
+                pdf.setFont(undefined, 'bold');
+                pdf.setTextColor(30, 30, 30);
+                pdf.text(title, margin, margin + 13);
+
+                // Date label
+                if (dateLabel) {
+                    pdf.setFontSize(9);
+                    pdf.setFont(undefined, 'normal');
+                    pdf.setTextColor(100, 100, 120);
+                    pdf.text(dateLabel, margin, margin + 27);
+                }
+
+                // Chart image
+                pdf.addImage(imgData, 'PNG', x, y, drawW, drawH);
+            }
+
+            document.body.removeChild(offscreenHost);
+            pdf.save('analytics-charts.pdf');
+        } catch (err) {
+            console.error('PDF generation failed:', err);
+        } finally {
+            setPdfDownloading(false);
+        }
+    };
+
 
     // Keep chartsForTimerRef current so the interval callbacks always use latest chart state
     useEffect(() => {
@@ -810,6 +1122,11 @@ const AnalyticsDashboardPage = () => {
     useEffect(() => {
         acctIdRef.current = acctId;
     }, [acctId]);
+
+    // Keep viewingAsRef current so fetch callbacks always use the latest viewingAs
+    useEffect(() => {
+        viewingAsRef.current = viewingAs;
+    }, [viewingAs]);
 
     // Auto-refresh timer manager — starts/restarts a countdown for each chart
     // No cleanup on dep change: each chart's timer is managed individually inside the body.
@@ -885,14 +1202,29 @@ const AnalyticsDashboardPage = () => {
         };
     }, []);
 
-    // Load charts whenever account changes
+    // Load charts whenever account or viewingAs changes
     useEffect(() => {
-        if (!acctId) return;
+        if (!acctId || !viewingAs) return;
+
+        // handleViewAsChange already loaded charts for this viewingAs — skip to avoid a double render
+        if (skipViewingAsEffectRef.current) {
+            skipViewingAsEffectRef.current = false;
+            return;
+        }
+
         skipSaveRef.current = true;
-        const saved = loadCharts(acctId);
+        const saved = loadCharts(acctId, viewingAs);
+
+        if (saved.length === 0) {
+            // localStorage has no charts for this viewingAs user — try fetching from backend
+            handleSchemaSync(acctId, viewingAs);
+            return;
+        }
+
         const restored = saved.map(entry => normalizeChart(entry));
         chartsRef.current = restored;
         setCharts(restored);
+        setChartsReady(true);
         setChartRequestSignatures(Object.fromEntries(restored.map(chart => [chart.id, getChartRequestSignature(chart)])));
         setNextChartId(restored.length > 0 ? Math.max(...restored.map(c => c.id)) + 1 : 1);
         setChartDataCache({});
@@ -910,15 +1242,15 @@ const AnalyticsDashboardPage = () => {
                 fetchChartDataFromBackend(chart.id, chart, true);
             }
         });
-    }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [acctId, viewingAs]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Persist charts whenever they change (skip on load)
     useEffect(() => {
         chartsRef.current = charts; // always keep ref current
         if (skipSaveRef.current) { skipSaveRef.current = false; return; }
-        if (!acctId) return;
-        saveCharts(acctId, charts);
-    }, [charts, acctId]); // eslint-disable-line react-hooks/exhaustive-deps
+        if (!acctId || !viewingAs) return;
+        saveCharts(acctId, viewingAs, charts);
+    }, [charts, acctId, viewingAs]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Fetch categories
     const fetchCategories = async () => {
@@ -940,7 +1272,194 @@ const AnalyticsDashboardPage = () => {
     // Fetch categories when acctId changes
     useEffect(() => {
         fetchCategories();
-    }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [acctId]);
+
+    // Fetch admins for View As dropdown — restore previous selection if exists
+    useEffect(() => {
+        if (!acctId) return;
+        api.get('/api/ui/admins/list', { params: { acctId, limit: 200 } })
+            .then(async res => {
+                const data = res.data;
+                const list = Array.isArray(data) ? data : (data.admins || data.data || []);
+                setViewAsAdmins(list);
+
+                const currentUserId = localStorage.getItem('userId');
+                const currentUserAdminId = localStorage.getItem('currentUserAdmin');
+                const storedViewingAs = viewingAsRef.current;
+                // Check if there's a stored viewingAs to restore
+                let adminToSelect = null;
+
+                if (list.length > 0) {
+                    // 1. Restore a previously manually-chosen admin (different from own userId)
+                    if (storedViewingAs && storedViewingAs !== currentUserId) {
+                        adminToSelect = list.find(a =>
+                            a._id === storedViewingAs ||
+                            a.id === storedViewingAs ||
+                            a.adminId === storedViewingAs ||
+                            a.userId === storedViewingAs ||
+                            a.authId === storedViewingAs ||
+                            a.authUserId === storedViewingAs
+                        );
+                    }
+                    // 2. Fall back to the email-matched admin stored as currentUserAdmin
+                    if (!adminToSelect && currentUserAdminId) {
+                        adminToSelect = list.find(a =>
+                            a._id === currentUserAdminId ||
+                            a.id === currentUserAdminId ||
+                            a.adminId === currentUserAdminId ||
+                            a.userId === currentUserAdminId ||
+                            a.authId === currentUserAdminId ||
+                            a.authUserId === currentUserAdminId
+                        );
+                    }
+                }
+
+                if (adminToSelect) {
+                    setViewAsAdmin(adminToSelect);
+                    try {
+                        const selectedUserId = adminToSelect._id || adminToSelect.id || adminToSelect.adminId || adminToSelect.userId || adminToSelect.authId || adminToSelect.authUserId;
+                        const response = await api.post('/api/ui/analytics/view-as', {
+                            acctId: acctId,
+                            userId: currentUserId,
+                            selectedUserId: selectedUserId
+                        });
+                        // Extract viewingAs and schema from backend response
+                        const viewingAsId = response.data?.viewingAs || null;
+                        const schema = response.data?.schema || null;
+
+                        // If backend returned a schema, save it to localStorage
+                        if (schema && viewingAsId) {
+                            const store = readStore();
+                            store[acctId] = store[acctId] || {};
+                            store[acctId][viewingAsId] = schema;
+                            localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+                        }
+
+                        // Update viewingAs state if different (this will trigger chart load)
+                        if (viewingAsId && viewingAsId !== viewingAs) {
+                            setViewingAs(viewingAsId);
+                        }
+                    } catch (error) {
+                        console.error('Error notifying backend of view:', error);
+                    }
+                }
+            })
+            .catch(() => { });
+    }, [acctId]);
+    // Handle View As selection change
+    const handleViewAsChange = async (selectedAdmin) => {
+        const currentUserId = localStorage.getItem('userId');
+
+        if (!acctId) {
+            console.error('Cannot change view: no account selected');
+            return;
+        }
+
+        // If there are unsaved changes, hold the switch and show the warning modal
+        if (hasUnsavedChanges) {
+            setPendingViewAsAdmin(selectedAdmin);
+            setSwitchAdminWarningOpen(true);
+            setViewAsOpen(false);
+            return;
+        }
+
+        await executeViewAsChange(selectedAdmin);
+    };
+
+    // The actual admin switch — called either directly or after the user confirms the warning
+    const executeViewAsChange = async (selectedAdmin) => {
+        const currentUserId = localStorage.getItem('userId');
+
+        if (!acctId) {
+            console.error('Cannot change view: no account selected');
+            return;
+        }
+
+        // Close dropdown and update selected admin immediately for instant UI feedback
+        setViewAsAdmin(selectedAdmin);
+        setViewAsAvatarError(false);
+        setViewAsOpen(false);
+        setChartsReady(false);
+
+        try {
+            // Extract the selected user's ID
+            const selectedUserId = selectedAdmin
+                ? (selectedAdmin._id || selectedAdmin.id || selectedAdmin.adminId || selectedAdmin.userId || selectedAdmin.authId || selectedAdmin.authUserId)
+                : null;
+
+            // Call backend with acctId, userId, and selectedUserId
+            const response = await api.post('/api/ui/analytics/view-as', {
+                acctId: acctId,
+                userId: currentUserId,
+                selectedUserId: selectedUserId
+            });
+
+            // Extract viewingAs and schema from backend response
+            const viewingAsId = response.data?.viewingAs || null;
+            const schema = response.data?.schema || null;
+
+            // If backend returned a schema, save it to localStorage
+            if (schema && viewingAsId) {
+                const store = readStore();
+                store[acctId] = store[acctId] || {};
+                store[acctId][viewingAsId] = schema;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+
+                // Load the charts from the schema
+                const filters = schema?.filters || [];
+                const restored = filters.map(entry => normalizeChart(entry));
+                skipSaveRef.current = true;
+                chartsRef.current = restored;
+                setCharts(restored);
+                setNextChartId(restored.length > 0 ? Math.max(...restored.map(c => c.id)) + 1 : 1);
+                setChartRequestSignatures(Object.fromEntries(restored.map(chart => [chart.id, getChartRequestSignature(chart)])));
+                setChartDataCache({});
+
+                // Fetch field schemas for used categories
+                const usedCategories = [...new Set(restored.map(c => c.chartCategory?._id || c.chartCategory).filter(Boolean))];
+                usedCategories.forEach(catId => fetchFieldsForCategory(catId));
+
+                // Fetch chart data
+                restored.forEach(chart => {
+                    const isNum = chart.chartType?.value === 'number';
+                    if (isNum ? (chart.yAxis && chart.aggregation) : (chart.xAxis && chart.yAxis && chart.aggregation)) {
+                        fetchChartDataFromBackend(chart.id, chart, true);
+                    }
+                });
+
+                // Charts already loaded above — tell the viewingAs useEffect to skip duplicate work
+                skipViewingAsEffectRef.current = true;
+            } else if (viewingAsId) {
+                // Backend returned no schema inline — clean up any stale localStorage entry.
+                // Do NOT clear charts yet; handleSchemaSync (triggered via the viewingAs useEffect)
+                // will fetch from the backend and either populate with real charts or clear to empty
+                // only once it's confirmed there is truly no schema. This prevents a blank flash.
+                const store = readStore();
+                if (store[acctId]) {
+                    delete store[acctId][viewingAsId];
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+                }
+            }
+
+            // Update the viewingAs state (triggers the useEffect to load charts when no schema was provided by the branch above)
+            setViewingAs(viewingAsId);
+
+            console.log('View As changed:', selectedAdmin ? getAdminDisplayName(selectedAdmin) : 'All Admins', '| viewingAs:', viewingAsId);
+        } catch (error) {
+            console.error('Error changing view:', error);
+            setChartsReady(true); // Unblock UI if backend call fails
+        }
+    };
+
+    // Close View As dropdown on outside click
+    useEffect(() => {
+        if (!viewAsOpen) return;
+        const handleClickOutside = (e) => {
+            if (viewAsRef.current && !viewAsRef.current.contains(e.target)) setViewAsOpen(false);
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [viewAsOpen]);
 
     const fetchFieldsForCategory = async (catId) => {
         if (!catId || !acctId) return [];
@@ -1011,14 +1530,12 @@ const AnalyticsDashboardPage = () => {
                             borderRadius: 20,
                             background: `${color}14`,
                             border: `1px solid ${color}40`,
+                            lineHeight: 1,
                         }}>
-                            <span style={{
-                                width: 8, height: 8, borderRadius: '50%',
-                                background: color,
-                                flexShrink: 0,
-                                boxShadow: `0 0 0 2px ${color}30`,
-                            }} />
-                            <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', letterSpacing: 0.1 }}>
+                            <svg width="8" height="8" viewBox="0 0 8 8" style={{ flexShrink: 0, display: 'block' }}>
+                                <circle cx="4" cy="4" r="4" fill={color} />
+                            </svg>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', letterSpacing: 0.1, lineHeight: 1, verticalAlign: 'middle' }}>
                                 {entry.value}
                             </span>
                         </div>
@@ -1027,6 +1544,36 @@ const AnalyticsDashboardPage = () => {
             </div>
         );
     };
+
+    // External legend div — same visual style as legendChips but renders as a plain DOM element
+    // outside the ResponsiveContainer so it is reliably captured in PDF exports.
+    const renderExternalLegend = (items) => (
+        <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: '6px',
+            justifyContent: 'center', padding: '6px 16px 10px',
+            flexShrink: 0,
+        }}>
+            {items.map(({ label, color }, i) => (
+                <div key={i} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    padding: '3px 10px 3px 7px',
+                    borderRadius: 20,
+                    background: `${color}12`,
+                    border: `1px solid ${color}38`,
+                }}>
+                    <span style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: color, flexShrink: 0,
+                        boxShadow: `0 0 0 2px ${color}28`,
+                        display: 'inline-block',
+                    }} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', letterSpacing: 0.1, whiteSpace: 'nowrap' }}>
+                        {label}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
     const DEFAULT_CHART_COLOR = '#6366f1';
     const COLOR_OPTIONS = [
         '#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#3b82f6',
@@ -1108,9 +1655,6 @@ const AnalyticsDashboardPage = () => {
             const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
             return (
                 <g>
-                    <path
-                        d={`M ${cx + outerRadius * Math.cos(-startAngle * Math.PI / 180)} ${cy + outerRadius * Math.sin(-startAngle * Math.PI / 180)}`}
-                    />
                     <Sector
                         cx={cx} cy={cy}
                         innerRadius={innerRadius}
@@ -1202,130 +1746,146 @@ const AnalyticsDashboardPage = () => {
     };
 
     // Render Bar Chart — gradient bars, clean grid
-    const renderBarChart = (chartData, yAxisLabel, orientation = 'vertical', showLegend = true, showDataLabels = true, lbl = (k) => k) => {
+    const fmtDateTick = (v) => {
+        if (!v || typeof v !== 'string') return v;
+        // YYYY-MM-DD → DD.MM.YYYY
+        const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+        return v;
+    };
+
+    const renderBarChart = (chartData, yAxisLabel, orientation = 'vertical', showLegend = true, showDataLabels = true, lbl = (k) => k, fmtTick = (v) => v) => {
         const isHorizontal = orientation === 'horizontal';
+        const legendItems = [{ label: lbl(yAxisLabel), color: COLORS[0] }];
         return (
-            <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                    data={chartData}
-                    layout={isHorizontal ? 'vertical' : 'horizontal'}
-                    margin={isHorizontal
-                        ? { top: 10, right: showDataLabels ? 48 : 30, left: 80, bottom: 10 }
-                        : { top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }
-                    }
-                >
-                    <defs>
-                        {COLORS.map((color, i) => (
-                            <linearGradient key={i} id={`barGrad-${i}`} x1="0" y1="0" x2={isHorizontal ? '1' : '0'} y2={isHorizontal ? '0' : '1'}>
-                                <stop offset="0%" stopColor={color} stopOpacity={1} />
-                                <stop offset="100%" stopColor={color} stopOpacity={0.45} />
-                            </linearGradient>
-                        ))}
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={!isHorizontal} vertical={isHorizontal} />
-                    {isHorizontal ? (
-                        <>
-                            <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                            <YAxis type="category" dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} width={75} />
-                        </>
-                    ) : (
-                        <>
-                            <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} angle={-45} textAnchor="end" height={60} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                        </>
-                    )}
-                    <Tooltip
-                        contentStyle={tooltipStyle.contentStyle}
-                        labelStyle={tooltipStyle.labelStyle}
-                        itemStyle={tooltipStyle.itemStyle}
-                        cursor={tooltipStyle.cursor}
-                        formatter={(value) => [value.toLocaleString(), lbl(yAxisLabel)]}
-                    />
-                    {showLegend && (
-                        <Legend content={legendChips} />
-                    )}
-                    <Bar
-                        dataKey="value"
-                        name={lbl(yAxisLabel)}
-                        radius={isHorizontal ? [0, 8, 8, 0] : [8, 8, 0, 0]}
-                        maxBarSize={60}
-                        isAnimationActive={false}
-                    >
-                        {chartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={`url(#barGrad-${index % COLORS.length})`} />
-                        ))}
-                        {showDataLabels && (
-                            <LabelList
-                                dataKey="value"
-                                position={isHorizontal ? 'right' : 'top'}
-                                formatter={(v) => v.toLocaleString()}
-                                style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+                <div style={{ flex: 1, minHeight: 0 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                            data={chartData}
+                            layout={isHorizontal ? 'vertical' : 'horizontal'}
+                            margin={isHorizontal
+                                ? { top: 10, right: showDataLabels ? 48 : 30, left: 80, bottom: 10 }
+                                : { top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }
+                            }
+                        >
+                            <defs>
+                                {COLORS.map((color, i) => (
+                                    <linearGradient key={i} id={`barGrad-${i}`} x1="0" y1="0" x2={isHorizontal ? '1' : '0'} y2={isHorizontal ? '0' : '1'}>
+                                        <stop offset="0%" stopColor={color} stopOpacity={1} />
+                                        <stop offset="100%" stopColor={color} stopOpacity={0.45} />
+                                    </linearGradient>
+                                ))}
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={!isHorizontal} vertical={isHorizontal} />
+                            {isHorizontal ? (
+                                <>
+                                    <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                    <YAxis type="category" dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} width={75} />
+                                </>
+                            ) : (
+                                <>
+                                    <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} angle={-45} textAnchor="end" height={60} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} tickFormatter={fmtTick} />
+                                    <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                </>
+                            )}
+                            <Tooltip
+                                contentStyle={tooltipStyle.contentStyle}
+                                labelStyle={tooltipStyle.labelStyle}
+                                itemStyle={tooltipStyle.itemStyle}
+                                cursor={tooltipStyle.cursor}
+                                formatter={(value) => [value.toLocaleString(), lbl(yAxisLabel)]}
+                                labelFormatter={fmtTick}
                             />
-                        )}
-                    </Bar>
-                </BarChart>
-            </ResponsiveContainer>
+                            <Bar
+                                dataKey="value"
+                                name={lbl(yAxisLabel)}
+                                radius={isHorizontal ? [0, 8, 8, 0] : [8, 8, 0, 0]}
+                                maxBarSize={60}
+                                isAnimationActive={false}
+                            >
+                                {chartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={`url(#barGrad-${index % COLORS.length})`} />
+                                ))}
+                                {showDataLabels && (
+                                    <LabelList
+                                        dataKey="value"
+                                        position={isHorizontal ? 'right' : 'top'}
+                                        formatter={(v) => v.toLocaleString()}
+                                        style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+                                    />
+                                )}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+                {showLegend && renderExternalLegend(legendItems)}
+            </div>
         );
     };
 
     // Render Line Chart — area chart with gradient fill
-    const renderLineChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR, showLegend = true, showDataLabels = true, lbl = (k) => k) => (
-        <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }}>
-                <defs>
-                    <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-                        <stop offset="95%" stopColor={color} stopOpacity={0} />
-                    </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis
-                    dataKey="name"
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={60}
-                    axisLine={{ stroke: '#e2e8f0' }}
-                    tickLine={false}
-                />
-                <YAxis
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                />
-                <Tooltip
-                    contentStyle={tooltipStyle.contentStyle}
-                    labelStyle={tooltipStyle.labelStyle}
-                    itemStyle={tooltipStyle.itemStyle}
-                    cursor={{ stroke: color, strokeWidth: 1, strokeDasharray: '4 4' }}
-                    formatter={(value) => [value.toLocaleString(), lbl(yAxisLabel)]}
-                />
-                {showLegend && (
-                    <Legend content={legendChips} />
-                )}
-                <Area
-                    type="monotone"
-                    dataKey="value"
-                    name={lbl(yAxisLabel)}
-                    stroke={color}
-                    strokeWidth={3}
-                    fill="url(#areaGrad)"
-                    dot={{ fill: color, stroke: 'white', strokeWidth: 2, r: 5 }}
-                    activeDot={{ r: 7, fill: color, stroke: 'white', strokeWidth: 2 }}
-                    isAnimationActive={false}
-                >
-                    {showDataLabels && (
-                        <LabelList
-                            dataKey="value"
-                            position="top"
-                            offset={8}
-                            formatter={(v) => v.toLocaleString()}
-                            style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+    const renderLineChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR, showLegend = true, showDataLabels = true, lbl = (k) => k, fmtTick = (v) => v) => (
+        <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+            <div style={{ flex: 1, minHeight: 0 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData} margin={{ top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }}>
+                        <defs>
+                            <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+                                <stop offset="95%" stopColor={color} stopOpacity={0} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                        <XAxis
+                            dataKey="name"
+                            tick={{ fill: '#64748b', fontSize: 11 }}
+                            angle={-45}
+                            textAnchor="end"
+                            height={60}
+                            axisLine={{ stroke: '#e2e8f0' }}
+                            tickLine={false}
+                            tickFormatter={fmtTick}
                         />
-                    )}
-                </Area>
-            </AreaChart>
-        </ResponsiveContainer>
+                        <YAxis
+                            tick={{ fill: '#64748b', fontSize: 11 }}
+                            axisLine={false}
+                            tickLine={false}
+                        />
+                        <Tooltip
+                            contentStyle={tooltipStyle.contentStyle}
+                            labelStyle={tooltipStyle.labelStyle}
+                            itemStyle={tooltipStyle.itemStyle}
+                            cursor={{ stroke: color, strokeWidth: 1, strokeDasharray: '4 4' }}
+                            formatter={(value) => [value.toLocaleString(), lbl(yAxisLabel)]}
+                            labelFormatter={fmtTick}
+                        />
+                        <Area
+                            type="monotone"
+                            dataKey="value"
+                            name={lbl(yAxisLabel)}
+                            stroke={color}
+                            strokeWidth={3}
+                            fill="url(#areaGrad)"
+                            dot={{ fill: color, stroke: 'white', strokeWidth: 2, r: 5 }}
+                            activeDot={{ r: 7, fill: color, stroke: 'white', strokeWidth: 2 }}
+                            isAnimationActive={false}
+                        >
+                            {showDataLabels && (
+                                <LabelList
+                                    dataKey="value"
+                                    position="top"
+                                    offset={8}
+                                    formatter={(v) => v.toLocaleString()}
+                                    style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+                                />
+                            )}
+                        </Area>
+                    </AreaChart>
+                </ResponsiveContainer>
+            </div>
+            {showLegend && renderExternalLegend([{ label: lbl(yAxisLabel), color }])}
+        </div>
     );
 
     // Render Heat Map — colored tile grid, intensity proportional to value
@@ -1399,9 +1959,9 @@ const AnalyticsDashboardPage = () => {
     };
 
     // ── Grouped / Stacked Bar ─────────────────────────────────────────────
-    const renderMultiSeriesBarChart = (chartData, yAxisLabel, orientation = 'vertical', stacked = false, showLegend = true, showDataLabels = true, lbl = (k) => k) => {
+    const renderMultiSeriesBarChart = (chartData, yAxisLabel, orientation = 'vertical', stacked = false, showLegend = true, showDataLabels = true, lbl = (k) => k, fmtTick = (v) => v) => {
         const hasZKey = chartData.length > 0 && chartData[0].zKey !== undefined;
-        if (!hasZKey) return renderBarChart(chartData, yAxisLabel, orientation, showLegend, showDataLabels, lbl);
+        if (!hasZKey) return renderBarChart(chartData, yAxisLabel, orientation, showLegend, showDataLabels, lbl, fmtTick);
         const isHorizontal = orientation === 'horizontal';
         const names = [...new Set(chartData.map(d => d.name))];
         const zKeys = [...new Set(chartData.map(d => d.zKey))];
@@ -1413,76 +1973,80 @@ const AnalyticsDashboardPage = () => {
             });
             return entry;
         });
+        const legendItems = zKeys.map((zKey, i) => ({ label: lbl(zKey), color: COLORS[i % COLORS.length] }));
         return (
-            <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                    data={data}
-                    layout={isHorizontal ? 'vertical' : 'horizontal'}
-                    margin={isHorizontal
-                        ? { top: 10, right: showDataLabels ? 48 : 30, left: 80, bottom: 10 }
-                        : { top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }
-                    }
-                >
-                    <defs>
-                        {COLORS.map((color, i) => (
-                            <linearGradient key={i} id={`msBarGrad-${i}`} x1="0" y1="0" x2={isHorizontal ? '1' : '0'} y2={isHorizontal ? '0' : '1'}>
-                                <stop offset="0%" stopColor={color} stopOpacity={1} />
-                                <stop offset="100%" stopColor={color} stopOpacity={0.5} />
-                            </linearGradient>
-                        ))}
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={!isHorizontal} vertical={isHorizontal} />
-                    {isHorizontal ? (
-                        <>
-                            <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                            <YAxis type="category" dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} width={75} />
-                        </>
-                    ) : (
-                        <>
-                            <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} angle={-35} textAnchor="end" height={55} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                        </>
-                    )}
-                    <Tooltip
-                        contentStyle={tooltipStyle.contentStyle}
-                        labelStyle={tooltipStyle.labelStyle}
-                        itemStyle={tooltipStyle.itemStyle}
-                        cursor={tooltipStyle.cursor}
-                        formatter={(value) => [value.toLocaleString()]}
-                    />
-                    {showLegend && (
-                        <Legend content={legendChips} />
-                    )}
-                    {zKeys.map((zKey, i) => (
-                        <Bar
-                            key={zKey}
-                            dataKey={zKey}
-                            name={lbl(zKey)}
-                            fill={`url(#msBarGrad-${i % COLORS.length})`}
-                            stackId={stacked ? 'a' : undefined}
-                            radius={stacked
-                                ? (i === zKeys.length - 1 ? (isHorizontal ? [0, 8, 8, 0] : [8, 8, 0, 0]) : [0, 0, 0, 0])
-                                : (isHorizontal ? [0, 6, 6, 0] : [6, 6, 0, 0])
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+                <div style={{ flex: 1, minHeight: 0 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                            data={data}
+                            layout={isHorizontal ? 'vertical' : 'horizontal'}
+                            margin={isHorizontal
+                                ? { top: 10, right: showDataLabels ? 48 : 30, left: 80, bottom: 10 }
+                                : { top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }
                             }
-                            maxBarSize={stacked ? 80 : 50}
-                            isAnimationActive={false}
                         >
-                            {showDataLabels && (
-                                <LabelList
-                                    dataKey={zKey}
-                                    position={stacked ? 'center' : (isHorizontal ? 'right' : 'top')}
-                                    formatter={(v) => (v > 0 ? v.toLocaleString() : '')}
-                                    style={{
-                                        fontSize: 10,
-                                        fill: stacked ? 'white' : '#374151',
-                                        fontWeight: 600,
-                                    }}
-                                />
+                            <defs>
+                                {COLORS.map((color, i) => (
+                                    <linearGradient key={i} id={`msBarGrad-${i}`} x1="0" y1="0" x2={isHorizontal ? '1' : '0'} y2={isHorizontal ? '0' : '1'}>
+                                        <stop offset="0%" stopColor={color} stopOpacity={1} />
+                                        <stop offset="100%" stopColor={color} stopOpacity={0.5} />
+                                    </linearGradient>
+                                ))}
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={!isHorizontal} vertical={isHorizontal} />
+                            {isHorizontal ? (
+                                <>
+                                    <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                    <YAxis type="category" dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} width={75} />
+                                </>
+                            ) : (
+                                <>
+                                    <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} angle={-35} textAnchor="end" height={55} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} tickFormatter={fmtTick} />
+                                    <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                </>
                             )}
-                        </Bar>
-                    ))}
-                </BarChart>
-            </ResponsiveContainer>
+                            <Tooltip
+                                contentStyle={tooltipStyle.contentStyle}
+                                labelStyle={tooltipStyle.labelStyle}
+                                itemStyle={tooltipStyle.itemStyle}
+                                cursor={tooltipStyle.cursor}
+                                formatter={(value) => [value.toLocaleString()]}
+                                labelFormatter={fmtTick}
+                            />
+                            {zKeys.map((zKey, i) => (
+                                <Bar
+                                    key={zKey}
+                                    dataKey={zKey}
+                                    name={lbl(zKey)}
+                                    fill={`url(#msBarGrad-${i % COLORS.length})`}
+                                    stackId={stacked ? 'a' : undefined}
+                                    radius={stacked
+                                        ? (i === zKeys.length - 1 ? (isHorizontal ? [0, 8, 8, 0] : [8, 8, 0, 0]) : [0, 0, 0, 0])
+                                        : (isHorizontal ? [0, 6, 6, 0] : [6, 6, 0, 0])
+                                    }
+                                    maxBarSize={stacked ? 80 : 50}
+                                    isAnimationActive={false}
+                                >
+                                    {showDataLabels && (
+                                        <LabelList
+                                            dataKey={zKey}
+                                            position={stacked ? 'center' : (isHorizontal ? 'right' : 'top')}
+                                            formatter={(v) => (v > 0 ? v.toLocaleString() : '')}
+                                            style={{
+                                                fontSize: 10,
+                                                fill: stacked ? 'white' : '#374151',
+                                                fontWeight: 600,
+                                            }}
+                                        />
+                                    )}
+                                </Bar>
+                            ))}
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+                {showLegend && renderExternalLegend(legendItems)}
+            </div>
         );
     };
 
@@ -1526,8 +2090,7 @@ const AnalyticsDashboardPage = () => {
                                 labelStyle={tooltipStyle.labelStyle}
                                 itemStyle={tooltipStyle.itemStyle}
                                 formatter={(value, name) => {
-                                    const total = outerData.find(d => d.name === name) ? totalInner : totalInner;
-                                    const pct = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                    const total = outerData.find(d => d.name === name) ? totalOuter : totalInner;
                                     return [`${value.toLocaleString()} (${pct}%)`, lbl(name)];
                                 }}
                             />
@@ -1568,26 +2131,18 @@ const AnalyticsDashboardPage = () => {
         );
     };
 
-    // ── placeholder so darkenHex reference doesn't break (unused) ──────────
-    const darkenHex = (hex, f = 0.55) => {
-        const n = parseInt((hex || '#6366f1').replace('#', ''), 16);
-        const r = Math.round(((n >> 16) & 0xff) * f);
-        const g = Math.round(((n >> 8) & 0xff) * f);
-        const b = Math.round((n & 0xff) * f);
-        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-    };
-
     const renderChart = (chartConfig) => {
         const isLoading = chartLoadingState[chartConfig.id];
         const chartData = getChartData(chartConfig, chartConfig.id);
         const yAxisLabel = chartConfig.yAxis?.label || 'Value';
         const height = chartConfig.chartHeight || 320;
+        const isDateXAxis = DATE_AXIS_FIELDS.includes(chartConfig.xAxis?.value);
 
         if (isLoading) return (
             <div className="flex flex-col items-center justify-center w-full h-full gap-2">
                 <div className="relative">
                     <div className="animate-spin rounded-full h-7 w-7 border-2 border-gray-200"></div>
-                    <div className="animate-spin rounded-full h-7 w-7 border-2 border-gray-800 border-t-transparent absolute top-0"></div>
+                    <div className="animate-spin rounded-full h-7 w-7 border-2 border-indigo-600 border-t-transparent absolute top-0"></div>
                 </div>
                 <span className="text-[11px] text-gray-400 font-medium">Loading chart...</span>
             </div>
@@ -1615,12 +2170,12 @@ const AnalyticsDashboardPage = () => {
                     : renderPieChart(chartData, displayYLabel, showLegend, showDataLabels, lbl);
             case 'bar':
                 return mode === 'grouped'
-                    ? renderMultiSeriesBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', false, showLegend, showDataLabels, lbl)
+                    ? renderMultiSeriesBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', false, showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined)
                     : mode === 'stacked'
-                        ? renderMultiSeriesBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', true, showLegend, showDataLabels, lbl)
-                        : renderBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', showLegend, showDataLabels, lbl);
+                        ? renderMultiSeriesBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', true, showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined)
+                        : renderBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined);
             case 'line':
-                return renderLineChart(chartData, displayYLabel, chartColor, showLegend, showDataLabels, lbl);
+                return renderLineChart(chartData, displayYLabel, chartColor, showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined);
             case 'heatmap':
                 return renderHeatmapChart(chartData, displayYLabel, chartColor);
             case 'number':
@@ -1629,6 +2184,17 @@ const AnalyticsDashboardPage = () => {
                 return null;
         }
     };
+
+    // True when the current user is viewing another admin's dashboard (read-only mode)
+    const isViewingOtherAdmin = (() => {
+        try {
+            const currentUserId = localStorage.getItem('userId');
+            const currentAdminId = localStorage.getItem('currentUserAdmin') || currentUserId;
+            return !!(viewingAs && currentAdminId && viewingAs !== currentAdminId);
+        } catch {
+            return false;
+        }
+    })();
 
     // Render single chart card
     const renderChartCard = (chartConfig) => {
@@ -1757,6 +2323,7 @@ const AnalyticsDashboardPage = () => {
                         next.splice(toIdx, 0, moved);
                         return next;
                     });
+                    setHasUnsavedChanges(true);
                     setDragOverId(null);
                     draggedIdRef.current = null;
                     stopAutoScroll();
@@ -1780,7 +2347,7 @@ const AnalyticsDashboardPage = () => {
                 }}
             >
                 {/* ── Always-visible name bar with drag handle ── */}
-                <div className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-b border-gray-800 cursor-grab active:cursor-grabbing select-none">
+                <div data-pdf-hide="true" className="flex items-center gap-2 px-3 py-2 border-b border-indigo-500/20 cursor-grab active:cursor-grabbing select-none" style={{background: 'linear-gradient(180deg, #334155 0%, #1e293b 100%)'}}>
                     <svg className="w-4 h-4 text-gray-500 shrink-0" fill="currentColor" viewBox="0 0 16 16">
                         <circle cx="5" cy="4" r="1.2" /><circle cx="11" cy="4" r="1.2" />
                         <circle cx="5" cy="8" r="1.2" /><circle cx="11" cy="8" r="1.2" />
@@ -1791,13 +2358,14 @@ const AnalyticsDashboardPage = () => {
                         type="text"
                         value={chartConfig.chartName || ''}
                         placeholder={`Chart ${chartConfig.id}`}
-                        onChange={(e) => updateChartConfig(chartConfig.id, 'chartName', e.target.value)}
-                        onMouseDown={(e) => e.stopPropagation()}
+                        onChange={(e) => !isViewingOtherAdmin && updateChartConfig(chartConfig.id, 'chartName', e.target.value)}
                         onClick={(e) => e.stopPropagation()}
-                        className="flex-1 text-sm font-semibold text-white bg-transparent outline-none border-none cursor-text placeholder:text-gray-500 min-w-0"
-                    />
+                        className={'flex-1 text-sm font-semibold text-white bg-transparent outline-none border-none placeholder:text-gray-500 min-w-0 ' + (isViewingOtherAdmin ? 'cursor-default pointer-events-none' : 'cursor-text')}
 
+                        onMouseDown={(e) => e.stopPropagation()}
+                    />
                     {/* Settings toggle button */}
+                    {!isViewingOtherAdmin && (
                     <button
                         title={filterIsVisible ? 'Close settings' : 'Open settings'}
                         onMouseDown={(e) => e.stopPropagation()}
@@ -1816,8 +2384,10 @@ const AnalyticsDashboardPage = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                         </svg>
                     </button>
+                    )}
 
                     {/* Width + height controls */}
+                    {!isViewingOtherAdmin && (
                     <div className="flex items-center gap-1 shrink-0">
                         <div className="flex items-center border border-gray-700 rounded overflow-hidden text-[10px] font-semibold" title="Chart Width">
                             <button
@@ -1829,12 +2399,12 @@ const AnalyticsDashboardPage = () => {
                                 value={chartConfig.chartWidthPx || 500}
                                 onCommit={(v) => updateChartConfig(chartConfig.id, 'chartWidthPx', v)}
                                 min={200} max={2400}
-                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-gray-800 m-0"
+                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-slate-800 m-0"
                             />
                             <button
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartWidthPx', Math.min(2400, (chartConfig.chartWidthPx || 500) + 40)); }}
-                                className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
+                                className="px-1.5 py-0.5 text-gray-400 hover:bg-slate-700 hover:text-white font-bold text-xs transition-all"
                             >+</button>
                         </div>
                         <div className="flex items-center border border-gray-700 rounded overflow-hidden" title="Chart Height">
@@ -1847,7 +2417,7 @@ const AnalyticsDashboardPage = () => {
                                 value={chartConfig.chartHeight || 320}
                                 onCommit={(v) => updateChartConfig(chartConfig.id, 'chartHeight', v)}
                                 min={180} max={800}
-                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-gray-800 m-0"
+                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-slate-800 m-0"
                             />
                             <button
                                 onMouseDown={(e) => e.stopPropagation()}
@@ -1856,8 +2426,10 @@ const AnalyticsDashboardPage = () => {
                             >+</button>
                         </div>
                     </div>
+                    )}
 
-                    {/* Settings toggle button */}
+                    {/* Per-chart refresh button */}
+                    {!isViewingOtherAdmin && (
                     <button
                         title="Refresh chart"
                         onMouseDown={(e) => e.stopPropagation()}
@@ -1868,8 +2440,10 @@ const AnalyticsDashboardPage = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                     </button>
+                    )}
 
                     {/* Delete button */}
+                    {!isViewingOtherAdmin && (
                     <button
                         title="Delete chart"
                         onMouseDown={(e) => e.stopPropagation()}
@@ -1880,6 +2454,7 @@ const AnalyticsDashboardPage = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                     </button>
+                    )}
 
                     {/* Auto-refresh countdown arc — only shown when auto-refresh is enabled */}
                     {chartConfig.autoRefreshMins && (() => {
@@ -1949,7 +2524,7 @@ const AnalyticsDashboardPage = () => {
                         <div className="flex items-center justify-center gap-2 px-5 pt-2 pb-2 border-b border-gray-100 relative pr-10">
                             <span className="text-xs font-semibold text-gray-700 shrink-0">Category:</span>
                             <div className="w-48">
-                                 <Combobox
+                                <Combobox
                                     value={
                                         mergedConfig.chartCategory
                                             ? (typeof mergedConfig.chartCategory === 'object'
@@ -2015,6 +2590,7 @@ const AnalyticsDashboardPage = () => {
                                             const cfg = mergedConfig;
                                             const needsFetch = isChartRequestDirty(mergedConfig);
                                             setCharts(prev => prev.map(c => c.id === chartConfig.id ? { ...c, ...pendingChartConfigs[chartConfig.id] } : c));
+                                            setHasUnsavedChanges(true);
                                             clearPendingConfig(chartConfig.id);
                                             if (needsFetch) {
                                                 userFetchInFlightRef.current[chartConfig.id] = true;
@@ -2025,9 +2601,9 @@ const AnalyticsDashboardPage = () => {
                                         }}
                                         disabled={!isChartConfigured(mergedConfig) || !isChartDirty(mergedConfig, chartConfig) || !!chartLoadingState[chartConfig.id]}
                                         className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
-                                            ? 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-md shadow-emerald-200'
+                                            ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-500/30'
                                             : updateSuccess[chartConfig.id]
-                                                ? 'bg-emerald-500 text-white'
+                                                ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white'
                                                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             }`}
                                         title={!isChartConfigured(mergedConfig)
@@ -2059,7 +2635,7 @@ const AnalyticsDashboardPage = () => {
                             )}
 
                             {/* Close button top right */}
-                            <button 
+                            <button
                                 onClick={() => hideFilter(chartConfig.id)}
                                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors"
                             >
@@ -2079,6 +2655,7 @@ const AnalyticsDashboardPage = () => {
                                             const cfg = mergedConfig;
                                             const needsFetch = isChartRequestDirty(mergedConfig);
                                             setCharts(prev => prev.map(c => c.id === chartConfig.id ? { ...c, ...pendingChartConfigs[chartConfig.id] } : c));
+                                            setHasUnsavedChanges(true);
                                             clearPendingConfig(chartConfig.id);
                                             if (needsFetch) {
                                                 userFetchInFlightRef.current[chartConfig.id] = true;
@@ -2089,9 +2666,9 @@ const AnalyticsDashboardPage = () => {
                                         }}
                                         disabled={!isChartConfigured(mergedConfig) || !isChartDirty(mergedConfig, chartConfig) || !!chartLoadingState[chartConfig.id]}
                                         className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
-                                            ? 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-md shadow-emerald-200'
+                                            ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-500/30'
                                             : updateSuccess[chartConfig.id]
-                                                ? 'bg-emerald-500 text-white'
+                                                ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white'
                                                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             }`}
                                         title={!isChartConfigured(mergedConfig)
@@ -2119,9 +2696,9 @@ const AnalyticsDashboardPage = () => {
                                             'Update Chart'
                                         )}
                                     </button>
-                                    
+
                                     {/* Close button top right */}
-                                    <button 
+                                    <button
                                         onClick={() => hideFilter(chartConfig.id)}
                                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors"
                                     >
@@ -2133,368 +2710,367 @@ const AnalyticsDashboardPage = () => {
                             {/* ── Scrollable body ── */}
                             <div className="overflow-y-auto flex-1 scrollbar-thin">
 
-                            {/* ── Date filter row ── */}
-                            <div className="flex items-center gap-2 pt-3 mb-3 px-5 flex-wrap">
-                                <span className="text-xs font-semibold text-gray-700 shrink-0">Filter:</span>
-                                <div className="w-32 [&_input]:!py-0.5 [&_input]:!text-[11px] [&_input]:!pl-2 [&_input]:!pr-7 [&_svg]:!size-3">
-                                    <Combobox
-                                        value={activePresetOption}
-                                        onChange={(val) => val && applyDatePreset(val.value)}
-                                        displayValue={(option) => option?.label || ''}
-                                        options={DATE_PRESET_OPTIONS}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`date-preset-${chartConfig.id}-${option.value}`} value={option}>
-                                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                                            </ComboboxOption>
-                                        )}
-                                    </Combobox>
-                                </div>
-
-                                {/* Last N Days number input */}
-                                {showLastNInput && (
-                                    <div className="flex items-center gap-1">
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="365"
-                                            value={mergedConfig._lastNDays || 7}
-                                            onChange={(e) => {
-                                                const n = Math.max(1, parseInt(e.target.value) || 1);
-                                                const d = new Date(today); d.setDate(d.getDate() - n);
-                                                updatePendingConfigBatch(chartConfig.id, {
-                                                    _lastNDays: n,
-                                                    dateFilterFrom: toISO(d),
-                                                    dateFilterTo: todayStr,
-                                                });
-                                            }}
-                                            className="w-14 px-1.5 py-0.5 text-[11px] text-center border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
-                                        />
-                                        <span className="text-[11px] text-gray-500">days</span>
-                                    </div>
-                                )}
-
-                                {/* From/To inputs — only shown in custom mode */}
-                                {showCustomInputs && (
-                                    <>
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            <span className="text-[11px] text-gray-500">From:</span>
-                                            <input
-                                                type="date"
-                                                value={mergedConfig.dateFilterFrom}
-                                                onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterFrom: e.target.value })}
-                                                className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
-                                            />
-                                        </div>
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            <span className="text-[11px] text-gray-500">To:</span>
-                                            <input
-                                                type="date"
-                                                value={mergedConfig.dateFilterTo}
-                                                onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterTo: e.target.value })}
-                                                className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
-                                            />
-                                        </div>
-                                    </>
-                                )}
-
-                            </div>
-
-                            {/* ── SECTION: DISPLAY ─────────────────────── */}
-                            {mergedConfig.chartType?.value && (
-                                <>
-                                    <div className="flex items-center gap-0 px-5 pt-1 pb-1.5 border-t border-gray-100 mt-1">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Display</span>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
-                                        {/* Color — line/heatmap/number only */}
-                                        {['line', 'heatmap', 'number'].includes(mergedConfig.chartType?.value) && (
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Color</span>
-                                                <div className="flex items-center gap-1.5">
-                                                    {COLOR_OPTIONS.map(c => (
-                                                        <button
-                                                            key={c}
-                                                            title={c}
-                                                            onClick={() => updatePendingConfig(chartConfig.id, 'chartColor', c)}
-                                                            className="w-4.5 h-4.5 rounded-full transition-transform hover:scale-110 focus:outline-none"
-                                                            style={{
-                                                                width: 18, height: 18,
-                                                                backgroundColor: c,
-                                                                boxShadow: (mergedConfig.chartColor || DEFAULT_CHART_COLOR) === c
-                                                                    ? `0 0 0 2px white, 0 0 0 3.5px ${c}`
-                                                                    : 'none'
-                                                            }}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                        {/* Legend + Data Labels — not heatmap/number */}
-                                        {!['heatmap', 'number'].includes(mergedConfig.chartType?.value) && (
-                                            <>
-                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Legend</span>
-                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', true)}
-                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
-                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', false)}
-                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Data Labels</span>
-                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', true)}
-                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels !== false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>On</button>
-                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', false)}
-                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels === false ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
-                                                    </div>
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                </>
-                            )}
-
-                            {/* ── SECTION: CHART ────────────────────────── */}
-                            {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar' || mergedConfig.chartType?.value === 'number') && (
-                                <>
-                                    <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Chart</span>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
-                                        {/* Mode — pie + bar */}
-                                        {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Mode</span>
-                                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                    {[{ v: null, label: 'Simple' }, { v: 'grouped', label: 'Grouped' }, { v: 'stacked', label: 'Stacked' }].map(({ v, label }) => (
-                                                        <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'chartMode', v)}
-                                                            className={`px-2 py-0.5 transition-all ${mergedConfig.chartMode === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
-                                                            {label}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                        {/* Orientation — bar only */}
-                                        {mergedConfig.chartType?.value === 'bar' && (
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Orientation</span>
-                                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                    <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'vertical')}
-                                                        className={`flex items-center gap-1 px-2 py-0.5 transition-all ${(mergedConfig.barOrientation || 'vertical') === 'vertical' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
-                                                        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-                                                            <rect x="1" y="4" width="2.5" height="7" rx="0.5" />
-                                                            <rect x="4.75" y="2" width="2.5" height="9" rx="0.5" />
-                                                            <rect x="8.5" y="5.5" width="2.5" height="5.5" rx="0.5" />
-                                                        </svg>
-                                                        Vertical
-                                                    </button>
-                                                    <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'horizontal')}
-                                                        className={`flex items-center gap-1 px-2 py-0.5 transition-all ${mergedConfig.barOrientation === 'horizontal' ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
-                                                        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-                                                            <rect x="0" y="1" width="7" height="2.5" rx="0.5" />
-                                                            <rect x="0" y="4.75" width="9" height="2.5" rx="0.5" />
-                                                            <rect x="0" y="8.5" width="5.5" height="2.5" rx="0.5" />
-                                                        </svg>
-                                                        Horizontal
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-                                        {/* Split — number only */}
-                                        {mergedConfig.chartType?.value === 'number' && (
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                <span className="text-[11px] font-semibold text-gray-600 shrink-0">Split</span>
-                                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                                     {[{ v: 0, label: 'None' }, ...Array.from({ length: 10 }, (_, i) => ({ v: i + 1, label: String(i + 1) }))].map(({ v, label }) => (
-                                                        <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'numberSplitCount', v)}
-                                                            className={`px-2 py-0.5 transition-all ${(mergedConfig.numberSplitCount ?? 4) === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
-                                                            {label}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </>
-                            )}
-
-                            {/* ── SECTION: REFRESH ──────────────────────── */}
-                            <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
-                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Refresh</span>
-                            </div>
-                            <div className="flex items-center gap-2 mb-2 px-5">
-                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
-                                    <button onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', null)}
-                                        className={`px-2 py-0.5 transition-all ${!mergedConfig.autoRefreshMins ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>Off</button>
-                                    {[{ v: 10 / 60, label: '10s' }, { v: 0.5, label: '30s' }, { v: 1, label: '1m' }, { v: 2, label: '2m' }, { v: 3, label: '3m' }, { v: 5, label: '5m' }, { v: 10, label: '10m' }, { v: 15, label: '15m' }, { v: 30, label: '30m' }, { v: 60, label: '1h' }].map(({ v, label }) => (
-                                        <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', v)}
-                                            className={`px-2 py-0.5 transition-all ${mergedConfig.autoRefreshMins === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
-                                            {label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* ── SECTION: RENAME LABELS ────────────────── */}
-                            {mergedConfig.chartType?.value && (() => {
-                                const isNumber = mergedConfig.chartType?.value === 'number';
-                                const isHeatmap = mergedConfig.chartType?.value === 'heatmap';
-                                if (isHeatmap) return null;
-                                const activeFields = isNumber
-                                    ? (mergedConfig.yAxis ? [mergedConfig.yAxis] : [])
-                                    : [mergedConfig.xAxis, mergedConfig.yAxis, mergedConfig.zAxis].filter(Boolean);
-                                if (!activeFields.length) return null;
-                                return (
-                                    <>
-                                        <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
-                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Rename Labels</span>
-                                        </div>
-                                        <div className="flex flex-wrap gap-3 mb-2 px-5">
-                                            {activeFields.map((field) => {
-                                                const currentVal = (mergedConfig.fieldLabels || {})[field.value] ?? field.label;
-                                                return (
-                                                    <div key={field.value} className="flex flex-col gap-0.5" style={{ minWidth: 90 }}>
-                                                        <span className="text-[10px] font-medium text-gray-400 truncate">{field.label}</span>
-                                                        <LabelInput
-                                                            initialValue={currentVal}
-                                                            placeholder={field.label}
-                                                            onCommit={(newVal) => updatePendingConfig(chartConfig.id, 'fieldLabels', {
-                                                                ...(mergedConfig.fieldLabels || {}),
-                                                                [field.value]: newVal,
-                                                            })}
-                                                        />
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </>
-                                );
-                            })()}
-                            {/* Chart Controls */}
-                            <div className={`grid gap-3 mb-4 px-5 ${
-                                mergedConfig.chartType?.value === 'number' ? 'grid-cols-3' :
-                                ((mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (mergedConfig.chartMode === 'grouped' || mergedConfig.chartMode === 'stacked'))
-                                    ? (isDateXAxis ? 'grid-cols-6' : 'grid-cols-5')
-                                    : (isDateXAxis ? 'grid-cols-5' : 'grid-cols-4')
-                            }`}>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
-                                    <Combobox
-                                        value={mergedConfig.chartType}
-                                        onChange={(val) => updatePendingConfig(chartConfig.id, 'chartType', val)}
-                                        displayValue={(option) => option?.label || 'Select...'}
-                                        options={chartTypes}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`chart-type-${chartConfig.id}-${option.value}`} value={option}>
-                                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                                            </ComboboxOption>
-                                        )}
-                                    </Combobox>
-                                </div>
-                                {mergedConfig.chartType?.value !== 'number' && (
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                            {mergedConfig.chartType?.value === 'pie' ? 'Group By' : 'X Axis'}
-                                        </label>
+                                {/* ── Date filter row ── */}
+                                <div className="flex items-center gap-2 pt-3 mb-3 px-5 flex-wrap">
+                                    <span className="text-xs font-semibold text-gray-700 shrink-0">Filter:</span>
+                                    <div className="w-32 [&_input]:!py-0.5 [&_input]:!text-[11px] [&_input]:!pl-2 [&_input]:!pr-7 [&_svg]:!size-3">
                                         <Combobox
-                                            value={mergedConfig.xAxis}
-                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'xAxis', val)}
-                                            displayValue={(option) => option?.label || 'Select...'}
-                                        options={columns}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
-                                                </ComboboxOption>
-                                            )}
-                                        </Combobox>
-                                    </div>
-                                )}
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                        {mergedConfig.chartType?.value === 'pie' ? 'Value' : mergedConfig.chartType?.value === 'number' ? 'Value' : 'Y Axis'}
-                                    </label>
-                                    <Combobox
-                                        value={mergedConfig.yAxis}
-                                        onChange={(val) => updatePendingConfig(chartConfig.id, 'yAxis', val)}
-                                        displayValue={(option) => option?.label || 'Select...'}
-                                        options={columns}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`y-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                                            </ComboboxOption>
-                                        )}
-                                    </Combobox>
-                                </div>
-                                {/* Z Axis — for Grouped / Stacked modes */}
-                                {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (mergedConfig.chartMode === 'grouped' || mergedConfig.chartMode === 'stacked') && (
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                            Group By
-                                        </label>
-                                        <Combobox
-                                            value={mergedConfig.zAxis}
-                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'zAxis', val)}
-                                            displayValue={(option) => option?.label || 'None'}
-                                        options={columns}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`z-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
-                                                </ComboboxOption>
-                                            )}
-                                        </Combobox>
-                                    </div>
-                                )}
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Aggregation</label>
-                                    <Combobox
-                                        value={mergedConfig.aggregation}
-                                        onChange={(val) => updatePendingConfig(chartConfig.id, 'aggregation', val)}
-                                        displayValue={(option) => option?.label || 'Select...'}
-                                        options={mergedConfig.chartType?.value === 'number' ? aggregationTypesNumber : aggregationTypes}
-                                        dropdownClassName="!z-[500] !min-w-[160px]"
-                                    >
-                                        {(option) => (
-                                            <ComboboxOption key={`agg-${chartConfig.id}-${option.value}`} value={option}>
-                                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                                            </ComboboxOption>
-                                        )}
-                                    </Combobox>
-                                </div>
-                                {/* Date Granularity — only when xAxis is a timestamp field */}
-                                {isDateXAxis && (
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Granularity</label>
-                                        <Combobox
-                                            value={activeDateGranularityOption}
-                                            onChange={(val) => val && updatePendingConfig(chartConfig.id, 'dateGranularity', val.value)}
-                                            displayValue={(option) => option?.label || 'Daily'}
-                                            options={DATE_GRANULARITY_OPTIONS}
-                                            dropdownClassName="!z-[500] !min-w-[140px]"
+                                            value={activePresetOption}
+                                            onChange={(val) => val && applyDatePreset(val.value)}
+                                            displayValue={(option) => option?.label || ''}
+                                            options={DATE_PRESET_OPTIONS}
+                                            dropdownClassName="!z-[500] !min-w-[160px]"
                                         >
                                             {(option) => (
-                                                <ComboboxOption key={`gran-${chartConfig.id}-${option.value}`} value={option}>
+                                                <ComboboxOption key={`date-preset-${chartConfig.id}-${option.value}`} value={option}>
                                                     <ComboboxLabel>{option.label}</ComboboxLabel>
                                                 </ComboboxOption>
                                             )}
                                         </Combobox>
                                     </div>
+
+                                    {/* Last N Days number input */}
+                                    {showLastNInput && (
+                                        <div className="flex items-center gap-1">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="365"
+                                                value={mergedConfig._lastNDays || 7}
+                                                onChange={(e) => {
+                                                    const n = Math.max(1, parseInt(e.target.value) || 1);
+                                                    const d = new Date(today); d.setDate(d.getDate() - n);
+                                                    updatePendingConfigBatch(chartConfig.id, {
+                                                        _lastNDays: n,
+                                                        dateFilterFrom: toISO(d),
+                                                        dateFilterTo: todayStr,
+                                                    });
+                                                }}
+                                                className="w-14 px-1.5 py-0.5 text-[11px] text-center border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                            />
+                                            <span className="text-[11px] text-gray-500">days</span>
+                                        </div>
+                                    )}
+
+                                    {/* From/To inputs — only shown in custom mode */}
+                                    {showCustomInputs && (
+                                        <>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <span className="text-[11px] text-gray-500">From:</span>
+                                                <input
+                                                    type="date"
+                                                    value={mergedConfig.dateFilterFrom}
+                                                    onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterFrom: e.target.value })}
+                                                    className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                                />
+                                            </div>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <span className="text-[11px] text-gray-500">To:</span>
+                                                <input
+                                                    type="date"
+                                                    value={mergedConfig.dateFilterTo}
+                                                    onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterTo: e.target.value })}
+                                                    className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+
+                                </div>
+
+                                {/* ── SECTION: DISPLAY ─────────────────────── */}
+                                {mergedConfig.chartType?.value && (
+                                    <>
+                                        <div className="flex items-center gap-0 px-5 pt-1 pb-1.5 border-t border-gray-100 mt-1">
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Display</span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
+                                            {/* Color — line/heatmap/number only */}
+                                            {['line', 'heatmap', 'number'].includes(mergedConfig.chartType?.value) && (
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Color</span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {COLOR_OPTIONS.map(c => (
+                                                            <button
+                                                                key={c}
+                                                                title={c}
+                                                                onClick={() => updatePendingConfig(chartConfig.id, 'chartColor', c)}
+                                                                className="w-4.5 h-4.5 rounded-full transition-transform hover:scale-110 focus:outline-none"
+                                                                style={{
+                                                                    width: 18, height: 18,
+                                                                    backgroundColor: c,
+                                                                    boxShadow: (mergedConfig.chartColor || DEFAULT_CHART_COLOR) === c
+                                                                        ? `0 0 0 2px white, 0 0 0 3.5px ${c}`
+                                                                        : 'none'
+                                                                }}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {/* Legend + Data Labels — not heatmap/number */}
+                                            {!['heatmap', 'number'].includes(mergedConfig.chartType?.value) && (
+                                                <>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <span className="text-[11px] font-semibold text-gray-600 shrink-0">Legend</span>
+                                                        <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                            <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', true)}
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend !== false ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>On</button>
+                                                            <button onClick={() => updatePendingConfig(chartConfig.id, 'showLegend', false)}
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showLegend === false ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>Off</button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <span className="text-[11px] font-semibold text-gray-600 shrink-0">Data Labels</span>
+                                                        <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                            <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', true)}
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels !== false ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>On</button>
+                                                            <button onClick={() => updatePendingConfig(chartConfig.id, 'showDataLabels', false)}
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.showDataLabels === false ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>Off</button>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    </>
                                 )}
-                            </div>
-                            {/* end filter controls */}
-                            <div className="pb-4"></div>
+
+                                {/* ── SECTION: CHART ────────────────────────── */}
+                                {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar' || mergedConfig.chartType?.value === 'number') && (
+                                    <>
+                                        <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Chart</span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
+                                            {/* Mode — pie + bar */}
+                                            {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Mode</span>
+                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                        {[{ v: null, label: 'Simple' }, { v: 'grouped', label: 'Grouped' }, { v: 'stacked', label: 'Stacked' }].map(({ v, label }) => (
+                                                            <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'chartMode', v)}
+                                                                className={`px-2 py-0.5 transition-all ${mergedConfig.chartMode === v ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>
+                                                                {label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {/* Orientation — bar only */}
+                                            {mergedConfig.chartType?.value === 'bar' && (
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Orientation</span>
+                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'vertical')}
+                                                            className={`flex items-center gap-1 px-2 py-0.5 transition-all ${(mergedConfig.barOrientation || 'vertical') === 'vertical' ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>
+                                                            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                                                                <rect x="1" y="4" width="2.5" height="7" rx="0.5" />
+                                                                <rect x="4.75" y="2" width="2.5" height="9" rx="0.5" />
+                                                                <rect x="8.5" y="5.5" width="2.5" height="5.5" rx="0.5" />
+                                                            </svg>
+                                                            Vertical
+                                                        </button>
+                                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'barOrientation', 'horizontal')}
+                                                            className={`flex items-center gap-1 px-2 py-0.5 transition-all ${mergedConfig.barOrientation === 'horizontal' ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>
+                                                            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                                                                <rect x="0" y="1" width="7" height="2.5" rx="0.5" />
+                                                                <rect x="0" y="4.75" width="9" height="2.5" rx="0.5" />
+                                                                <rect x="0" y="8.5" width="5.5" height="2.5" rx="0.5" />
+                                                            </svg>
+                                                            Horizontal
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {/* Split — number only */}
+                                            {mergedConfig.chartType?.value === 'number' && (
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <span className="text-[11px] font-semibold text-gray-600 shrink-0">Split</span>
+                                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                                        {[{ v: 0, label: 'None' }, ...Array.from({ length: 10 }, (_, i) => ({ v: i + 1, label: String(i + 1) }))].map(({ v, label }) => (
+                                                            <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'numberSplitCount', v)}
+                                                                className={`px-2 py-0.5 transition-all ${(mergedConfig.numberSplitCount ?? 4) === v ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>
+                                                                {label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* ── SECTION: REFRESH ──────────────────────── */}
+                                <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
+                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Refresh</span>
+                                </div>
+                                <div className="flex items-center gap-2 mb-2 px-5">
+                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
+                                        <button onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', null)}
+                                            className={`px-2 py-0.5 transition-all ${!mergedConfig.autoRefreshMins ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>Off</button>
+                                        {[{ v: 10 / 60, label: '10s' }, { v: 0.5, label: '30s' }, { v: 1, label: '1m' }, { v: 2, label: '2m' }, { v: 3, label: '3m' }, { v: 5, label: '5m' }, { v: 10, label: '10m' }, { v: 15, label: '15m' }, { v: 30, label: '30m' }, { v: 60, label: '1h' }].map(({ v, label }) => (
+                                            <button key={label} onClick={() => updatePendingConfig(chartConfig.id, 'autoRefreshMins', v)}
+                                                className={`px-2 py-0.5 transition-all ${mergedConfig.autoRefreshMins === v ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* ── SECTION: RENAME LABELS ────────────────── */}
+                                {mergedConfig.chartType?.value && (() => {
+                                    const isNumber = mergedConfig.chartType?.value === 'number';
+                                    const isHeatmap = mergedConfig.chartType?.value === 'heatmap';
+                                    if (isHeatmap) return null;
+                                    const activeFields = isNumber
+                                        ? (mergedConfig.yAxis ? [mergedConfig.yAxis] : [])
+                                        : [mergedConfig.xAxis, mergedConfig.yAxis, mergedConfig.zAxis].filter(Boolean);
+                                    if (!activeFields.length) return null;
+                                    return (
+                                        <>
+                                            <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
+                                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Rename Labels</span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-3 mb-2 px-5">
+                                                {activeFields.map((field) => {
+                                                    const currentVal = (mergedConfig.fieldLabels || {})[field.value] ?? field.label;
+                                                    return (
+                                                        <div key={field.value} className="flex flex-col gap-0.5" style={{ minWidth: 90 }}>
+                                                            <span className="text-[10px] font-medium text-gray-400 truncate">{field.label}</span>
+                                                            <LabelInput
+                                                                initialValue={currentVal}
+                                                                placeholder={field.label}
+                                                                onCommit={(newVal) => updatePendingConfig(chartConfig.id, 'fieldLabels', {
+                                                                    ...(mergedConfig.fieldLabels || {}),
+                                                                    [field.value]: newVal,
+                                                                })}
+                                                            />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                                {/* Chart Controls */}
+                                <div className={`grid gap-3 mb-4 px-5 ${mergedConfig.chartType?.value === 'number' ? 'grid-cols-3' :
+                                    ((mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (mergedConfig.chartMode === 'grouped' || mergedConfig.chartMode === 'stacked'))
+                                        ? (isDateXAxis ? 'grid-cols-6' : 'grid-cols-5')
+                                        : (isDateXAxis ? 'grid-cols-5' : 'grid-cols-4')
+                                    }`}>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
+                                        <Combobox
+                                            value={mergedConfig.chartType}
+                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'chartType', val)}
+                                            displayValue={(option) => option?.label || 'Select...'}
+                                            options={chartTypes}
+                                            dropdownClassName="!z-[500] !min-w-[160px]"
+                                        >
+                                            {(option) => (
+                                                <ComboboxOption key={`chart-type-${chartConfig.id}-${option.value}`} value={option}>
+                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                </ComboboxOption>
+                                            )}
+                                        </Combobox>
+                                    </div>
+                                    {mergedConfig.chartType?.value !== 'number' && (
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                                {mergedConfig.chartType?.value === 'pie' ? 'Group By' : 'X Axis'}
+                                            </label>
+                                            <Combobox
+                                                value={mergedConfig.xAxis}
+                                                onChange={(val) => updatePendingConfig(chartConfig.id, 'xAxis', val)}
+                                                displayValue={(option) => option?.label || 'Select...'}
+                                                options={columns}
+                                                dropdownClassName="!z-[500] !min-w-[160px]"
+                                            >
+                                                {(option) => (
+                                                    <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                                        <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                    </ComboboxOption>
+                                                )}
+                                            </Combobox>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                            {mergedConfig.chartType?.value === 'pie' ? 'Value' : mergedConfig.chartType?.value === 'number' ? 'Value' : 'Y Axis'}
+                                        </label>
+                                        <Combobox
+                                            value={mergedConfig.yAxis}
+                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'yAxis', val)}
+                                            displayValue={(option) => option?.label || 'Select...'}
+                                            options={columns}
+                                            dropdownClassName="!z-[500] !min-w-[160px]"
+                                        >
+                                            {(option) => (
+                                                <ComboboxOption key={`y-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                </ComboboxOption>
+                                            )}
+                                        </Combobox>
+                                    </div>
+                                    {/* Z Axis — for Grouped / Stacked modes */}
+                                    {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (mergedConfig.chartMode === 'grouped' || mergedConfig.chartMode === 'stacked') && (
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                                Group By
+                                            </label>
+                                            <Combobox
+                                                value={mergedConfig.zAxis}
+                                                onChange={(val) => updatePendingConfig(chartConfig.id, 'zAxis', val)}
+                                                displayValue={(option) => option?.label || 'None'}
+                                                options={columns}
+                                                dropdownClassName="!z-[500] !min-w-[160px]"
+                                            >
+                                                {(option) => (
+                                                    <ComboboxOption key={`z-axis-${chartConfig.id}-${option.value}`} value={option}>
+                                                        <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                    </ComboboxOption>
+                                                )}
+                                            </Combobox>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Aggregation</label>
+                                        <Combobox
+                                            value={mergedConfig.aggregation}
+                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'aggregation', val)}
+                                            displayValue={(option) => option?.label || 'Select...'}
+                                            options={mergedConfig.chartType?.value === 'number' ? aggregationTypesNumber : aggregationTypes}
+                                            dropdownClassName="!z-[500] !min-w-[160px]"
+                                        >
+                                            {(option) => (
+                                                <ComboboxOption key={`agg-${chartConfig.id}-${option.value}`} value={option}>
+                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                </ComboboxOption>
+                                            )}
+                                        </Combobox>
+                                    </div>
+                                    {/* Date Granularity — only when xAxis is a timestamp field */}
+                                    {isDateXAxis && (
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Granularity</label>
+                                            <Combobox
+                                                value={activeDateGranularityOption}
+                                                onChange={(val) => val && updatePendingConfig(chartConfig.id, 'dateGranularity', val.value)}
+                                                displayValue={(option) => option?.label || 'Daily'}
+                                                options={DATE_GRANULARITY_OPTIONS}
+                                                dropdownClassName="!z-[500] !min-w-[140px]"
+                                            >
+                                                {(option) => (
+                                                    <ComboboxOption key={`gran-${chartConfig.id}-${option.value}`} value={option}>
+                                                        <ComboboxLabel>{option.label}</ComboboxLabel>
+                                                    </ComboboxOption>
+                                                )}
+                                            </Combobox>
+                                        </div>
+                                    )}
+                                </div>
+                                {/* end filter controls */}
+                                <div className="pb-4"></div>
                             </div>{/* end scrollable body */}
                         </>
                     )}
@@ -2509,6 +3085,7 @@ const AnalyticsDashboardPage = () => {
 
                 {/* Chart Display — fills remaining space */}
                 <div
+                    data-pdf-content="true"
                     className="relative bg-gray-50 border-t-2 border-gray-100 flex-1 min-h-0 overflow-hidden"
                 >
                     <div className="w-full h-full p-4">
@@ -2522,14 +3099,19 @@ const AnalyticsDashboardPage = () => {
                         />
                     )}
                     {/* Right edge — horizontal resize */}
+                    {!isViewingOtherAdmin && (
                     <div
+                        data-pdf-hide="true"
                         className="absolute top-0 right-0 bottom-0 w-3 cursor-ew-resize z-10 flex items-center justify-end pr-0.5 group/rh hover:bg-gray-100 transition-colors"
                         onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, dragWidths[chartConfig.id] ?? chartConfig.chartWidthPx ?? 500, 'x')}
                     >
                         <div className="h-10 w-1 rounded-full bg-gray-300 group-hover/rh:bg-gray-700 transition-colors" />
                     </div>
+                    )}
                     {/* Bottom-right corner — both directions */}
+                    {!isViewingOtherAdmin && (
                     <div
+                        data-pdf-hide="true"
                         className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-30"
                         onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, dragWidths[chartConfig.id] ?? chartConfig.chartWidthPx ?? 500, 'both')}
                     >
@@ -2542,15 +3124,18 @@ const AnalyticsDashboardPage = () => {
                             <circle cx="13" cy="3" r="1.2" />
                         </svg>
                     </div>
+                    )}
                 </div>
 
                 {/* Bottom edge — vertical resize */}
+                {!isViewingOtherAdmin && (
                 <div
                     className="h-3 cursor-ns-resize flex items-center justify-center bg-white border-t border-gray-100 group/resize hover:bg-gray-100 transition-colors shrink-0 z-10"
                     onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, 0, 'y')}
                 >
                     <div className="w-12 h-1 rounded-full bg-gray-300 group-hover/resize:bg-gray-700 transition-colors" />
                 </div>
+                )}
             </div>
         );
     };
@@ -2575,8 +3160,137 @@ const AnalyticsDashboardPage = () => {
 
     return (
         <>
+            {/* ── Save-warning modal: rendered at page root so it's never clipped by toolbar layout ── */}
+            {saveWarningOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
+                        <div className="flex items-start gap-3 mb-4">
+                            <div className="flex-shrink-0 w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900 mb-1">Save to your own dashboard?</h3>
+                                <p className="text-xs text-gray-500 leading-relaxed">
+                                    You are currently viewing <span className="font-semibold text-gray-700">{viewAsAdmin ? getAdminDisplayName(viewAsAdmin) : "another admin"}'s</span> charts. Saving will overwrite <span className="font-semibold text-gray-700">your own</span> saved dashboard{userDetails?.name ? <> (<span className="font-semibold text-gray-700">{userDetails.name}</span>)</> : ''} with this layout. Your previous charts will be lost.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => setSaveWarningOpen(false)}
+                                className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    setSaveWarningOpen(false);
+                                    const ownKey = localStorage.getItem('currentUserAdmin') || localStorage.getItem('userId') || 'default';
+                                    await executeSchemaSave(ownKey);
+                                    const ownAdmin = viewAsAdmins.find(a =>
+                                        (a._id || a.id || a.adminId || a.userId || a.authId || a.authUserId) === ownKey
+                                    );
+                                    if (ownAdmin) {
+                                        await handleViewAsChange(ownAdmin);
+                                    }
+                                }}
+                                className="px-4 py-2 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors"
+                            >
+                                Yes, save to my dashboard
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* ── Admin-switch unsaved-changes warning modal ── */}
+            {switchAdminWarningOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
+                        <div className="flex items-start gap-3 mb-4">
+                            <div className="flex-shrink-0 w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900 mb-1">Unsaved changes</h3>
+                                <p className="text-xs text-gray-500 leading-relaxed">
+                                    You have unsaved changes in the current dashboard. Switching to{' '}
+                                    <span className="font-semibold text-gray-700">
+                                        {pendingViewAsAdmin ? getAdminDisplayName(pendingViewAsAdmin) : 'another admin'}
+                                    </span>
+                                    's view will discard them. Save your changes first or proceed and lose them.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => {
+                                    setSwitchAdminWarningOpen(false);
+                                    setPendingViewAsAdmin(null);
+                                }}
+                                className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    setSwitchAdminWarningOpen(false);
+                                    await executeSchemaSave(viewingAs);
+                                    if (pendingViewAsAdmin) {
+                                        await executeViewAsChange(pendingViewAsAdmin);
+                                    }
+                                    setPendingViewAsAdmin(null);
+                                }}
+                                className="px-4 py-2 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors"
+                            >
+                                Save &amp; proceed
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* ── Pull-overwrite warning modal (unsaved changes exist when pulling) ── */}
+            {pullOverwriteWarningOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
+                        <div className="flex items-start gap-3 mb-4">
+                            <div className="flex-shrink-0 w-9 h-9 rounded-full bg-red-100 flex items-center justify-center">
+                                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900 mb-1">Overwrite unsaved changes?</h3>
+                                <p className="text-xs text-gray-500 leading-relaxed">
+                                    Pulling from the collection will overwrite your current unsaved changes. This cannot be undone.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => setPullOverwriteWarningOpen(false)}
+                                className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setPullOverwriteWarningOpen(false);
+                                    handleSchemaSync(acctId, viewingAs);
+                                }}
+                                className="px-4 py-2 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
+                            >
+                                Pull &amp; overwrite
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <div className="min-h-screen bg-gray-50 relative">
-                <LoadingMask loading={loading} title="Loading..." message="Please wait while we fetch your data" />
+                <LoadingMask loading={!chartsReady} title="Loading..." message="Please wait while we fetch your data" />
                 <div
                     className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-30"
                     style={{
@@ -2587,24 +3301,175 @@ const AnalyticsDashboardPage = () => {
                     <div className="w-full px-6 py-2">
                         <div className="flex justify-between items-center">
                             <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                                <div className="w-6 h-6 bg-gray-900 rounded-md flex items-center justify-center">
-                                    <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <div className="group relative w-8 h-8 bg-transparent rounded-lg flex items-center justify-center border border-gray-300 hover:bg-blue-50 hover:border-blue-500 transition-all duration-300 hover:scale-110 focus:ring-1 focus:ring-blue-400">
+                                    <svg className="w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                     </svg>
                                 </div>
                                 Analytics Dashboard
                             </h1>
                             <div className="flex items-center gap-2">
+                                {!isViewingOtherAdmin && (
                                 <button
                                     onClick={refreshAllCharts}
                                     disabled={globalRefreshing}
                                     title="Refresh all charts"
-                                    className="w-8 h-8 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all flex items-center justify-center disabled:opacity-50"
+                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-gray-100 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
-                                    <svg className={`w-4 h-4 ${globalRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    <svg className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${globalRefreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                     </svg>
                                 </button>
+                                )}
+                                {!isViewingOtherAdmin && (
+                                <button
+                                    onClick={handleDownloadPDF}
+                                    disabled={pdfDownloading || charts.length === 0}
+                                    title="Download all charts as PDF"
+                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-indigo-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-indigo-500 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    {pdfDownloading ? (
+                                        <svg className="w-4 h-4 text-indigo-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-4 h-4 text-gray-600 group-hover:text-indigo-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                                        </svg>
+                                    )}
+                                </button>
+                                )}
+                                {/* Pull changes from collection */}
+                                <button
+                                    onClick={() => {
+                                        // If viewing own dashboard and there are unsaved changes, warn before overwriting
+                                        if (hasUnsavedChanges) {
+                                            setPullOverwriteWarningOpen(true);
+                                        } else {
+                                            handleSchemaSync(acctId, viewingAs);
+                                        }
+                                    }}
+                                    disabled={schemaSyncing}
+                                    title="Pull changes"
+                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-blue-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-blue-500 focus:ring-1 focus:ring-blue-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <svg className={`w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors ${schemaSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                                    </svg>
+                                </button>
+                                {/* Save changes — hidden when viewing another admin */}
+                                {!isViewingOtherAdmin && (
+                                <button
+                                    onClick={handleSchemaSave}
+                                    disabled={schemaSaving || !hasUnsavedChanges}
+                                    title={hasUnsavedChanges ? 'Save changes' : 'No unsaved changes'}
+                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-yellow-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-yellow-400 focus:ring-1 focus:ring-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <svg className={`w-4 h-4 text-gray-600 group-hover:text-yellow-600 transition-colors ${schemaSaving ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                    </svg>
+                                </button>
+                                )}
+                                {/* Copy to my dashboard — only visible when viewing another admin */}
+                                {isViewingOtherAdmin && (
+                                <button
+                                    onClick={handleSchemaSave}
+                                    disabled={schemaSaving}
+                                    title="Copy analytics to my dashboard"
+                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-purple-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-purple-400 focus:ring-1 focus:ring-purple-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <svg className={`w-4 h-4 text-gray-600 group-hover:text-purple-600 transition-colors ${schemaSaving ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                </button>
+                                )}
+                                {/* View As dropdown */}
+                                <div ref={viewAsRef} className="relative">
+                                    <button
+                                        onClick={() => setViewAsOpen(o => !o)}
+                                        className="inline-flex items-center justify-between gap-1.5 h-8 w-max min-w-[9rem] px-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all text-xs font-medium"
+                                        title="View As"
+                                    >
+                                        {viewAsAdmin ? (
+                                            getAdminAvatar(viewAsAdmin) && !viewAsAvatarError ? (
+                                                <img
+                                                    src={getAdminAvatar(viewAsAdmin)}
+                                                    alt=""
+                                                    className="w-5 h-5 rounded-full object-cover flex-shrink-0"
+                                                    onError={() => setViewAsAvatarError(true)}
+                                                />
+                                            ) : (
+                                                <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ background: getAdminColor(viewAsAdmin) }}>
+                                                    {getAdminInitials(viewAsAdmin)}
+                                                </span>
+                                            )
+                                        ) : (
+                                            <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                            </svg>
+                                        )}
+                                        <span className="whitespace-nowrap">
+                                            {viewAsAdmin ? getAdminDisplayName(viewAsAdmin) : 'View As'}
+                                        </span>
+                                        <svg className={`w-3 h-3 text-gray-400 transition-transform ${viewAsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                    {viewAsOpen && (
+                                        <div className="absolute right-0 top-full mt-1 min-w-full w-max bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1 max-h-64 overflow-y-auto">
+                                            {viewAsAdmins.filter(admin => {
+                                                const currentUserId = localStorage.getItem('userId');
+                                                const adminId = admin._id || admin.id || admin.adminId || admin.userId || admin.authId || admin.authUserId;
+                                                return adminId !== currentUserId;
+                                            }).map((admin, idx) => {
+                                                const isSelected = viewAsAdmin?._id === admin._id;
+                                                return (
+                                                <button
+                                                    key={admin._id || idx}
+                                                    onClick={() => !isSelected && handleViewAsChange(admin)}
+                                                    disabled={isSelected}
+                                                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors
+                                                        ${isSelected
+                                                            ? 'font-semibold text-gray-900 bg-gray-100 cursor-not-allowed opacity-60'
+                                                            : 'text-gray-600 hover:bg-gray-50 cursor-pointer'
+                                                        }`}
+                                                >
+                                                    {getAdminAvatar(admin) ? (
+                                                        <>
+                                                            <img
+                                                                src={getAdminAvatar(admin)}
+                                                                alt=""
+                                                                className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+                                                                onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+                                                            />
+                                                            <span style={{ display: 'none', background: getAdminColor(admin) }} className="w-6 h-6 rounded-full items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                                                                {getAdminInitials(admin)}
+                                                            </span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ background: getAdminColor(admin) }}>
+                                                            {getAdminInitials(admin)}
+                                                        </span>
+                                                    )}
+                                                    <span className="truncate flex-1">{getAdminDisplayName(admin)}</span>
+                                                    {isSelected && (
+                                                        <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                                );
+                                            })}
+                                            {viewAsAdmins.filter(admin => {
+                                                const currentUserId = localStorage.getItem('userId');
+                                                const adminId = admin._id || admin.id || admin.adminId || admin.userId || admin.authId || admin.authUserId;
+                                                return adminId !== currentUserId;
+                                            }).length === 0 && (
+                                                    <p className="px-3 py-2 text-xs text-gray-400">No other admins found</p>
+                                                )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2620,16 +3485,18 @@ const AnalyticsDashboardPage = () => {
                                 </svg>
                             </div>
                             <h3 className="text-sm font-semibold text-gray-700 mb-1">No Charts Yet</h3>
-                            <p className="text-xs text-gray-400 mb-5">Add a chart to start visualizing your data</p>
+                            <p className="text-xs text-gray-400 mb-5">{isViewingOtherAdmin ? 'This admin has no charts configured' : 'Add a chart to start visualizing your data'}</p>
+                            {!isViewingOtherAdmin && (
                             <button
                                 onClick={addChart}
-                                className="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5"
+                                className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5 shadow-md shadow-indigo-500/30"
                             >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                 </svg>
                                 Add Your First Chart
                             </button>
+                            )}
                         </div>
                     ) : (
                         <>
@@ -2637,7 +3504,8 @@ const AnalyticsDashboardPage = () => {
                                 {charts.map(chart => renderChartCard(chart))}
                             </div>
 
-                            {/* Floating Add Chart Button */}
+                            {/* Floating Add Chart Button — hidden when viewing another admin */}
+                            {!isViewingOtherAdmin && (
                             <div className="flex justify-center mt-6">
                                 <button
                                     onClick={addChart}
@@ -2649,6 +3517,7 @@ const AnalyticsDashboardPage = () => {
                                     Add Another Chart
                                 </button>
                             </div>
+                            )}
                         </>
                     )}
                 </div>

@@ -48,7 +48,7 @@ const SettingsPage = () => {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* ── Navbar (same style as LeadsGrid) ────────────────────────── */}
-            <nav className="bg-black border-b border-gray-800 shadow-lg">
+            <nav className="bg-gradient-to-b from-slate-900 to-slate-800 border-b border-slate-700/60" style={{boxShadow: '0 4px 24px 0 rgba(99,102,241,0.10), 0 1px 0 0 rgba(255,255,255,0.04) inset'}}>
                 <div className="container mx-auto px-4">
                     <div className="flex items-center gap-4">
                         {/* Logo */}
@@ -60,7 +60,7 @@ const SettingsPage = () => {
                         <div className="flex items-center gap-1">
                             <button
                                 onClick={() => navigate('/leads')}
-                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-gray-400 hover:bg-gray-900 hover:text-white"
+                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white"
                             >
                                 <div className="flex items-center gap-1.5">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -71,7 +71,7 @@ const SettingsPage = () => {
                             </button>
                             <button
                                 onClick={() => navigate('/admin')}
-                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-gray-400 hover:bg-gray-900 hover:text-white"
+                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white"
                             >
                                 <div className="flex items-center gap-1.5">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -81,7 +81,7 @@ const SettingsPage = () => {
                                 </div>
                             </button>
                             <button
-                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative bg-gray-900 text-white shadow-lg"
+                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative bg-gradient-to-b from-slate-700/80 to-slate-800/80 text-white shadow-lg"
                             >
                                 <div className="flex items-center gap-1.5">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -90,7 +90,7 @@ const SettingsPage = () => {
                                     </svg>
                                     Settings
                                 </div>
-                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-t-full"></div>
+                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-indigo-400 to-violet-400 rounded-t-full"></div>
                             </button>
                         </div>
 
@@ -114,14 +114,14 @@ const SettingsPage = () => {
                             <div className="relative" ref={userMenuRef}>
                                 <button
                                     onClick={() => { setShowUserMenu(v => !v); }}
-                                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 transition-all duration-300 border border-gray-700"
+                                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 transition-all duration-300 border border-slate-600/70 backdrop-blur-sm"
                                 >
                                     {(() => {
                                         const imgUrl = userDetails?.profileImageUrl || '';
-                                        const src = imgUrl.startsWith('/') ? `http://localhost:8080${imgUrl}` : imgUrl;
+                                        const src = imgUrl.startsWith('http') ? imgUrl : (imgUrl ? imgUrl : '');
                                         return src
-                                            ? <img src={src} alt="avatar" className="w-6 h-6 rounded-full object-cover border border-gray-600 flex-shrink-0" />
-                                            : <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-xs font-bold shadow-lg border border-gray-600">
+                                            ? <img src={src} alt="avatar" className="w-6 h-6 rounded-full object-cover border border-indigo-400/40 flex-shrink-0" />
+                                            : <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold shadow-lg border border-indigo-400/40">
                                                 {user?.name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
                                             </div>;
                                     })()}
@@ -138,7 +138,19 @@ const SettingsPage = () => {
                                         </div>
                                         <button
                                             onClick={() => { setShowUserMenu(false); navigate('/profile'); }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-gray-900 hover:bg-gray-100 transition-colors flex items-center gap-1.5"
+                                            className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                            </svg>
+                                            My Profile
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setShowUserMenu(false);
+                                                logout();
+                                            }}
+                                            className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
                                         >
                                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -176,7 +188,7 @@ const SettingsPage = () => {
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id)}
                                     className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${activeTab === tab.id
-                                        ? 'border-black text-black'
+                                        ? 'border-indigo-600 text-indigo-700'
                                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                         }`}
                                 >

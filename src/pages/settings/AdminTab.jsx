@@ -144,17 +144,17 @@ const AdminTab = ({ acctId }) => {
     const renderSortIcon = (col) => {
         if (sortField !== col) {
             return (
-                <svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="absolute -right-4 w-3 h-3 text-indigo-400 opacity-0 group-hover/sort:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                 </svg>
             );
         }
         return sortOrder === 'asc' ? (
-            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="absolute -right-4 w-3 h-3 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
             </svg>
         ) : (
-            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="absolute -right-4 w-3 h-3 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
         );
@@ -180,7 +180,7 @@ const AdminTab = ({ acctId }) => {
 
             <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-white rounded-lg shadow-2xl border border-gray-200">
                 {error && (
-                    <div className="bg-gray-100 border-l-4 border-black text-gray-900 px-3 py-2 m-3 rounded-lg">
+                                <div className="bg-indigo-50 border-l-4 border-indigo-500 text-indigo-900 px-3 py-2 m-3 rounded-lg">
                         <div className="flex items-center gap-2">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -189,41 +189,54 @@ const AdminTab = ({ acctId }) => {
                         </div>
                     </div>
                 )}
-                <div className="flex-1 overflow-auto min-h-0">
+                <div className="flex-1 overflow-y-scroll overflow-x-auto min-h-0">
                     <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-black">
-                            <tr>
-                                {columns.map((col) => (
-                                    <th key={col} className={`px-3 py-2 ${isNameKey(col) ? 'text-left' : 'text-center'}`}>
-                                        <div
-                                            className={`flex items-center ${isNameKey(col) ? 'justify-start' : 'justify-center'} gap-1 cursor-pointer hover:text-gray-300 mb-1.5 transition-colors`}
-                                            onClick={() => handleSort(col)}
-                                        >
-                                            <span className="text-[10px] font-bold text-white uppercase tracking-wider">
-                                                {formatFieldName(col)}
-                                            </span>
-                                            {renderSortIcon(col)}
-                                        </div>
-                                        <input
-                                            type="text"
-                                            placeholder="Filter..."
-                                            value={filters[col] || ''}
-                                            onChange={(e) => handleFilterChange(col, e.target.value)}
-                                            onClick={(e) => e.stopPropagation()}
-                                            className={`w-full px-2 py-1 text-[10px] border border-gray-700 bg-gray-900 text-white rounded focus:ring-1 focus:ring-gray-500 focus:border-transparent placeholder-gray-500 transition-all ${isNameKey(col) ? 'text-left' : 'text-center'}`}
-                                        />
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-100">
-                            {loading ? (
+<thead className="sticky top-0 z-10 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] transition-all group/header">
+                                    <tr>
+                                        {columns.map((col) => (
+                                            <th key={col} className={`px-3 py-2.5 relative align-bottom ${isNameKey(col) ? 'text-left' : 'text-center'}`}>
+                                                <div
+                                                    className={`flex items-center ${isNameKey(col) ? 'justify-start' : 'justify-center'} cursor-pointer group/sort mb-1.5 transition-colors`}
+                                                    onClick={() => handleSort(col)}
+                                                >
+                                                    <div className="relative inline-flex items-center">
+                                                        <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider group-hover/sort:text-indigo-600 transition-colors">
+                                                            {formatFieldName(col)}
+                                                        </span>
+                                                        {renderSortIcon(col)}
+                                                    </div>
+                                                </div>
+                                                <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
+                                                    <div className="overflow-hidden">
+                                                        <div className="pb-1 pt-0.5 px-0.5">
+                                                            <div className="relative rounded-md bg-slate-200/80 focus-within:bg-gradient-to-r focus-within:from-indigo-500 focus-within:via-violet-400 focus-within:to-indigo-500 p-[1px] transition-all duration-300 shadow-sm focus-within:shadow-[0_0_10px_rgba(99,102,241,0.3)]">
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="Filter..."
+                                                                    value={filters[col] || ''}
+                                                                    onChange={(e) => handleFilterChange(col, e.target.value)}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className={`w-full px-2 py-1 text-[10px] bg-white/70 focus:bg-white text-slate-700 rounded-[5px] outline-none placeholder-slate-400 transition-all ${isNameKey(col) ? 'text-left' : 'text-center'}`}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </th>
+                                        ))}
+                                    </tr>
+                                    <tr>
+                                        <th colSpan="100" className="p-0 h-[3px] bg-gradient-to-r from-indigo-500 via-violet-400 to-indigo-500 border-none shadow-[0_0_15px_rgba(99,102,241,0.6)] relative z-20"></th>
+                                    </tr>
+                                </thead>
+                        <tbody className={`bg-white divide-y divide-gray-100 transition-opacity duration-200 ${loading && admins.length > 0 ? 'opacity-50 pointer-events-none' : ''}`}>
+                            {loading && admins.length === 0 ? (
                                 <tr>
                                     <td colSpan={columns.length || 1} className="px-3 py-6 text-center">
                                         <div className="flex flex-col justify-center items-center gap-2">
                                             <div className="relative">
                                                 <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-300"></div>
-                                                <div className="animate-spin rounded-full h-8 w-8 border-4 border-black border-t-transparent absolute top-0"></div>
+                                                <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent absolute top-0"></div>
                                             </div>
                                             <span className="text-gray-600 text-xs font-medium">Loading admins...</span>
                                         </div>
@@ -308,9 +321,9 @@ const AdminTab = ({ acctId }) => {
                     <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                         <div>
                             <p className="text-xs text-gray-700 font-medium">
-                                Showing <span className="font-bold text-black">{totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1}</span> to{' '}
-                                <span className="font-bold text-black">{Math.min(currentPage * pageSize, totalRecords)}</span> of{' '}
-                                <span className="font-bold text-black">{totalRecords}</span> results
+                                    Showing <span className="font-bold text-indigo-700">{totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1}</span> to{' '}
+                                                <span className="font-bold text-indigo-700">{Math.min(currentPage * pageSize, totalRecords)}</span> of{' '}
+                                                <span className="font-bold text-indigo-700">{totalRecords}</span> results
                             </p>
                         </div>
                         <div>
@@ -334,7 +347,7 @@ const AdminTab = ({ acctId }) => {
                                                 key={page}
                                                 onClick={() => goToPage(page)}
                                                 className={`relative inline-flex items-center px-2 py-1 border text-xs font-medium transition-all ${currentPage === page
-                                                    ? 'z-10 bg-black border-black text-white shadow-lg'
+                                                    ? 'z-10 bg-gradient-to-b from-indigo-500 to-indigo-700 border-indigo-600 text-white shadow-lg shadow-indigo-500/30'
                                                     : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
                                                     }`}
                                             >

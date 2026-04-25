@@ -72,7 +72,7 @@ const ProfilePage = () => {
             setNewPhone(u.phone || '');
             // Resolve relative profile image URLs
             const imgUrl = u.profileImageUrl || '';
-            setAvatarPreview(imgUrl.startsWith('/') ? `http://localhost:8080${imgUrl}` : imgUrl);
+            setAvatarPreview(imgUrl || '');
         } catch {
             // Fallback to AuthContext values
             const src = userDetails || user || {};
@@ -108,7 +108,7 @@ const ProfilePage = () => {
         if (userDetails.phone) setNewPhone(userDetails.phone);
         if (userDetails.profileImageUrl) {
             const img = userDetails.profileImageUrl;
-            setAvatarPreview(img.startsWith('/') ? `http://localhost:8080${img}` : img);
+            setAvatarPreview(img || '');
         }
     }, [userDetails]);
 
@@ -208,8 +208,7 @@ const ProfilePage = () => {
             });
             const imageUrl = res.data?.data?.imageUrl || res.data?.fileUrl || res.data?.imageUrl || '';
             if (imageUrl) {
-                const resolved = imageUrl.startsWith('/') ? `http://localhost:8080${imageUrl}` : imageUrl;
-                setAvatarPreview(`${resolved}?t=${Date.now()}`);
+                setAvatarPreview(`${imageUrl}?t=${Date.now()}`);
             } else {
                 throw new Error('Failed to get uploaded image URL');
             }
@@ -228,7 +227,7 @@ const ProfilePage = () => {
         <div className="min-h-screen bg-gray-50">
             <NotificationComponent />
             {/* ── Navbar ───────────────────────────────────────────────────── */}
-            <nav className="bg-black border-b border-gray-800 shadow-lg">
+            <nav className="bg-gradient-to-b from-slate-900 to-slate-800 border-b border-slate-700/60" style={{boxShadow: '0 4px 24px 0 rgba(99,102,241,0.10), 0 1px 0 0 rgba(255,255,255,0.04) inset'}}>
                 <div className="container mx-auto px-4">
                     <div className="flex items-center gap-4">
                         {/* Logo */}
@@ -238,7 +237,7 @@ const ProfilePage = () => {
 
                         {/* Nav tabs */}
                         <div className="flex items-center gap-1">
-                            <button onClick={() => navigate('/leads')} className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-gray-400 hover:bg-gray-900 hover:text-white">
+                            <button onClick={() => navigate('/leads')} className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white">
                                 <div className="flex items-center gap-1.5">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -246,7 +245,7 @@ const ProfilePage = () => {
                                     Leads
                                 </div>
                             </button>
-                            <button onClick={() => navigate('/admin')} className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-gray-400 hover:bg-gray-900 hover:text-white">
+                            <button onClick={() => navigate('/admin')} className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white">
                                 <div className="flex items-center gap-1.5">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -254,7 +253,7 @@ const ProfilePage = () => {
                                     Admin
                                 </div>
                             </button>
-                            <button onClick={() => navigate('/settings')} className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-gray-400 hover:bg-gray-900 hover:text-white">
+                            <button onClick={() => navigate('/settings')} className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white">
                                 <div className="flex items-center gap-1.5">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -282,15 +281,27 @@ const ProfilePage = () => {
 
                             {/* User Profile */}
                             <div className="relative" ref={userMenuRef}>
-                                <button
-                                    onClick={() => setShowUserMenu(v => !v)}
-                                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 transition-all duration-300 border border-gray-700"
-                                >
+                                        <button
+                                            onClick={() => { setShowUserMenu(false); navigate('/profile'); }}
+                                            className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 bg-indigo-50/50"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                            </svg>
+                                            My Profile
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setShowUserMenu(false);
+                                                logout();
+                                            }}
+                                            className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
+                                        >
                                     {avatarPreview
-                                        ? <img src={avatarPreview} alt="avatar" className="w-6 h-6 rounded-full object-cover border border-gray-600" />
-                                        : <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-xs font-bold shadow-lg border border-gray-600">{initials}</div>
+                                        ? <img src={avatarPreview} alt="avatar" className="w-6 h-6 rounded-full object-cover border border-indigo-400/40" />
+                                        : <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold shadow-lg border border-indigo-400/40">{initials}</div>
                                     }
-                                    <span className="text-xs font-medium text-white hidden md:block">{userData.email || user?.email || 'User'}</span>
+                                     <span className="text-xs font-medium text-white hidden md:block">{userData.name || user?.name || user?.email || 'User'}</span>
                                     <svg className={`w-3 h-3 text-gray-400 transition-transform duration-300 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                     </svg>
@@ -334,7 +345,7 @@ const ProfilePage = () => {
                         <div className="relative">
                             {avatarPreview
                                 ? <img src={avatarPreview} alt="Profile" className="w-20 h-20 rounded-full object-cover border-2 border-gray-200 shadow" />
-                                : <div className="w-20 h-20 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-2xl font-bold border-2 border-gray-200 shadow">{initials}</div>
+                                : <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-2xl font-bold border-2 border-gray-200 shadow">{initials}</div>
                             }
                             {avatarLoading && (
                                 <div className="absolute inset-0 rounded-full bg-black bg-opacity-40 flex items-center justify-center">
@@ -349,7 +360,7 @@ const ProfilePage = () => {
                             {/* Only JPEG/PNG accepted — validated in handleAvatarChange */}
                             <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleAvatarChange} />
                             <button onClick={() => fileInputRef.current?.click()} disabled={avatarLoading}
-                                className="px-4 py-2 text-xs font-semibold bg-black text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50">
+                                className="px-4 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-colors shadow-md shadow-indigo-500/30 disabled:opacity-50">
                                 {avatarLoading ? 'Uploading...' : 'Change Photo'}
                             </button>
                             <p className="text-[11px] text-gray-400 mt-1.5">JPEG or PNG only</p>
@@ -397,12 +408,12 @@ const ProfilePage = () => {
                                 value={newEmail}
                                 onChange={e => setNewEmail(e.target.value)}
                                 placeholder="you@example.com"
-                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                             />
                         </div>
 
                         <button type="submit" disabled={emailLoading}
-                            className="px-5 py-2 text-xs font-semibold bg-black text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                            className="px-5 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-colors shadow-md shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
                             {emailLoading ? (
                                 <>
                                     <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -428,12 +439,12 @@ const ProfilePage = () => {
                                 value={newPhone}
                                 onChange={e => setNewPhone(e.target.value)}
                                 placeholder="+1 234 567 8900"
-                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                             />
                         </div>
 
                         <button type="submit" disabled={phoneLoading}
-                            className="px-5 py-2 text-xs font-semibold bg-black text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                            className="px-5 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-colors shadow-md shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
                             {phoneLoading ? (
                                 <>
                                     <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -464,7 +475,7 @@ const ProfilePage = () => {
                                         value={pwForm[key]}
                                         onChange={e => setPwForm(f => ({ ...f, [key]: e.target.value }))}
                                         placeholder="••••••••"
-                                        className="w-full px-3 py-2 pr-9 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                                        className="w-full px-3 py-2 pr-9 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                                     />
                                     <button type="button" onClick={() => setShowPw(s => ({ ...s, [key]: !s[key] }))}
                                         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -478,7 +489,7 @@ const ProfilePage = () => {
                         ))}
 
                         <button type="submit" disabled={pwLoading}
-                            className="px-5 py-2 text-xs font-semibold bg-black text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                            className="px-5 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-colors shadow-md shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
                             {pwLoading ? (
                                 <>
                                     <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">

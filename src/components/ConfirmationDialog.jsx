@@ -39,7 +39,7 @@ const ConfirmationDialog = ({
         warning: {
             iconBg: 'bg-yellow-100',
             iconColor: 'text-yellow-600',
-            buttonBg: 'bg-black hover:bg-gray-800 focus:ring-black',
+            buttonBg: 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 focus:ring-indigo-500',
         },
         danger: {
             iconBg: 'bg-red-100',
