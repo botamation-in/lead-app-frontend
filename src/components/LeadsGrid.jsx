@@ -1055,7 +1055,7 @@ const LeadsGrid = () => {
 
                                         <div className="flex-1 overflow-auto min-h-0">
                                             <table className="min-w-full divide-y divide-gray-200">
-                                                <thead className="bg-black">
+                                                <thead className="bg-black sticky top-0 z-10">
                                                     <tr>
                                                         {(visibleFields ?? fields).map((field) => (
                                                             <th key={field} className="px-3 py-2 text-center">

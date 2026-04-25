@@ -1268,7 +1268,6 @@ const AnalyticsDashboardPage = () => {
             })
             .catch(() => { });
     }, [acctId]);
-    }, [acctId]);
     // Handle View As selection change
     const handleViewAsChange = async (selectedAdmin) => {
         const currentUserId = localStorage.getItem('userId');
