@@ -1194,7 +1194,7 @@ const AnalyticsDashboardPage = () => {
     // Fetch categories when acctId changes
     useEffect(() => {
         fetchCategories();
-    }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [acctId]);
 
     // Fetch admins for View As dropdown — restore previous selection if exists
     useEffect(() => {
@@ -1207,8 +1207,7 @@ const AnalyticsDashboardPage = () => {
 
                 const currentUserId = localStorage.getItem('userId');
                 const currentUserAdminId = localStorage.getItem('currentUserAdmin');
-                const storedViewingAs = viewingAs;
-
+                const storedViewingAs = viewingAsRef.current;
                 // Check if there's a stored viewingAs to restore
                 let adminToSelect = null;
 
@@ -1268,8 +1267,8 @@ const AnalyticsDashboardPage = () => {
                 }
             })
             .catch(() => { });
-    }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
-
+    }, [acctId]);
+    }, [acctId]);
     // Handle View As selection change
     const handleViewAsChange = async (selectedAdmin) => {
         const currentUserId = localStorage.getItem('userId');
@@ -1549,9 +1548,6 @@ const AnalyticsDashboardPage = () => {
             const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
             return (
                 <g>
-                    <path
-                        d={`M ${cx + outerRadius * Math.cos(-startAngle * Math.PI / 180)} ${cy + outerRadius * Math.sin(-startAngle * Math.PI / 180)}`}
-                    />
                     <Sector
                         cx={cx} cy={cy}
                         innerRadius={innerRadius}
@@ -1967,8 +1963,7 @@ const AnalyticsDashboardPage = () => {
                                 labelStyle={tooltipStyle.labelStyle}
                                 itemStyle={tooltipStyle.itemStyle}
                                 formatter={(value, name) => {
-                                    const total = outerData.find(d => d.name === name) ? totalInner : totalInner;
-                                    const pct = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                    const total = outerData.find(d => d.name === name) ? totalOuter : totalInner;
                                     return [`${value.toLocaleString()} (${pct}%)`, lbl(name)];
                                 }}
                             />
@@ -2007,15 +2002,6 @@ const AnalyticsDashboardPage = () => {
                 )}
             </div>
         );
-    };
-
-    // ── placeholder so darkenHex reference doesn't break (unused) ──────────
-    const darkenHex = (hex, f = 0.55) => {
-        const n = parseInt((hex || '#6366f1').replace('#', ''), 16);
-        const r = Math.round(((n >> 16) & 0xff) * f);
-        const g = Math.round(((n >> 8) & 0xff) * f);
-        const b = Math.round((n & 0xff) * f);
-        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
     };
 
     const renderChart = (chartConfig) => {
@@ -2244,12 +2230,12 @@ const AnalyticsDashboardPage = () => {
                         type="text"
                         value={chartConfig.chartName || ''}
                         placeholder={`Chart ${chartConfig.id}`}
-                        onChange={(e) => updateChartConfig(chartConfig.id, 'chartName', e.target.value)}
-                        onMouseDown={(e) => e.stopPropagation()}
+                        onChange={(e) => !isViewingOtherAdmin && updateChartConfig(chartConfig.id, 'chartName', e.target.value)}
                         onClick={(e) => e.stopPropagation()}
-                        className="flex-1 text-sm font-semibold text-white bg-transparent outline-none border-none cursor-text placeholder:text-gray-500 min-w-0"
-                    />
+                        className={'flex-1 text-sm font-semibold text-white bg-transparent outline-none border-none placeholder:text-gray-500 min-w-0 ' + (isViewingOtherAdmin ? 'cursor-default pointer-events-none' : 'cursor-text')}
 
+                        onMouseDown={(e) => e.stopPropagation()}
+                    />
                     {/* Settings toggle button */}
                     {!isViewingOtherAdmin && (
                     <button

@@ -11,6 +11,9 @@ import { useNotifications } from './Notifications';
 import LoadingMask from './LoadingMask';
 import DeleteConfirmation from './DeleteConfirmation';
 
+
+// Avatar colour palette — used in lead row renderer
+const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0284c7'];
 const LeadsGrid = () => {
     const navigate = useNavigate();
     const location = useLocation();
@@ -205,6 +208,8 @@ const LeadsGrid = () => {
     const [selectedCategory, setSelectedCategory] = useState('');
     const [categoryLoading, setCategoryLoading] = useState(false);
     const [categoriesReady, setCategoriesReady] = useState(false);
+    const [deleteCategoryPending, setDeleteCategoryPending] = useState(null); // { _id, categoryName, leadCount }
+    const [deleteCategoryLoading, setDeleteCategoryLoading] = useState(false);
 
     // Account API key (fetched once per account, used for lead create)
     const [apiKey, setApiKey] = useState('');
@@ -292,6 +297,26 @@ const LeadsGrid = () => {
         }
     };
 
+    const handleDeleteCategoryConfirm = async () => {
+        if (!deleteCategoryPending) return;
+        setDeleteCategoryLoading(true);
+        try {
+            await api.delete(`/api/ui/leads/categories/${deleteCategoryPending._id}`, { params: { acctId } });
+            showSuccess(`Category "${deleteCategoryPending.categoryName}" and all its leads have been deleted.`);
+            // Remove from list and clear selection if it was active
+            setCategories(prev => prev.filter(c => c._id !== deleteCategoryPending._id));
+            if (selectedCategory === deleteCategoryPending._id) {
+                setSelectedCategory('');
+                setAppliedFilters(prev => { const f = { ...prev }; delete f.categoryId; return f; });
+            }
+            setDeleteCategoryPending(null);
+        } catch (err) {
+            showError(err.response?.data?.message || 'Failed to delete category.');
+        } finally {
+            setDeleteCategoryLoading(false);
+        }
+    };
+
     // Fetch leads from API
     const fetchLeads = async () => {
         // Wait until account state is resolved and categories are ready before fetching
@@ -304,7 +329,7 @@ const LeadsGrid = () => {
         setError(null);
 
         try {
-            const { category: _omit, ...safeFilters } = appliedFilters;
+            const { categoryId: _omit, ...safeFilters } = appliedFilters;
             const params = {
                 page: currentPage,
                 limit: pageSize,
@@ -726,7 +751,7 @@ const LeadsGrid = () => {
                                 >
                                     {(() => {
                                         const imgUrl = userDetails?.profileImageUrl || '';
-                                        const src = imgUrl.startsWith('/') ? `http://localhost:8080${imgUrl}` : imgUrl;
+                                        const src = imgUrl;
                                         return src
                                             ? <img src={src} alt="avatar" className="w-6 h-6 rounded-full object-cover border border-gray-600 flex-shrink-0" />
                                             : <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white text-xs font-bold shadow-lg border border-gray-600">
@@ -805,172 +830,10 @@ const LeadsGrid = () => {
 
                 {isAccountLinked && (
                     <div className="flex-1 flex flex-col min-h-0 animate-fade-in">
-                        <div className="mb-3 flex-shrink-0 flex justify-start gap-2">
-                            {/* Clear Filters button */}
-                            <button
-                                onClick={() => {
-                                    const cleared = {};
-                                    fields.forEach(f => { cleared[f] = ''; });
-                                    setFilters(cleared);
-                                    // Remove persisted filters for this account + category
-                                    saveFilters(acctId, selectedCategory, null);
-                                    setAppliedFilters(prev => {
-                                        const updated = {};
-                                        if (prev.categoryId) updated.categoryId = prev.categoryId;
-                                        return updated;
-                                    });
-                                    setCurrentPage(1);
-                                }}
-                                disabled={loading || Object.keys(appliedFilters).length === 0}
-                                className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-red-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-red-400 focus:ring-1 focus:ring-red-300 disabled:opacity-40 disabled:cursor-not-allowed"
-                                title={Object.keys(appliedFilters).length > 0 ? `Clear ${Object.keys(appliedFilters).length} active filter${Object.keys(appliedFilters).length !== 1 ? 's' : ''}` : 'No active filters'}
-                            >
-                                <svg className="w-4 h-4 text-gray-600 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12" />
-                                </svg>
-                            </button>
+                        <div className="mb-3 flex-shrink-0 flex items-center justify-start gap-1">
 
-                            {/* Refresh grid */}
-                            <button
-                                onClick={fetchLeads}
-                                disabled={loading}
-                                className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-gray-100 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                                title={loading ? 'Loading...' : 'Refresh leads'}
-                            >
-                                <svg
-                                    className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`}
-                                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                >
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                            </button>
-
-                            {/* Export to Excel — icon-only */}
-                            <button
-                                onClick={handleExportExcel}
-                                disabled={isExporting || loading}
-                                className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-emerald-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-emerald-500 focus:ring-1 focus:ring-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                                title={isExporting ? 'Exporting...' : (Object.keys(appliedFilters).length > 0 ? `Export filtered leads (${totalRecords}) to Excel` : 'Export all leads to Excel')}
-                            >
-                                {isExporting ? (
-                                    <svg className="w-4 h-4 text-emerald-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                ) : (
-                                    <svg className="w-4 h-4 text-gray-600 group-hover:text-emerald-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                                    </svg>
-                                )}
-                            </button>
-
-                            <button
-                                onClick={() => window.open('/analytics', '_blank')}
-                                className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-blue-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-blue-500 focus:ring-1 focus:ring-blue-400"
-                                title="Analytics"
-                            >
-                                <svg className="w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                </svg>
-                            </button>
-
-                            {/* Add New Lead */}
-                            <button
-                                onClick={handleAdd}
-                                disabled={loading || fields.length === 0}
-                                className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-yellow-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-yellow-400 focus:ring-1 focus:ring-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
-                                title="Add New Lead"
-                            >
-                                <svg className="w-4 h-4 text-gray-600 group-hover:text-yellow-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                </svg>
-                            </button>
-
-                            {/* Column Visibility Selector */}
-                            {fields.length > 0 && (
-                                <div className="relative" ref={columnSelectorRef}>
-                                    <button
-                                        onClick={() => setShowColumnSelector(v => !v)}
-                                        className={`group relative w-8 h-8 bg-transparent rounded-lg transition-all duration-300 flex items-center justify-center hover:scale-110 border focus:ring-1 focus:ring-orange-400 hover:bg-orange-50 hover:border-orange-500 ${showColumnSelector
-                                            ? 'bg-orange-50 border-orange-500'
-                                            : 'border-gray-300'
-                                            }`}
-                                        title="Show / hide columns"
-                                    >
-                                        <svg
-                                            className={`w-4 h-4 transition-colors ${showColumnSelector ? 'text-orange-600' : 'text-gray-600 group-hover:text-orange-600'
-                                                }`}
-                                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                        >
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 6h18M3 14h18M3 18h18" />
-                                        </svg>
-                                        {visibleFields !== null && visibleFields.length !== fields.length && (
-                                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-black rounded-full text-white text-[8px] flex items-center justify-center font-bold leading-none">
-                                                {visibleFields.length}
-                                            </span>
-                                        )}
-                                    </button>
-
-                                    {showColumnSelector && (
-                                        <div className="absolute left-0 mt-1 w-52 bg-white rounded-lg shadow-2xl border border-gray-200 z-50">
-                                            {/* Header */}
-                                            <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
-                                                <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Columns</span>
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        onClick={() => updateVisibleFields(null)}
-                                                        className="text-[10px] text-black hover:text-gray-600 font-semibold"
-                                                    >
-                                                        All
-                                                    </button>
-                                                    <span className="text-gray-300 text-[10px]">|</span>
-                                                    <button
-                                                        onClick={() => updateVisibleFields(fields.slice(0, 1))}
-                                                        className="text-[10px] text-gray-400 hover:text-gray-700 font-semibold"
-                                                    >
-                                                        None
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            {/* Field list */}
-                                            <div className="max-h-64 overflow-y-auto py-1">
-                                                {fields.map(field => {
-                                                    const checked = visibleFields === null || visibleFields.includes(field);
-                                                    return (
-                                                        <label
-                                                            key={field}
-                                                            className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 cursor-pointer"
-                                                        >
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={checked}
-                                                                onChange={() => {
-                                                                    const current = visibleFields ?? fields;
-                                                                    let next;
-                                                                    if (current.includes(field)) {
-                                                                        const removed = current.filter(f => f !== field);
-                                                                        next = removed.length > 0 ? removed : current;
-                                                                    } else {
-                                                                        next = fields.filter(f => current.includes(f) || f === field);
-                                                                    }
-                                                                    updateVisibleFields(next);
-                                                                }}
-                                                                className="w-3.5 h-3.5 accent-black cursor-pointer flex-shrink-0"
-                                                            />
-                                                            <span className="text-[11px] text-gray-700 font-medium truncate">
-                                                                {formatFieldName(field)}
-                                                            </span>
-                                                        </label>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Category Combobox + Default Checkbox */}
-                            <div className="flex items-center gap-2">
+                            {/* ── Group 1: Data context — Category selector + delete ── */}
+                            <div className="flex items-center gap-1.5">
                                 <Combobox
                                     value={
                                         (selectedCategory ? categories.find(c => c._id === selectedCategory) : null) ?? null
@@ -992,22 +855,173 @@ const LeadsGrid = () => {
                                 {selectedCategory && (() => {
                                     const activeCat = categories.find(c => c._id === selectedCategory);
                                     return activeCat ? (
-                                        <label
-                                            className="flex items-center gap-1.5 cursor-pointer select-none"
-                                            title={activeCat.default ? 'This is the default category' : 'Mark as default'}
+                                        <button
+                                            title={`Delete category "${activeCat.categoryName}"`}
+                                            onClick={() => setDeleteCategoryPending(activeCat)}
+                                            className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-red-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-red-400 focus:ring-1 focus:ring-red-300"
                                         >
-                                            <input
-                                                type="checkbox"
-                                                checked={!!activeCat.default}
-                                                onChange={() => { if (!activeCat.default) handleSetDefault(activeCat._id); }}
-                                                className="w-3.5 h-3.5 accent-black cursor-pointer"
-                                            />
-                                            <span className="text-[11px] font-medium text-gray-600">Default</span>
-                                        </label>
+                                            <svg className="w-4 h-4 text-gray-600 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                            </svg>
+                                        </button>
                                     ) : null;
                                 })()}
                             </div>
 
+                            {/* Divider */}
+                            <div className="w-px h-6 bg-gray-200 mx-1.5" />
+
+                            {/* ── Group 2: View & filter — Clear filters + Refresh ── */}
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    onClick={() => {
+                                        const cleared = {};
+                                        fields.forEach(f => { cleared[f] = ''; });
+                                        setFilters(cleared);
+                                        saveFilters(acctId, selectedCategory, null);
+                                        setAppliedFilters(prev => {
+                                            const updated = {};
+                                            if (prev.categoryId) updated.categoryId = prev.categoryId;
+                                            return updated;
+                                        });
+                                        setCurrentPage(1);
+                                    }}
+                                    disabled={loading || Object.keys(appliedFilters).filter(k => k !== 'categoryId').length === 0}
+                                    className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-red-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-red-400 focus:ring-1 focus:ring-red-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title={Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? `Clear ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length} active filter${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length !== 1 ? 's' : ''}` : 'No active filters'}
+                                >
+                                    <svg className="w-4 h-4 text-gray-600 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12" />
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={fetchLeads}
+                                    disabled={loading}
+                                    className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-gray-100 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title={loading ? 'Loading...' : 'Refresh leads'}
+                                >
+                                    <svg
+                                        className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`}
+                                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* Divider */}
+                            <div className="w-px h-6 bg-gray-200 mx-1.5" />
+
+                            {/* ── Group 3: Display — Show / hide columns ── */}
+                            {fields.length > 0 && (
+                                <div className="relative" ref={columnSelectorRef}>
+                                    <button
+                                        onClick={() => setShowColumnSelector(v => !v)}
+                                        className={`group relative w-8 h-8 bg-transparent rounded-lg transition-all duration-300 flex items-center justify-center hover:scale-110 border focus:ring-1 focus:ring-orange-400 hover:bg-orange-50 hover:border-orange-500 ${showColumnSelector ? 'bg-orange-50 border-orange-500' : 'border-gray-300'}`}
+                                        title="Show / hide columns"
+                                    >
+                                        <svg
+                                            className={`w-4 h-4 transition-colors ${showColumnSelector ? 'text-orange-600' : 'text-gray-600 group-hover:text-orange-600'}`}
+                                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 6h18M3 14h18M3 18h18" />
+                                        </svg>
+                                        {visibleFields !== null && visibleFields.length !== fields.length && (
+                                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-black rounded-full text-white text-[8px] flex items-center justify-center font-bold leading-none">
+                                                {visibleFields.length}
+                                            </span>
+                                        )}
+                                    </button>
+
+                                    {showColumnSelector && (
+                                        <div className="absolute left-0 mt-1 w-52 bg-white rounded-lg shadow-2xl border border-gray-200 z-50">
+                                            <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
+                                                <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Columns</span>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => updateVisibleFields(null)} className="text-[10px] text-black hover:text-gray-600 font-semibold">All</button>
+                                                    <span className="text-gray-300 text-[10px]">|</span>
+                                                    <button onClick={() => updateVisibleFields(fields.slice(0, 1))} className="text-[10px] text-gray-400 hover:text-gray-700 font-semibold">None</button>
+                                                </div>
+                                            </div>
+                                            <div className="max-h-64 overflow-y-auto py-1">
+                                                {fields.map(field => {
+                                                    const checked = visibleFields === null || visibleFields.includes(field);
+                                                    return (
+                                                        <label key={field} className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={checked}
+                                                                onChange={() => {
+                                                                    const current = visibleFields ?? fields;
+                                                                    let next;
+                                                                    if (current.includes(field)) {
+                                                                        const removed = current.filter(f => f !== field);
+                                                                        next = removed.length > 0 ? removed : current;
+                                                                    } else {
+                                                                        next = fields.filter(f => current.includes(f) || f === field);
+                                                                    }
+                                                                    updateVisibleFields(next);
+                                                                }}
+                                                                className="w-3.5 h-3.5 accent-black cursor-pointer flex-shrink-0"
+                                                            />
+                                                            <span className="text-[11px] text-gray-700 font-medium truncate">{formatFieldName(field)}</span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Divider */}
+                            <div className="w-px h-6 bg-gray-200 mx-1.5" />
+
+                            {/* ── Group 4: Output — Export + Analytics ── */}
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    onClick={handleExportExcel}
+                                    disabled={isExporting || loading}
+                                    className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-emerald-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-emerald-500 focus:ring-1 focus:ring-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title={isExporting ? 'Exporting...' : (Object.keys(appliedFilters).length > 0 ? `Export filtered leads (${totalRecords}) to Excel` : 'Export all leads to Excel')}
+                                >
+                                    {isExporting ? (
+                                        <svg className="w-4 h-4 text-emerald-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-4 h-4 text-gray-600 group-hover:text-emerald-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                                        </svg>
+                                    )}
+                                </button>
+                                <button
+                                    onClick={() => window.open('/analytics', '_blank')}
+                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-blue-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-blue-500 focus:ring-1 focus:ring-blue-400"
+                                    title="Open Analytics"
+                                >
+                                    <svg className="w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* Divider */}
+                            <div className="w-px h-6 bg-gray-200 mx-1.5" />
+
+                            {/* ── Group 5: Primary action — Add new lead ── */}
+                            <button
+                                onClick={handleAdd}
+                                disabled={loading || fields.length === 0}
+                                className="group relative h-8 px-3 flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700 text-white rounded-lg transition-all duration-300 hover:scale-105 focus:ring-1 focus:ring-gray-500 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium"
+                                title="Add New Lead"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                                </svg>
+                                Add Lead
+                            </button>
 
                         </div>
 
@@ -1107,7 +1121,7 @@ const LeadsGrid = () => {
                                                                         const imgUrl = lead.adminImage || lead.adminProfileImage || null;
                                                                         const adminName = lead.adminName || '-';
                                                                         const initial = adminName !== '-' ? adminName.charAt(0).toUpperCase() : null;
-                                                                        const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0284c7'];
+
                                                                         const avatarColor = initial ? COLORS[(initial.charCodeAt(0) || 0) % COLORS.length] : null;
                                                                         return (
                                                                             <td key={field} className="px-3 py-2 whitespace-nowrap text-[11px] text-gray-900 font-medium text-center">
@@ -1143,19 +1157,19 @@ const LeadsGrid = () => {
                                                                     <div className="flex items-center justify-center gap-1.5">
                                                                         <button
                                                                             onClick={() => handleEditOpen(lead)}
-                                                                            className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors"
+                                                                            className="group relative w-6 h-6 flex items-center justify-center bg-transparent rounded-md hover:bg-blue-50 transition-all duration-200 hover:scale-110 border border-gray-300 hover:border-blue-300 focus:ring-1 focus:ring-blue-300"
                                                                             title="Edit lead"
                                                                         >
-                                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                            <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                                                             </svg>
                                                                         </button>
                                                                         <button
                                                                             onClick={() => handleDeleteOpen(lead._id)}
-                                                                            className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+                                                                            className="group relative w-6 h-6 flex items-center justify-center bg-transparent rounded-md hover:bg-red-50 transition-all duration-200 hover:scale-110 border border-gray-300 hover:border-red-300 focus:ring-1 focus:ring-red-300"
                                                                             title="Delete lead"
                                                                         >
-                                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                            <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                                                             </svg>
                                                                         </button>
@@ -1318,6 +1332,59 @@ const LeadsGrid = () => {
                 title="Delete Lead"
                 message="Are you sure you want to delete this lead? This action cannot be undone."
             />
+
+            {/* Delete Category Confirmation Modal */}
+            {deleteCategoryPending && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => !deleteCategoryLoading && setDeleteCategoryPending(null)} />
+                    <div className="relative bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-md p-6 animate-fade-in">
+                        {/* Icon */}
+                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mx-auto mb-4">
+                            <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </div>
+                        <h3 className="text-base font-semibold text-gray-900 text-center mb-2">Delete Category</h3>
+                        <p className="text-sm text-gray-600 text-center mb-1">
+                            You are about to permanently delete the category
+                        </p>
+                        <p className="text-sm font-semibold text-gray-900 text-center mb-3">
+                            &ldquo;{deleteCategoryPending.categoryName}&rdquo;
+                        </p>
+                        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-5">
+                            <p className="text-xs text-red-700 text-center leading-relaxed">
+                                This will also delete <strong>all leads</strong> in this category.<br />
+                                This action <strong>cannot be recovered</strong>.
+                            </p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setDeleteCategoryPending(null)}
+                                disabled={deleteCategoryLoading}
+                                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDeleteCategoryConfirm}
+                                disabled={deleteCategoryLoading}
+                                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                            >
+                                {deleteCategoryLoading ? (
+                                    <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                ) : (
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                )}
+                                Delete permanently
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
