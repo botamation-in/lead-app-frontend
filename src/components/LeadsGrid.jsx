@@ -303,11 +303,26 @@ const LeadsGrid = () => {
         try {
             await api.delete(`/api/ui/leads/categories/${deleteCategoryPending._id}`, { params: { acctId } });
             showSuccess(`Category "${deleteCategoryPending.categoryName}" and all its leads have been deleted.`);
-            // Remove from list and clear selection if it was active
-            setCategories(prev => prev.filter(c => c._id !== deleteCategoryPending._id));
+            // Remove from list
+            const remaining = categories.filter(c => c._id !== deleteCategoryPending._id);
+            setCategories(remaining);
+            // If the deleted category was selected, switch to the next best one
             if (selectedCategory === deleteCategoryPending._id) {
-                setSelectedCategory('');
-                setAppliedFilters(prev => { const f = { ...prev }; delete f.categoryId; return f; });
+                const next = remaining.find(c => c.default) || remaining[0] || null;
+                const nextId = next?._id || '';
+                setSelectedCategory(nextId);
+                saveSelectedCategory(acctId, nextId || null);
+                // Update URL
+                const params = new URLSearchParams(window.location.search);
+                if (nextId) params.set('categoryId', nextId);
+                else params.delete('categoryId');
+                navigate(`${window.location.pathname}?${params.toString()}`, { replace: true });
+                setAppliedFilters(prev => {
+                    const f = { ...prev };
+                    if (nextId) f.categoryId = nextId;
+                    else delete f.categoryId;
+                    return f;
+                });
             }
             setDeleteCategoryPending(null);
         } catch (err) {
