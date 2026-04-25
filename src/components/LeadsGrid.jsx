@@ -361,16 +361,17 @@ const LeadsGrid = () => {
             setTotalPages(response.data.pagination?.pages || 1);
             setCurrentPage(response.data.pagination?.page || 1);
 
-            const excludeFields = ['__v', '_id', 'acctId', 'categoryId', 'adminName', 'adminProfileImage'];
-            const apiCategoryFields = Array.isArray(response.data.categoryFields)
-                ? response.data.categoryFields.filter(field => typeof field === 'string' && !excludeFields.includes(field))
-                : [];
-            const firstLead = (response.data.data || [])[0];
-            const fallbackFields = firstLead
-                ? Object.keys(firstLead).filter(field => !excludeFields.includes(field))
-                : [];
-            const baseFields = apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields;
-            const displayFields = baseFields;
+             const excludeFields = ['__v', '_id', 'acctId', 'categoryId', 'adminName', 'adminProfileImage'];
+             const apiCategoryFields = Array.isArray(response.data.categoryFields)
+                 ? response.data.categoryFields.filter(field => typeof field === 'string' && !excludeFields.includes(field))
+                 : [];
+             const firstLead = (response.data.data || [])[0];
+             const fallbackFields = firstLead
+                 ? Object.keys(firstLead).filter(field => !excludeFields.includes(field))
+                 : [];
+             const baseFields = apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields;
+             // Deduplicate while preserving order (guards against backend sending duplicate fields)
+             const displayFields = [...new Set(baseFields)];
 
             if (displayFields.length > 0) {
                 setFields(displayFields);
