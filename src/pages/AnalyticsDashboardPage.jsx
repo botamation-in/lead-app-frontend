@@ -6,11 +6,12 @@ import { useAuth } from '../context/AuthContext';
 import { resolveActiveAcctNo, getAcctIdFromLocalStorage } from '../utils/accountHelpers';
 import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
 import {
-    PieChart, Pie, Cell, Sector, BarChart, Bar, AreaChart, Area,
+    PieChart, Pie, Cell, Sector, BarChart, Bar, AreaChart, Area, LineChart, Line,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList, ResponsiveContainer, Customized
 } from 'recharts';
 import LoadingMask from '../components/LoadingMask';
 import DeleteConfirmation from '../components/DeleteConfirmation';
+import UITooltip from '../components/Tooltip';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -86,14 +87,7 @@ const AnalyticsDashboardPage = () => {
     const [viewAsAdmin, setViewAsAdmin] = useState(null);
     const [viewAsOpen, setViewAsOpen] = useState(false);
     const [viewAsAvatarError, setViewAsAvatarError] = useState(false);
-    const [viewingAs, setViewingAs] = useState(() => {
-        // Prefer the email-matched admin set during account link; fall back to userId
-        try {
-            return localStorage.getItem('currentUserAdmin') || localStorage.getItem('userId') || null;
-        } catch {
-            return null;
-        }
-    }); // Stores the viewingAs ID from backend response
+    const [viewingAs, setViewingAs] = useState(null); // set by admins effect after email match
     const viewAsRef = useRef(null);
 
     const VIEW_AS_IMAGE_KEYS = ['profileImage', 'profileImageUrl', 'avatar', 'photo', 'image'];
@@ -372,19 +366,9 @@ const AnalyticsDashboardPage = () => {
     };
 
     // State for charts — local to account
-    const [charts, setCharts] = useState(() => {
-        const initAcctId = getAcctIdFromLocalStorage();
-        const initViewingAs = localStorage.getItem('currentUserAdmin') || localStorage.getItem('userId') || 'default';
-        const saved = loadCharts(initAcctId, initViewingAs);
-        return saved.map(entry => normalizeChart(entry));
-    });
+    const [charts, setCharts] = useState([]);
     const [chartRequestSignatures, setChartRequestSignatures] = useState({});
-    const [nextChartId, setNextChartId] = useState(() => {
-        const initAcctId = getAcctIdFromLocalStorage();
-        const initViewingAs = localStorage.getItem('currentUserAdmin') || localStorage.getItem('userId') || 'default';
-        const saved = loadCharts(initAcctId, initViewingAs);
-        return saved.length > 0 ? Math.max(...saved.map(c => c.id)) + 1 : 1;
-    });
+    const [nextChartId, setNextChartId] = useState(1);
     const [chartDataCache, setChartDataCache] = useState({});
     const [chartLoadingState, setChartLoadingState] = useState({});
     // Auto-refresh: per-chart countdown seconds remaining
@@ -394,6 +378,7 @@ const AnalyticsDashboardPage = () => {
     const acctIdRef = React.useRef(acctId);
     const viewingAsRef = React.useRef(null);
     const skipViewingAsEffectRef = React.useRef(false); // set by handleViewAsChange when it already loaded charts, to prevent the viewingAs useEffect from doing duplicate work
+    const adminsLoadedForAcctRef = React.useRef(null); // prevents the admins effect from running more than once per account
     const draggedIdRef = React.useRef(null);
     const [dragOverId, setDragOverId] = useState(null);
     const [isDraggingAny, setIsDraggingAny] = useState(false);
@@ -661,7 +646,7 @@ const AnalyticsDashboardPage = () => {
     const isDisplayDirty = (committedConfig) => {
         const pending = pendingChartConfigs[committedConfig.id];
         if (!pending) return false;
-        const displayFields = ['showLegend', 'showDataLabels', 'chartColor', 'barOrientation', 'numberSplitCount', 'autoRefreshMins', 'fieldLabels'];
+        const displayFields = ['showLegend', 'showDataLabels', 'chartColor', 'barOrientation', 'numberSplitCount', 'autoRefreshMins', 'fieldLabels', 'chartMode', 'chartType'];
         return displayFields.some(f => {
             if (!(f in pending)) return false;
             return JSON.stringify(pending[f]) !== JSON.stringify(committedConfig[f]);
@@ -819,9 +804,10 @@ const AnalyticsDashboardPage = () => {
     // Called when localStorage has no charts for the current viewingAs user.
     const handleSchemaSync = async (acctIdOverride, viewingAsOverride) => {
         const targetAcctId = acctIdOverride || acctId;
-        // Always use the dropdown-selected admin's actual _id so get-schema matches the correct adminId
+        // Use Botamation adminId — this is the key AnalyticsSchema is stored under.
+        // Do NOT use _id (MongoDB _id), which is a different field.
         const selectedAdminId = viewAsAdmin
-            ? (viewAsAdmin._id || viewAsAdmin.id || viewAsAdmin.adminId || viewAsAdmin.userId || viewAsAdmin.authId || viewAsAdmin.authUserId)
+            ? String(viewAsAdmin.adminId || viewAsAdmin.id || viewAsAdmin._id || '')
             : null;
         const targetViewingAs = selectedAdminId || viewingAsOverride || viewingAs;
         if (!targetAcctId || !targetViewingAs) return;
@@ -1274,94 +1260,74 @@ const AnalyticsDashboardPage = () => {
         fetchCategories();
     }, [acctId]);
 
-    // Fetch admins for View As dropdown — restore previous selection if exists
+    // Fetch admins for View As dropdown.
+    // Runs once per account. Matches the logged-in user by email, sets viewingAs to their
+    // Botamation adminId, then lets the chart-loading effect handle localStorage vs backend.
     useEffect(() => {
         if (!acctId) return;
+
+        // Already loaded for this account — prevent double-run when userDetails updates
+        if (adminsLoadedForAcctRef.current === acctId) return;
+
+        // We need the user's email to match against the admin list.
+        // It is written to localStorage by AuthContext immediately after auth/profile load.
+        const userEmail = (userDetails?.email || localStorage.getItem('userEmail') || '').trim().toLowerCase();
+        if (!userEmail) return; // wait — userDetails not ready yet, effect will re-run
+
+        adminsLoadedForAcctRef.current = acctId; // mark as loaded for this account
+
         api.get('/api/ui/admins/list', { params: { acctId, limit: 200 } })
-            .then(async res => {
+            .then(res => {
                 const data = res.data;
                 const list = Array.isArray(data) ? data : (data.admins || data.data || []);
                 setViewAsAdmins(list);
 
-                // Resolve and cache the current user's admin _id from the fetched list
-                const userEmail = (userDetails?.email || '').trim().toLowerCase();
-                if (userEmail && list.length > 0) {
-                    const matched = list.find(a =>
-                        (a.emailId || a.email || a.email_id || '').trim().toLowerCase() === userEmail
-                    );
-                    const adminId = matched
-                        ? (matched._id || matched.id || matched.adminId || matched.authId || matched.authUserId || null)
-                        : null;
-                    if (adminId) {
-                        localStorage.setItem('currentUserAdmin', String(adminId));
-                    } else {
-                        localStorage.removeItem('currentUserAdmin');
+                if (list.length === 0) return;
+
+                // Helper: find admin by Botamation adminId (canonical key for AnalyticsSchema)
+                const findByPlatformId = (id) => id
+                    ? list.find(a => String(a.adminId || a.id || a._id || '') === String(id))
+                    : null;
+
+                // Match the current user's admin record by email
+                const currentUserAdmin = list.find(
+                    a => (a.email || a.emailId || a.email_id || '').trim().toLowerCase() === userEmail
+                );
+
+                if (currentUserAdmin) {
+                    const platformAdminId = String(currentUserAdmin.adminId || currentUserAdmin.id || currentUserAdmin._id || '');
+                    if (platformAdminId) {
+                        localStorage.setItem('currentUserAdmin', platformAdminId);
                     }
                 }
 
-                const currentUserId = localStorage.getItem('userId');
-                const currentUserAdminId = localStorage.getItem('currentUserAdmin');
-                const storedViewingAs = viewingAsRef.current;
-                // Check if there's a stored viewingAs to restore
+                // Resolve which admin to select:
+                //   1. A previously persisted "View As" choice (different admin, stored per account)
+                //   2. Default to the current user's own admin
+                const storedViewingAs = localStorage.getItem(`analyticsViewingAs_${acctId}`);
                 let adminToSelect = null;
-
-                if (list.length > 0) {
-                    // 1. Restore a previously manually-chosen admin (different from own userId)
-                    if (storedViewingAs && storedViewingAs !== currentUserId) {
-                        adminToSelect = list.find(a =>
-                            a._id === storedViewingAs ||
-                            a.id === storedViewingAs ||
-                            a.adminId === storedViewingAs ||
-                            a.userId === storedViewingAs ||
-                            a.authId === storedViewingAs ||
-                            a.authUserId === storedViewingAs
-                        );
-                    }
-                    // 2. Fall back to the email-matched admin stored as currentUserAdmin
-                    if (!adminToSelect && currentUserAdminId) {
-                        adminToSelect = list.find(a =>
-                            a._id === currentUserAdminId ||
-                            a.id === currentUserAdminId ||
-                            a.adminId === currentUserAdminId ||
-                            a.userId === currentUserAdminId ||
-                            a.authId === currentUserAdminId ||
-                            a.authUserId === currentUserAdminId
-                        );
-                    }
+                if (storedViewingAs) {
+                    adminToSelect = findByPlatformId(storedViewingAs);
+                }
+                if (!adminToSelect) {
+                    adminToSelect = currentUserAdmin || findByPlatformId(localStorage.getItem('currentUserAdmin'));
                 }
 
-                if (adminToSelect) {
-                    setViewAsAdmin(adminToSelect);
-                    try {
-                        const selectedUserId = adminToSelect._id || adminToSelect.id || adminToSelect.adminId || adminToSelect.userId || adminToSelect.authId || adminToSelect.authUserId;
-                        const response = await api.post('/api/ui/analytics/view-as', {
-                            acctId: acctId,
-                            userId: currentUserId,
-                            selectedUserId: selectedUserId
-                        });
-                        // Extract viewingAs and schema from backend response
-                        const viewingAsId = response.data?.viewingAs || null;
-                        const schema = response.data?.schema || null;
+                if (!adminToSelect) return;
 
-                        // If backend returned a schema, save it to localStorage
-                        if (schema && viewingAsId) {
-                            const store = readStore();
-                            store[acctId] = store[acctId] || {};
-                            store[acctId][viewingAsId] = schema;
-                            localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-                        }
+                setViewAsAdmin(adminToSelect);
 
-                        // Update viewingAs state if different (this will trigger chart load)
-                        if (viewingAsId && viewingAsId !== viewingAs) {
-                            setViewingAs(viewingAsId);
-                        }
-                    } catch (error) {
-                        console.error('Error notifying backend of view:', error);
-                    }
+                // Set viewingAs to the Botamation adminId — this is the ONLY trigger for chart loading.
+                // The chart-loading effect [acctId, viewingAs] will fire next and:
+                //   - load from localStorage if a schema exists there (no backend call), or
+                //   - call handleSchemaSync (backend) if no localStorage schema exists.
+                const viewingAsId = String(adminToSelect.adminId || adminToSelect.id || adminToSelect._id || '');
+                if (viewingAsId) {
+                    setViewingAs(viewingAsId);
                 }
             })
             .catch(() => { });
-    }, [acctId]);
+    }, [acctId, userDetails]);
     // Handle View As selection change
     const handleViewAsChange = async (selectedAdmin) => {
         const currentUserId = localStorage.getItem('userId');
@@ -1398,9 +1364,10 @@ const AnalyticsDashboardPage = () => {
         setChartsReady(false);
 
         try {
-            // Extract the selected user's ID
+            // Extract the selected user's ID — must be adminId (Botamation platform ID),
+            // which is the key used by AnalyticsSchema. Do NOT use _id (MongoDB _id).
             const selectedUserId = selectedAdmin
-                ? (selectedAdmin._id || selectedAdmin.id || selectedAdmin.adminId || selectedAdmin.userId || selectedAdmin.authId || selectedAdmin.authUserId)
+                ? (selectedAdmin.adminId || selectedAdmin.id || selectedAdmin._id || selectedAdmin.userId || selectedAdmin.authId || selectedAdmin.authUserId)
                 : null;
 
             // Call backend with acctId, userId, and selectedUserId
@@ -1459,6 +1426,15 @@ const AnalyticsDashboardPage = () => {
 
             // Update the viewingAs state (triggers the useEffect to load charts when no schema was provided by the branch above)
             setViewingAs(viewingAsId);
+
+            // Persist the selected admin so the choice survives page refresh.
+            // If the user has switched back to their own admin, clear the persisted key.
+            const currentUserAdminId = localStorage.getItem('currentUserAdmin');
+            if (viewingAsId && viewingAsId !== currentUserAdminId) {
+                localStorage.setItem(`analyticsViewingAs_${acctId}`, viewingAsId);
+            } else {
+                localStorage.removeItem(`analyticsViewingAs_${acctId}`);
+            }
 
             console.log('View As changed:', selectedAdmin ? getAdminDisplayName(selectedAdmin) : 'All Admins', '| viewingAs:', viewingAsId);
         } catch (error) {
@@ -1904,6 +1880,77 @@ const AnalyticsDashboardPage = () => {
         </div>
     );
 
+    // ── Grouped / Multi-Series Line ───────────────────────────────────────
+    const renderMultiSeriesLineChart = (chartData, yAxisLabel, showLegend = true, showDataLabels = true, lbl = (k) => k, fmtTick = (v) => v) => {
+        const hasZKey = chartData.length > 0 && chartData[0].zKey !== undefined;
+        if (!hasZKey) return renderLineChart(chartData, yAxisLabel, DEFAULT_CHART_COLOR, showLegend, showDataLabels, lbl, fmtTick);
+        const names = [...new Set(chartData.map(d => d.name))];
+        const zKeys = [...new Set(chartData.map(d => d.zKey))];
+        const data = names.map(name => {
+            const entry = { name };
+            zKeys.forEach(zKey => {
+                const found = chartData.find(d => d.name === name && d.zKey === zKey);
+                entry[zKey] = found ? found.value : 0;
+            });
+            return entry;
+        });
+        const legendItems = zKeys.map((zKey, i) => ({ label: lbl(zKey), color: COLORS[i % COLORS.length] }));
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+                <div style={{ flex: 1, minHeight: 0 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={data} margin={{ top: showDataLabels ? 22 : 10, right: 20, left: 10, bottom: 40 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                            <XAxis
+                                dataKey="name"
+                                tick={{ fill: '#64748b', fontSize: 11 }}
+                                angle={-45}
+                                textAnchor="end"
+                                height={60}
+                                axisLine={{ stroke: '#e2e8f0' }}
+                                tickLine={false}
+                                tickFormatter={fmtTick}
+                            />
+                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                            <Tooltip
+                                contentStyle={tooltipStyle.contentStyle}
+                                labelStyle={tooltipStyle.labelStyle}
+                                itemStyle={tooltipStyle.itemStyle}
+                                cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 4' }}
+                                formatter={(value) => [value.toLocaleString()]}
+                                labelFormatter={fmtTick}
+                            />
+                            {zKeys.map((zKey, i) => (
+                                <Line
+                                    key={zKey}
+                                    type="monotone"
+                                    dataKey={zKey}
+                                    name={lbl(zKey)}
+                                    stroke={COLORS[i % COLORS.length]}
+                                    strokeWidth={2.5}
+                                    dot={{ fill: COLORS[i % COLORS.length], stroke: 'white', strokeWidth: 2, r: 4 }}
+                                    activeDot={{ r: 6, stroke: 'white', strokeWidth: 2 }}
+                                    isAnimationActive={false}
+                                >
+                                    {showDataLabels && (
+                                        <LabelList
+                                            dataKey={zKey}
+                                            position="top"
+                                            offset={8}
+                                            formatter={(v) => (v > 0 ? v.toLocaleString() : '')}
+                                            style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+                                        />
+                                    )}
+                                </Line>
+                            ))}
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+                {showLegend && renderExternalLegend(legendItems)}
+            </div>
+        );
+    };
+
     // Render Heat Map — colored tile grid, intensity proportional to value
     const renderHeatmapChart = (chartData, yAxisLabel, color = DEFAULT_CHART_COLOR) => {
         const max = Math.max(...chartData.map(d => d.value));
@@ -2191,7 +2238,9 @@ const AnalyticsDashboardPage = () => {
                         ? renderMultiSeriesBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', true, showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined)
                         : renderBarChart(chartData, displayYLabel, chartConfig.barOrientation || 'vertical', showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined);
             case 'line':
-                return renderLineChart(chartData, displayYLabel, chartColor, showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined);
+                return mode === 'grouped'
+                    ? renderMultiSeriesLineChart(chartData, displayYLabel, showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined)
+                    : renderLineChart(chartData, displayYLabel, chartColor, showLegend, showDataLabels, lbl, isDateXAxis ? fmtDateTick : undefined);
             case 'heatmap':
                 return renderHeatmapChart(chartData, displayYLabel, chartColor);
             case 'number':
@@ -2382,8 +2431,8 @@ const AnalyticsDashboardPage = () => {
                     />
                     {/* Settings toggle button */}
                     {!isViewingOtherAdmin && (
+                    <UITooltip content={filterIsVisible ? 'Close settings' : 'Open settings'} placement="top">
                     <button
-                        title={filterIsVisible ? 'Close settings' : 'Open settings'}
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                             e.stopPropagation();
@@ -2400,12 +2449,14 @@ const AnalyticsDashboardPage = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                         </svg>
                     </button>
+                    </UITooltip>
                     )}
 
                     {/* Width + height controls */}
                     {!isViewingOtherAdmin && (
                     <div className="flex items-center gap-1 shrink-0">
-                        <div className="flex items-center border border-gray-700 rounded overflow-hidden text-[10px] font-semibold" title="Chart Width">
+                        <UITooltip content="Chart Width" placement="top">
+                        <div className="flex items-center border border-gray-700 rounded overflow-hidden text-[10px] font-semibold">
                             <button
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartWidthPx', Math.max(200, (chartConfig.chartWidthPx || 500) - 40)); }}
@@ -2423,7 +2474,9 @@ const AnalyticsDashboardPage = () => {
                                 className="px-1.5 py-0.5 text-gray-400 hover:bg-slate-700 hover:text-white font-bold text-xs transition-all"
                             >+</button>
                         </div>
-                        <div className="flex items-center border border-gray-700 rounded overflow-hidden" title="Chart Height">
+                        </UITooltip>
+                        <UITooltip content="Chart Height" placement="top">
+                        <div className="flex items-center border border-gray-700 rounded overflow-hidden">
                             <button
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartHeight', Math.max(180, (chartConfig.chartHeight || 320) - 40)); }}
@@ -2441,13 +2494,14 @@ const AnalyticsDashboardPage = () => {
                                 className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
                             >+</button>
                         </div>
+                        </UITooltip>
                     </div>
                     )}
 
                     {/* Per-chart refresh button */}
                     {!isViewingOtherAdmin && (
+                    <UITooltip content="Refresh chart" placement="top">
                     <button
-                        title="Refresh chart"
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => { e.stopPropagation(); fetchChartDataFromBackend(chartConfig.id, chartConfig); }}
                         className="p-1 text-gray-400 hover:text-white transition-colors shrink-0 cursor-pointer"
@@ -2456,12 +2510,13 @@ const AnalyticsDashboardPage = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                     </button>
+                    </UITooltip>
                     )}
 
                     {/* Delete button */}
                     {!isViewingOtherAdmin && (
+                    <UITooltip content="Delete chart" placement="top">
                     <button
-                        title="Delete chart"
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => { e.stopPropagation(); setPendingDeleteId(chartConfig.id); }}
                         className="p-1 text-gray-400 hover:text-red-400 transition-colors shrink-0 cursor-pointer"
@@ -2470,6 +2525,7 @@ const AnalyticsDashboardPage = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                     </button>
+                    </UITooltip>
                     )}
 
                     {/* Auto-refresh countdown arc — only shown when auto-refresh is enabled */}
@@ -2485,9 +2541,9 @@ const AnalyticsDashboardPage = () => {
                             ? `${Math.floor(remaining / 60)}m${remaining % 60 > 0 ? String(remaining % 60).padStart(2, '0') + 's' : ''}`
                             : `${remaining}s`;
                         return (
+                            <UITooltip content={`Auto-refresh in ${fmt} (every ${totalSecs < 60 ? `${totalSecs}s` : totalSecs < 3600 ? `${Math.round(totalSecs / 60)}m` : '1h'})`} placement="top">
                             <div
                                 className="flex items-center gap-1 shrink-0 select-none"
-                                title={`Auto-refresh in ${fmt} (every ${totalSecs < 60 ? `${totalSecs}s` : totalSecs < 3600 ? `${Math.round(totalSecs / 60)}m` : '1h'})`}
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => { e.stopPropagation(); fetchChartDataFromBackend(chartConfig.id, chartConfig); }}
                             >
@@ -2508,6 +2564,7 @@ const AnalyticsDashboardPage = () => {
                                 </svg>
                                 <span className="text-[9px] font-mono text-gray-400 min-w-[22px]">{fmt}</span>
                             </div>
+                            </UITooltip>
                         );
                     })()}
                 </div>
@@ -2582,6 +2639,7 @@ const AnalyticsDashboardPage = () => {
                                 </Combobox>
                             </div>
                             {mergedConfig.chartCategory && (
+                                <UITooltip content="Clear category filter" placement="top">
                                 <button
                                     onClick={() => updatePendingConfigBatch(chartConfig.id, {
                                         chartCategory: null,
@@ -2593,10 +2651,10 @@ const AnalyticsDashboardPage = () => {
                                         chartMode: null,
                                     })}
                                     className="text-gray-400 hover:text-gray-700 transition-colors text-base leading-none px-1"
-                                    title="Clear category filter"
                                 >
                                     ×
                                 </button>
+                                </UITooltip>
                             )}
                             {/* ── Update Chart button in header row ── */}
                             {mergedConfig.chartCategory && (
@@ -2852,14 +2910,14 @@ const AnalyticsDashboardPage = () => {
                                 )}
 
                                 {/* ── SECTION: CHART ────────────────────────── */}
-                                {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar' || mergedConfig.chartType?.value === 'number') && (
+                                {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar' || mergedConfig.chartType?.value === 'line' || mergedConfig.chartType?.value === 'number') && (
                                     <>
                                         <div className="flex items-center px-5 pt-1 pb-1.5 border-t border-gray-100">
                                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Chart</span>
                                         </div>
                                         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 px-5">
                                             {/* Mode — pie + bar */}
-                                            {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (
+                                            {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar' || mergedConfig.chartType?.value === 'line') && (
                                                 <div className="flex items-center gap-1.5 shrink-0">
                                                     <span className="text-[11px] font-semibold text-gray-600 shrink-0">Mode</span>
                                                     <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-[11px] font-semibold">
@@ -3326,22 +3384,23 @@ const AnalyticsDashboardPage = () => {
                             </h1>
                             <div className="flex items-center gap-2">
                                 {!isViewingOtherAdmin && (
+                                <UITooltip content="Refresh all charts" placement="bottom">
                                 <button
                                     onClick={refreshAllCharts}
                                     disabled={globalRefreshing}
-                                    title="Refresh all charts"
                                     className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-gray-100 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     <svg className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${globalRefreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                     </svg>
                                 </button>
+                                </UITooltip>
                                 )}
                                 {!isViewingOtherAdmin && (
+                                <UITooltip content="Download all charts as PDF" placement="bottom">
                                 <button
                                     onClick={handleDownloadPDF}
                                     disabled={pdfDownloading || charts.length === 0}
-                                    title="Download all charts as PDF"
                                     className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-indigo-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-indigo-500 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     {pdfDownloading ? (
@@ -3354,8 +3413,10 @@ const AnalyticsDashboardPage = () => {
                                         </svg>
                                     )}
                                 </button>
+                                </UITooltip>
                                 )}
                                 {/* Pull changes from collection */}
+                                <UITooltip content="Pull changes" placement="bottom">
                                 <button
                                     onClick={() => {
                                         // If viewing own dashboard and there are unsaved changes, warn before overwriting
@@ -3366,45 +3427,47 @@ const AnalyticsDashboardPage = () => {
                                         }
                                     }}
                                     disabled={schemaSyncing}
-                                    title="Pull changes"
                                     className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-blue-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-blue-500 focus:ring-1 focus:ring-blue-400 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     <svg className={`w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors ${schemaSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
                                     </svg>
                                 </button>
+                                </UITooltip>
                                 {/* Save changes — hidden when viewing another admin */}
                                 {!isViewingOtherAdmin && (
+                                <UITooltip content={hasUnsavedChanges ? 'Save changes' : 'No unsaved changes'} placement="bottom">
                                 <button
                                     onClick={handleSchemaSave}
                                     disabled={schemaSaving || !hasUnsavedChanges}
-                                    title={hasUnsavedChanges ? 'Save changes' : 'No unsaved changes'}
                                     className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-yellow-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-yellow-400 focus:ring-1 focus:ring-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     <svg className={`w-4 h-4 text-gray-600 group-hover:text-yellow-600 transition-colors ${schemaSaving ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                                     </svg>
                                 </button>
+                                </UITooltip>
                                 )}
                                 {/* Copy to my dashboard — only visible when viewing another admin */}
                                 {isViewingOtherAdmin && (
+                                <UITooltip content="Copy analytics to my dashboard" placement="bottom">
                                 <button
                                     onClick={handleSchemaSave}
                                     disabled={schemaSaving}
-                                    title="Copy analytics to my dashboard"
                                     className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-purple-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-purple-400 focus:ring-1 focus:ring-purple-300 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     <svg className={`w-4 h-4 text-gray-600 group-hover:text-purple-600 transition-colors ${schemaSaving ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                     </svg>
                                 </button>
+                                </UITooltip>
                                 )}
                                 {/* View As dropdown */}
                                 <div ref={viewAsRef} className="relative">
+                                    <UITooltip content="View As" placement="bottom">
                                     <button
                                         onClick={() => setViewAsOpen(o => !o)}
                                         className="inline-flex items-center justify-between gap-1.5 h-8 w-max min-w-[9rem] px-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all text-xs font-medium"
-                                        title="View As"
                                     >
                                         {viewAsAdmin ? (
                                             getAdminAvatar(viewAsAdmin) && !viewAsAvatarError ? (
@@ -3431,17 +3494,16 @@ const AnalyticsDashboardPage = () => {
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                         </svg>
                                     </button>
+                                    </UITooltip>
                                     {viewAsOpen && (
                                         <div className="absolute right-0 top-full mt-1 min-w-full w-max bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1 max-h-64 overflow-y-auto">
-                                            {viewAsAdmins.filter(admin => {
-                                                const currentUserId = localStorage.getItem('userId');
-                                                const adminId = admin._id || admin.id || admin.adminId || admin.userId || admin.authId || admin.authUserId;
-                                                return adminId !== currentUserId;
-                                            }).map((admin, idx) => {
-                                                const isSelected = viewAsAdmin?._id === admin._id;
+                                            {viewAsAdmins.map((admin, idx) => {
+                                                const adminPlatformId = String(admin.adminId || admin.id || admin._id || '');
+                                                const selectedPlatformId = String(viewAsAdmin?.adminId || viewAsAdmin?.id || viewAsAdmin?._id || '');
+                                                const isSelected = adminPlatformId && adminPlatformId === selectedPlatformId;
                                                 return (
                                                 <button
-                                                    key={admin._id || idx}
+                                                    key={admin.adminId || admin._id || idx}
                                                     onClick={() => !isSelected && handleViewAsChange(admin)}
                                                     disabled={isSelected}
                                                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors
@@ -3476,12 +3538,8 @@ const AnalyticsDashboardPage = () => {
                                                 </button>
                                                 );
                                             })}
-                                            {viewAsAdmins.filter(admin => {
-                                                const currentUserId = localStorage.getItem('userId');
-                                                const adminId = admin._id || admin.id || admin.adminId || admin.userId || admin.authId || admin.authUserId;
-                                                return adminId !== currentUserId;
-                                            }).length === 0 && (
-                                                    <p className="px-3 py-2 text-xs text-gray-400">No other admins found</p>
+                                            {viewAsAdmins.length === 0 && (
+                                                    <p className="px-3 py-2 text-xs text-gray-400">No admins found</p>
                                                 )}
                                         </div>
                                     )}

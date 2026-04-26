@@ -60,6 +60,11 @@ export const AuthProvider = ({ children }) => {
                                 roleLabel: profile.roleLabel,
                                 profileImageUrl: profile.profileImageUrl || '',
                             });
+                            // Persist email so it's available on next page load before the
+                            // async profile fetch completes (e.g. analytics admin matching).
+                            if (profile.email) {
+                                localStorage.setItem('userEmail', profile.email.trim().toLowerCase());
+                            }
                         }
                     } catch (profileError) {
                         console.warn('[SSO] Could not fetch user profile:', profileError.message);
