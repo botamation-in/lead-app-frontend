@@ -1283,6 +1283,22 @@ const AnalyticsDashboardPage = () => {
                 const list = Array.isArray(data) ? data : (data.admins || data.data || []);
                 setViewAsAdmins(list);
 
+                // Resolve and cache the current user's admin _id from the fetched list
+                const userEmail = (userDetails?.email || '').trim().toLowerCase();
+                if (userEmail && list.length > 0) {
+                    const matched = list.find(a =>
+                        (a.emailId || a.email || a.email_id || '').trim().toLowerCase() === userEmail
+                    );
+                    const adminId = matched
+                        ? (matched._id || matched.id || matched.adminId || matched.authId || matched.authUserId || null)
+                        : null;
+                    if (adminId) {
+                        localStorage.setItem('currentUserAdmin', String(adminId));
+                    } else {
+                        localStorage.removeItem('currentUserAdmin');
+                    }
+                }
+
                 const currentUserId = localStorage.getItem('userId');
                 const currentUserAdminId = localStorage.getItem('currentUserAdmin');
                 const storedViewingAs = viewingAsRef.current;
@@ -3431,7 +3447,7 @@ const AnalyticsDashboardPage = () => {
                                                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors
                                                         ${isSelected
                                                             ? 'font-semibold text-gray-900 bg-gray-100 cursor-not-allowed opacity-60'
-                                                            : 'text-gray-600 hover:bg-gray-50 cursor-pointer'
+                                                            : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer'
                                                         }`}
                                                 >
                                                     {getAdminAvatar(admin) ? (
