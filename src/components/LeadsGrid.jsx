@@ -697,12 +697,12 @@ const LeadsGrid = () => {
 
     const getColumnAlignClass = (field, type) => {
         const align = 'center'; // Center align all columns
-        
+
         if (type === 'th') return align === 'left' ? 'text-left' : 'text-center';
         if (type === 'flex') return align === 'left' ? 'justify-start' : 'justify-center';
         if (type === 'td') return align === 'left' ? 'text-left' : 'text-center';
         if (type === 'input') return align === 'left' ? 'text-left' : 'text-center';
-        
+
         return '';
     };
 
@@ -726,8 +726,8 @@ const LeadsGrid = () => {
             <LoadingMask loading={isExporting} title="Exporting..." message="Please wait while we export your leads to Excel" />
             <NotificationComponent />
             {/* Navigation Menu */}
-            <nav className="bg-gradient-to-b from-slate-900 to-slate-800 border-b border-slate-700/60 animate-fade-in shadow-xl flex-shrink-0" style={{boxShadow:'0 4px 24px 0 rgba(99,102,241,0.10),0 1px 0 0 rgba(255,255,255,0.04) inset'}}>
-                <div className="container mx-auto px-4">
+            <nav className="bg-gradient-to-b from-slate-900 to-slate-800 border-b border-slate-700/60 animate-fade-in shadow-xl flex-shrink-0" style={{ boxShadow: '0 4px 24px 0 rgba(99,102,241,0.10),0 1px 0 0 rgba(255,255,255,0.04) inset' }}>
+                <div className="w-full px-4">
                     <div className="flex items-center gap-4">
                         {/* Logo */}
                         <div className="py-2">
@@ -931,11 +931,10 @@ const LeadsGrid = () => {
                                         setCurrentPage(1);
                                     }}
                                     disabled={loading || Object.keys(appliedFilters).filter(k => k !== 'categoryId').length === 0}
-                                    className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 disabled:opacity-40 disabled:cursor-not-allowed ${
-                                        Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0
+                                    className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 disabled:opacity-40 disabled:cursor-not-allowed ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0
                                             ? 'bg-red-50 border-red-400 focus:ring-red-300'
                                             : 'bg-transparent border-gray-300 hover:bg-red-50 hover:border-red-400 focus:ring-red-300'
-                                    }`}
+                                        }`}
                                     title={Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? `Clear ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length} active filter${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length !== 1 ? 's' : ''}` : 'No active filters'}
                                 >
                                     <svg className={`w-4 h-4 transition-colors ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? 'text-red-500' : 'text-gray-600 group-hover:text-red-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -946,7 +945,7 @@ const LeadsGrid = () => {
                                 <button
                                     onClick={fetchLeads}
                                     disabled={loading}
-                                    className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-gray-100 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-indigo-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-indigo-400 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
                                     title={loading ? 'Loading...' : 'Refresh leads'}
                                 >
                                     <svg
@@ -966,19 +965,17 @@ const LeadsGrid = () => {
                                 <div className="relative" ref={columnSelectorRef}>
                                     <button
                                         onClick={() => setShowColumnSelector(v => !v)}
-                                        className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 focus:ring-indigo-400 ${
-                                            (visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
+                                        className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 focus:ring-indigo-400 ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
                                                 ? 'bg-indigo-50 border-indigo-400'
                                                 : 'bg-transparent border-gray-300 hover:bg-indigo-50 hover:border-indigo-400'
-                                        }`}
+                                            }`}
                                         title="Show / hide columns"
                                     >
                                         <svg
-                                            className={`w-4 h-4 transition-colors ${
-                                                (visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
+                                            className={`w-4 h-4 transition-colors ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
                                                     ? 'text-indigo-600'
                                                     : 'text-gray-600 group-hover:text-indigo-600'
-                                            }`}
+                                                }`}
                                             fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                         >
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 6h18M3 14h18M3 18h18" />
@@ -1111,59 +1108,59 @@ const LeadsGrid = () => {
 
                                         <div className="flex-1 overflow-y-scroll overflow-x-auto min-h-0">
                                             <table className="min-w-full divide-y divide-gray-200">
-<thead className="sticky top-0 z-10 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] transition-all group/header">
-                                <tr>
-                                    {(visibleFields ?? fields).map((field) => (
-                                        <th key={field} className={`px-3 py-2.5 relative align-bottom ${getColumnAlignClass(field, 'th')}`}>
-                                            <div
-                                                className={`flex items-center cursor-pointer group/sort mb-1.5 transition-colors ${getColumnAlignClass(field, 'flex')}`}
-                                                onClick={() => handleSort(field)}
-                                            >
-                                                <div className="relative inline-flex items-center">
-                                                    <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider group-hover/sort:text-indigo-600 transition-colors">
-                                                        {formatFieldName(field)}
-                                                    </span>
-                                                    {renderSortIcon(field)}
-                                                </div>
-                                            </div>
-                                            <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
-                                                <div className="overflow-hidden">
-                                                    <div className="pb-1 pt-0.5 px-0.5">
-                                                        <div className="relative rounded-md bg-slate-200/80 focus-within:bg-gradient-to-r focus-within:from-indigo-500 focus-within:via-violet-400 focus-within:to-indigo-500 p-[1px] transition-all duration-300 shadow-sm focus-within:shadow-[0_0_10px_rgba(99,102,241,0.3)]">
-                                                            <input
-                                                                type="text"
-                                                                placeholder="Filter..."
-                                                                value={filters[field] || ''}
-                                                                onChange={(e) => handleFilterChange(field, e.target.value)}
-                                                                onKeyDown={(e) => handleFilterKeyDown(e, field)}
-                                                                onClick={(e) => e.stopPropagation()}
-                                                                className={`w-full px-2 py-1 text-[10px] bg-white/70 focus:bg-white text-slate-700 rounded-[5px] outline-none placeholder-slate-400 transition-all ${getColumnAlignClass(field, 'input')}`}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </th>
-                                    ))}
-                                    <th className="px-3 py-2.5 text-center w-20 align-bottom">
-                                        <div className="flex items-center justify-center gap-1 mb-1.5">
-                                            <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Actions</span>
-                                        </div>
-                                        <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
-                                            <div className="overflow-hidden">
-                                                <div className="pb-1 pt-0.5 px-0.5 opacity-0 pointer-events-none">
-                                                    <div className="p-[1px]">
-                                                        <input type="text" className="w-full px-2 py-1 text-[10px]" disabled />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </th>
-                                </tr>
-                                <tr>
-                                    <th colSpan="100" className="p-0 h-[3px] bg-gradient-to-r from-indigo-500 via-violet-400 to-indigo-500 border-none shadow-[0_0_15px_rgba(99,102,241,0.6)] relative z-20"></th>
-                                </tr>
-                            </thead>
+                                                <thead className="sticky top-0 z-10 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] transition-all group/header">
+                                                    <tr>
+                                                        {(visibleFields ?? fields).map((field) => (
+                                                            <th key={field} className={`px-3 py-2.5 relative align-bottom ${getColumnAlignClass(field, 'th')}`}>
+                                                                <div
+                                                                    className={`flex items-center cursor-pointer group/sort mb-1.5 transition-colors ${getColumnAlignClass(field, 'flex')}`}
+                                                                    onClick={() => handleSort(field)}
+                                                                >
+                                                                    <div className="relative inline-flex items-center">
+                                                                        <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider group-hover/sort:text-indigo-600 transition-colors">
+                                                                            {formatFieldName(field)}
+                                                                        </span>
+                                                                        {renderSortIcon(field)}
+                                                                    </div>
+                                                                </div>
+                                                                <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
+                                                                    <div className="overflow-hidden">
+                                                                        <div className="pb-1 pt-0.5 px-0.5">
+                                                                            <div className="relative rounded-md bg-slate-200/80 focus-within:bg-gradient-to-r focus-within:from-indigo-500 focus-within:via-violet-400 focus-within:to-indigo-500 p-[1px] transition-all duration-300 shadow-sm focus-within:shadow-[0_0_10px_rgba(99,102,241,0.3)]">
+                                                                                <input
+                                                                                    type="text"
+                                                                                    placeholder="Filter..."
+                                                                                    value={filters[field] || ''}
+                                                                                    onChange={(e) => handleFilterChange(field, e.target.value)}
+                                                                                    onKeyDown={(e) => handleFilterKeyDown(e, field)}
+                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                    className={`w-full px-2 py-1 text-[10px] bg-white/70 focus:bg-white text-slate-700 rounded-[5px] outline-none placeholder-slate-400 transition-all ${getColumnAlignClass(field, 'input')}`}
+                                                                                />
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </th>
+                                                        ))}
+                                                        <th className="px-3 py-2.5 text-center w-20 align-bottom">
+                                                            <div className="flex items-center justify-center gap-1 mb-1.5">
+                                                                <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Actions</span>
+                                                            </div>
+                                                            <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
+                                                                <div className="overflow-hidden">
+                                                                    <div className="pb-1 pt-0.5 px-0.5 opacity-0 pointer-events-none">
+                                                                        <div className="p-[1px]">
+                                                                            <input type="text" className="w-full px-2 py-1 text-[10px]" disabled />
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </th>
+                                                    </tr>
+                                                    <tr>
+                                                        <th colSpan="100" className="p-0 h-[3px] bg-gradient-to-r from-indigo-500 via-violet-400 to-indigo-500 border-none shadow-[0_0_15px_rgba(99,102,241,0.6)] relative z-20"></th>
+                                                    </tr>
+                                                </thead>
                                                 <tbody className={`bg-white divide-y divide-gray-100 transition-opacity duration-200 ${loading && leads.length > 0 ? 'opacity-50 pointer-events-none' : ''}`}>
                                                     {loading && leads.length === 0 ? (
                                                         <tr>
@@ -1268,14 +1265,14 @@ const LeadsGrid = () => {
                                                 <button
                                                     onClick={() => goToPage(currentPage - 1)}
                                                     disabled={currentPage === 1}
-                                                    className="relative inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                                    className="relative inline-flex items-center px-2 py-1 border border-indigo-200 text-xs font-medium rounded text-indigo-600 bg-white hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                                 >
                                                     Previous
                                                 </button>
                                                 <button
                                                     onClick={() => goToPage(currentPage + 1)}
                                                     disabled={currentPage === totalPages}
-                                                    className="ml-2 relative inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                                    className="ml-2 relative inline-flex items-center px-2 py-1 border border-indigo-200 text-xs font-medium rounded text-indigo-600 bg-white hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                                 >
                                                     Next
                                                 </button>
@@ -1295,7 +1292,7 @@ const LeadsGrid = () => {
                                                         <button
                                                             onClick={() => goToPage(currentPage - 1)}
                                                             disabled={currentPage === 1}
-                                                            className="relative inline-flex items-center px-2 py-1 rounded-l border border-gray-300 bg-white text-xs font-medium text-gray-500 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                                            className="relative inline-flex items-center px-2 py-1 rounded-l border border-indigo-200 bg-white text-xs font-medium text-indigo-600 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                                         >
                                                             Previous
                                                         </button>
@@ -1312,7 +1309,7 @@ const LeadsGrid = () => {
                                                                         onClick={() => goToPage(page)}
                                                                         className={`relative inline-flex items-center px-2 py-1 border text-xs font-medium transition-all ${currentPage === page
                                                                             ? 'z-10 bg-gradient-to-b from-indigo-500 to-indigo-700 border-indigo-600 text-white shadow-lg shadow-indigo-500/30'
-                                                                            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
+                                                                            : 'bg-white border-indigo-200 text-indigo-600 hover:bg-indigo-50'
                                                                             }`}
                                                                     >
                                                                         {page}
@@ -1330,7 +1327,7 @@ const LeadsGrid = () => {
                                                         <button
                                                             onClick={() => goToPage(currentPage + 1)}
                                                             disabled={currentPage === totalPages}
-                                                            className="relative inline-flex items-center px-2 py-1 rounded-r border border-gray-300 bg-white text-xs font-medium text-gray-500 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                                            className="relative inline-flex items-center px-2 py-1 rounded-r border border-indigo-200 bg-white text-xs font-medium text-indigo-600 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                                         >
                                                             Next
                                                         </button>
@@ -1357,12 +1354,12 @@ const LeadsGrid = () => {
                                                 type="button"
                                                 onClick={handleEditSave}
                                                 disabled={isSaving || !isEditFormDirty}
-                                                className={`rounded-md px-3 py-1.5 text-xs font-semibold shadow-sm transition-all duration-200 ${isSaving 
-                                                    ? 'bg-gray-400 text-gray-700 cursor-not-allowed' 
-                                                    : !isEditFormDirty 
+                                                className={`rounded-md px-3 py-1.5 text-xs font-semibold shadow-sm transition-all duration-200 ${isSaving
+                                                    ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
+                                                    : !isEditFormDirty
                                                         ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                                                         : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 shadow-indigo-500/25 cursor-pointer'
-                                                }`}
+                                                    }`}
                                             >
                                                 {isSaving ? 'Saving...' : 'Save'}
                                             </button>
@@ -1370,7 +1367,7 @@ const LeadsGrid = () => {
                                                 type="button"
                                                 onClick={cancelEdit}
                                                 disabled={isSaving}
-                                                className="rounded-md bg-white border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-40"
+                                                className="rounded-md bg-white border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 disabled:opacity-40"
                                             >
                                                 Cancel
                                             </button>
@@ -1446,14 +1443,14 @@ const LeadsGrid = () => {
                             <button
                                 onClick={() => setDeleteCategoryPending(null)}
                                 disabled={deleteCategoryLoading}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                                className="flex-1 px-4 py-2 text-sm font-medium text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors disabled:opacity-50"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleDeleteCategoryConfirm}
                                 disabled={deleteCategoryLoading}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-lg transition-all shadow-md shadow-indigo-500/25 disabled:opacity-50 inline-flex items-center justify-center gap-2"
                             >
                                 {deleteCategoryLoading ? (
                                     <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">

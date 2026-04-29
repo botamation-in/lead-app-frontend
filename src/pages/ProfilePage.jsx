@@ -227,8 +227,8 @@ const ProfilePage = () => {
         <div className="min-h-screen bg-gray-50">
             <NotificationComponent />
             {/* ── Navbar ───────────────────────────────────────────────────── */}
-            <nav className="bg-gradient-to-b from-slate-900 to-slate-800 border-b border-slate-700/60" style={{boxShadow: '0 4px 24px 0 rgba(99,102,241,0.10), 0 1px 0 0 rgba(255,255,255,0.04) inset'}}>
-                <div className="container mx-auto px-4">
+            <nav className="bg-gradient-to-b from-slate-900 to-slate-800 border-b border-slate-700/60" style={{ boxShadow: '0 4px 24px 0 rgba(99,102,241,0.10), 0 1px 0 0 rgba(255,255,255,0.04) inset' }}>
+                <div className="w-full px-4">
                     <div className="flex items-center gap-4">
                         {/* Logo */}
                         <div className="py-2">
@@ -281,27 +281,27 @@ const ProfilePage = () => {
 
                             {/* User Profile */}
                             <div className="relative" ref={userMenuRef}>
-                                        <button
-                                            onClick={() => { setShowUserMenu(false); navigate('/profile'); }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 bg-indigo-50/50"
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                            </svg>
-                                            My Profile
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                setShowUserMenu(false);
-                                                logout();
-                                            }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
-                                        >
+                                <button
+                                    onClick={() => { setShowUserMenu(false); navigate('/profile'); }}
+                                    className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 bg-indigo-50/50"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                    </svg>
+                                    My Profile
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowUserMenu(false);
+                                        logout();
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
+                                >
                                     {avatarPreview
                                         ? <img src={avatarPreview} alt="avatar" className="w-6 h-6 rounded-full object-cover border border-indigo-400/40" />
                                         : <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold shadow-lg border border-indigo-400/40">{initials}</div>
                                     }
-                                     <span className="text-xs font-medium text-white hidden md:block">{userData.name || user?.name || user?.email || 'User'}</span>
+                                    <span className="text-xs font-medium text-white hidden md:block">{userData.name || user?.name || user?.email || 'User'}</span>
                                     <svg className={`w-3 h-3 text-gray-400 transition-transform duration-300 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                     </svg>
@@ -313,14 +313,14 @@ const ProfilePage = () => {
                                             <p className="text-[10px] text-gray-500 truncate mt-0.5">{userData.email || ''}</p>
                                         </div>
                                         <button onClick={() => { setShowUserMenu(false); navigate('/profile'); }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-gray-900 hover:bg-gray-100 transition-colors flex items-center gap-1.5 bg-gray-50">
+                                            className="w-full px-3 py-2 text-left text-xs font-medium text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 bg-indigo-50">
                                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                             </svg>
                                             My Profile
                                         </button>
                                         <button onClick={() => { setShowUserMenu(false); logout(); }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-gray-900 hover:bg-gray-100 transition-colors flex items-center gap-1.5">
+                                            className="w-full px-3 py-2 text-left text-xs font-medium text-gray-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5">
                                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                                             </svg>
