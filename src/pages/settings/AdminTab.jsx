@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../api/axiosConfig';
+import Tooltip from '../../components/Tooltip';
 
 const EXCLUDE_KEYS = ['__v', '_id', 'id', 'adminId', 'acctNo', 'acctno'];
 const COLUMN_ORDER = ['firstName', 'lastName', 'phone', 'email', 'createdAt', 'updatedAt'];
@@ -190,19 +191,21 @@ const AdminTab = ({ acctId }) => {
     return (
         <div className="h-full flex flex-col">
             <div className="mb-3 flex-shrink-0 flex justify-start gap-2">
-                <button
-                    onClick={syncAdmins}
-                    disabled={syncing || loading}
-                    className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-gray-100 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title={syncing ? 'Syncing...' : 'Sync admins'}
-                >
-                    <svg
-                        className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${syncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`}
-                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                <Tooltip content={syncing ? 'Syncing...' : 'Sync admins'} placement="top">
+                    <button
+                        onClick={syncAdmins}
+                        disabled={syncing || loading}
+                        className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-indigo-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-indigo-400 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={syncing ? 'Syncing...' : 'Sync admins'}
                     >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                </button>
+                        <svg
+                            className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${syncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`}
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
+                </Tooltip>
             </div>
 
             <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-white rounded-lg shadow-2xl border border-gray-200">

@@ -966,23 +966,23 @@ const LeadsGrid = () => {
                                     <Tooltip content="Show / hide columns" placement="top">
                                         <button
                                             onClick={() => setShowColumnSelector(v => !v)}
-                                            className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 focus:ring-indigo-400 ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
-                                                ? 'bg-indigo-50 border-indigo-400'
-                                                : 'bg-transparent border-gray-300 hover:bg-indigo-50 hover:border-indigo-400'
+                                            className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 focus:ring-violet-400 ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
+                                                ? 'bg-violet-50 border-violet-400'
+                                                : 'bg-transparent border-gray-300 hover:bg-violet-50 hover:border-violet-400'
                                                 }`}
                                             title="Show / hide columns"
                                         >
                                             <svg
                                                 className={`w-4 h-4 transition-colors ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
-                                                    ? 'text-indigo-600'
-                                                    : 'text-gray-600 group-hover:text-indigo-600'
+                                                    ? 'text-violet-600'
+                                                    : 'text-gray-600 group-hover:text-violet-600'
                                                     }`}
                                                 fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                             >
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 6h18M3 14h18M3 18h18" />
                                             </svg>
                                             {visibleFields !== null && visibleFields.length !== fields.length && (
-                                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-indigo-600 rounded-full text-white text-[8px] flex items-center justify-center font-bold leading-none">
+                                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-violet-600 rounded-full text-white text-[8px] flex items-center justify-center font-bold leading-none">
                                                     {visibleFields.length}
                                                 </span>
                                             )}
