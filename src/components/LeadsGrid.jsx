@@ -1266,7 +1266,7 @@ const LeadsGrid = () => {
                                                             type={isNumeric ? 'number' : 'text'}
                                                             value={editForm[field] ?? ''}
                                                             onChange={e => setEditForm(prev => ({ ...prev, [field]: isNumeric ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
-                                                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                                                            className="ds-input ds-input--sm"
                                                             disabled={isSaving}
                                                         />
                                                     </div>
