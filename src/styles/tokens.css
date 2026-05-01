@@ -136,8 +136,8 @@
   /* ----------------------------------------------------------
      GRADIENTS
      ---------------------------------------------------------- */
-  --gradient-primary:         linear-gradient(135deg, var(--color-primary-600) 0%, var(--color-secondary-600) 100%);
-  --gradient-primary-hover:   linear-gradient(135deg, var(--color-primary-700) 0%, var(--color-secondary-700) 100%);
+  --gradient-primary:         linear-gradient(to right, var(--color-primary-600) 0%, var(--color-secondary-600) 100%);
+  --gradient-primary-hover:   linear-gradient(to right, var(--color-primary-500) 0%, var(--color-secondary-500) 100%);
   --gradient-dark:      linear-gradient(135deg, var(--color-gray-900) 0%, var(--color-gray-700) 100%);
   --gradient-light:     linear-gradient(135deg, var(--color-gray-50) 0%, var(--color-white) 100%);
   --gradient-danger:    linear-gradient(135deg, var(--color-danger-600) 0%, var(--color-danger-700) 100%);
