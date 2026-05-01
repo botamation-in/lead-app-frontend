@@ -31,6 +31,7 @@ const DeleteConfirmation = ({ isOpen, onClose, onConfirm, title, message, confir
           <div className="mt-6 flex justify-end space-x-4">
             <Button
               variant="secondary"
+              scheme="danger"
               onClick={onClose}
             >
               Cancel

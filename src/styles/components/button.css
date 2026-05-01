@@ -106,6 +106,27 @@
   box-shadow: var(--shadow-xs);
 }
 
+/* -- Secondary colour schemes (tints text/border to match sibling action) -- */
+.btn--secondary.btn--scheme-primary {
+  color:        var(--color-primary-600);
+  border-color: var(--color-primary-200);
+}
+.btn--secondary.btn--scheme-primary:hover:not(:disabled) {
+  background:   var(--color-primary-50);
+  border-color: var(--color-primary-300);
+  color:        var(--color-primary-700);
+}
+
+.btn--secondary.btn--scheme-danger {
+  color:        var(--color-danger-600);
+  border-color: var(--color-danger-200);
+}
+.btn--secondary.btn--scheme-danger:hover:not(:disabled) {
+  background:   var(--color-danger-50);
+  border-color: var(--color-danger-300);
+  color:        var(--color-danger-700);
+}
+
 /* -- Variant: ghost ----------------------------------------- */
 .btn--ghost {
   background:   transparent;

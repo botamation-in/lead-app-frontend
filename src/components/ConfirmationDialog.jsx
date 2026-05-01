@@ -109,6 +109,7 @@ const ConfirmationDialog = ({
                     <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
                         <Button
                             variant="secondary"
+                            scheme={styles.btnVariant}
                             onClick={onCancel}
                             disabled={isLoading}
                         >

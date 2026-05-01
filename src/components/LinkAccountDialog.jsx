@@ -171,6 +171,7 @@ const LinkAccountDialog = ({ isOpen, onClose, onSave }) => {
                                     <Button
                                         size="sm"
                                         variant="secondary"
+                                        scheme="primary"
                                         onClick={handleClose}
                                     >
                                         Cancel

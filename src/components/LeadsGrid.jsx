@@ -1241,6 +1241,7 @@ const LeadsGrid = () => {
                                              <Button
                                                 size="sm"
                                                 variant="secondary"
+                                                scheme="primary"
                                                 onClick={cancelEdit}
                                                 disabled={isSaving}
                                              >
@@ -1318,6 +1319,7 @@ const LeadsGrid = () => {
                             <Button
                                 block
                                 variant="secondary"
+                                scheme="danger"
                                 onClick={() => setDeleteCategoryPending(null)}
                                 disabled={deleteCategoryLoading}
                             >

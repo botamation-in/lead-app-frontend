@@ -8,6 +8,7 @@ import '../../styles/components/button.css';
  * Props:
  *   variant  – 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'  (default: 'primary')
  *   size     – 'sm' | 'md' | 'lg'  (default: 'md')
+ *   scheme   – 'primary' | 'danger'  tints a secondary button to match its sibling action button
  *   block    – stretch to full width
  *   loading  – show spinner, disable interaction
  *   iconOnly – square aspect ratio for icon-only buttons
@@ -17,6 +18,7 @@ const Button = forwardRef(function Button(
   {
     variant = 'primary',
     size = 'md',
+    scheme,
     block = false,
     loading = false,
     iconOnly = false,
@@ -32,6 +34,7 @@ const Button = forwardRef(function Button(
     'btn',
     `btn--${variant}`,
     `btn--${size}`,
+    scheme   ? `btn--scheme-${scheme}` : '',
     block    ? 'btn--block'   : '',
     loading  ? 'btn--loading' : '',
     iconOnly ? 'btn--icon'    : '',
@@ -58,6 +61,7 @@ Button.displayName = 'Button';
 Button.propTypes = {
   variant:  PropTypes.oneOf(['primary', 'secondary', 'ghost', 'danger', 'outline']),
   size:     PropTypes.oneOf(['sm', 'md', 'lg']),
+  scheme:   PropTypes.oneOf(['primary', 'danger']),
   block:    PropTypes.bool,
   loading:  PropTypes.bool,
   iconOnly: PropTypes.bool,

@@ -3256,6 +3256,7 @@ const AnalyticsDashboardPage = () => {
                             <Button
                                 size="sm"
                                 variant="secondary"
+                                scheme="primary"
                                 onClick={() => setSaveWarningOpen(false)}
                             >
                                 Cancel
@@ -3305,6 +3306,7 @@ const AnalyticsDashboardPage = () => {
                             <Button
                                 size="sm"
                                 variant="secondary"
+                                scheme="primary"
                                 onClick={() => {
                                     setSwitchAdminWarningOpen(false);
                                     setPendingViewAsAdmin(null);
@@ -3350,6 +3352,7 @@ const AnalyticsDashboardPage = () => {
                             <Button
                                 size="sm"
                                 variant="secondary"
+                                scheme="danger"
                                 onClick={() => setPullOverwriteWarningOpen(false)}
                             >
                                 Cancel
