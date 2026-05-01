@@ -1,0 +1,162 @@
+/* ============================================================
+   TYPOGRAPHY COMPONENT
+   Consumes tokens from tokens.css
+   ============================================================ */
+
+/* -- Display headings --------------------------------------- */
+.ds-display {
+  font-family:    var(--font-sans);
+  font-size:      var(--text-5xl);
+  font-weight:    var(--font-black);
+  line-height:    var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color:          var(--color-text);
+}
+
+/* -- Headings h1 – h6 --------------------------------------- */
+.ds-h1 {
+  font-family:    var(--font-sans);
+  font-size:      var(--text-4xl);
+  font-weight:    var(--font-bold);
+  line-height:    var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color:          var(--color-text);
+}
+
+.ds-h2 {
+  font-family:    var(--font-sans);
+  font-size:      var(--text-3xl);
+  font-weight:    var(--font-bold);
+  line-height:    var(--leading-snug);
+  letter-spacing: var(--tracking-tight);
+  color:          var(--color-text);
+}
+
+.ds-h3 {
+  font-family:    var(--font-sans);
+  font-size:      var(--text-2xl);
+  font-weight:    var(--font-semibold);
+  line-height:    var(--leading-snug);
+  color:          var(--color-text);
+}
+
+.ds-h4 {
+  font-family: var(--font-sans);
+  font-size:   var(--text-xl);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-snug);
+  color:       var(--color-text);
+}
+
+.ds-h5 {
+  font-family: var(--font-sans);
+  font-size:   var(--text-lg);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-normal);
+  color:       var(--color-text);
+}
+
+.ds-h6 {
+  font-family: var(--font-sans);
+  font-size:   var(--text-base);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-normal);
+  color:       var(--color-text);
+}
+
+/* -- Subheading (section label above a title) --------------- */
+.ds-subheading {
+  font-family:    var(--font-sans);
+  font-size:      var(--text-xs);
+  font-weight:    var(--font-semibold);
+  line-height:    var(--leading-normal);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color:          var(--color-text-subtle);
+}
+
+/* -- Body text ---------------------------------------------- */
+.ds-body-lg {
+  font-family: var(--font-sans);
+  font-size:   var(--text-lg);
+  font-weight: var(--font-normal);
+  line-height: var(--leading-relaxed);
+  color:       var(--color-text);
+}
+
+.ds-body {
+  font-family: var(--font-sans);
+  font-size:   var(--text-base);
+  font-weight: var(--font-normal);
+  line-height: var(--leading-normal);
+  color:       var(--color-text);
+}
+
+.ds-body-sm {
+  font-family: var(--font-sans);
+  font-size:   var(--text-sm);
+  font-weight: var(--font-normal);
+  line-height: var(--leading-normal);
+  color:       var(--color-text);
+}
+
+/* -- Labels ------------------------------------------------- */
+.ds-label {
+  font-family: var(--font-sans);
+  font-size:   var(--text-sm);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-normal);
+  color:       var(--color-text);
+}
+
+.ds-label-sm {
+  font-family: var(--font-sans);
+  font-size:   var(--text-xs);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-normal);
+  color:       var(--color-text);
+}
+
+/* -- Caption / helper text ---------------------------------- */
+.ds-caption {
+  font-family: var(--font-sans);
+  font-size:   var(--text-xs);
+  font-weight: var(--font-normal);
+  line-height: var(--leading-normal);
+  color:       var(--color-text-subtle);
+}
+
+/* -- Overline (label above heading) ------------------------- */
+.ds-overline {
+  font-family:    var(--font-sans);
+  font-size:      var(--text-2xs);
+  font-weight:    var(--font-semibold);
+  line-height:    var(--leading-normal);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color:          var(--color-text-muted);
+}
+
+/* -- Code --------------------------------------------------- */
+.ds-code {
+  font-family:  var(--font-mono);
+  font-size:    0.9em;
+  padding:      var(--space-0-5) var(--space-1);
+  background:   var(--color-bg-subtle);
+  border:       1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color:        var(--color-text);
+}
+
+/* -- Modifiers ---------------------------------------------- */
+.ds-text--subtle   { color: var(--color-text-subtle); }
+.ds-text--muted    { color: var(--color-text-muted); }
+.ds-text--primary  { color: var(--color-interactive); }
+.ds-text--danger   { color: var(--color-danger); }
+.ds-text--success  { color: var(--color-success); }
+.ds-text--warning  { color: var(--color-warning); }
+.ds-text--truncate {
+  overflow:      hidden;
+  white-space:   nowrap;
+  text-overflow: ellipsis;
+}
