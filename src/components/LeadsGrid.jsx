@@ -10,6 +10,7 @@ import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/app
 import { useNotifications } from './Notifications';
 import LoadingMask from './LoadingMask';
 import DeleteConfirmation from './DeleteConfirmation';
+import Tooltip from './Tooltip';
 
 
 // Avatar colour palette — used in lead row renderer
@@ -211,9 +212,6 @@ const LeadsGrid = () => {
     const [deleteCategoryPending, setDeleteCategoryPending] = useState(null); // { _id, categoryName, leadCount }
     const [deleteCategoryLoading, setDeleteCategoryLoading] = useState(false);
 
-    // Account API key (fetched once per account, used for lead create)
-    const [apiKey, setApiKey] = useState('');
-
     // Fetch category names from API using acctId
     const fetchCategories = async () => {
         if (!acctId) return;
@@ -257,13 +255,6 @@ const LeadsGrid = () => {
 
     useEffect(() => {
         fetchCategories();
-    }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    useEffect(() => {
-        if (!acctId) return;
-        api.post('/api/ui/accounts/token', { acctId, masked: false })
-            .then(res => setApiKey(res.data.apiKey || ''))
-            .catch(() => { });
     }, [acctId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleCategoryChange = (value) => {
@@ -370,7 +361,8 @@ const LeadsGrid = () => {
                 ? Object.keys(firstLead).filter(field => !excludeFields.includes(field))
                 : [];
             const baseFields = apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields;
-            const displayFields = baseFields;
+            // Deduplicate while preserving order (guards against backend sending duplicate fields)
+            const displayFields = [...new Set(baseFields)];
 
             if (displayFields.length > 0) {
                 setFields(displayFields);
@@ -899,15 +891,16 @@ const LeadsGrid = () => {
                                 {selectedCategory && (() => {
                                     const activeCat = categories.find(c => c._id === selectedCategory);
                                     return activeCat ? (
-                                        <button
-                                            title={`Delete category "${activeCat.categoryName}"`}
-                                            onClick={() => setDeleteCategoryPending(activeCat)}
-                                            className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-red-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-red-400 focus:ring-1 focus:ring-red-300"
-                                        >
-                                            <svg className="w-4 h-4 text-gray-600 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                            </svg>
-                                        </button>
+                                        <Tooltip content={`Delete category "${activeCat.categoryName}"`} placement="top">
+                                            <button
+                                                onClick={() => setDeleteCategoryPending(activeCat)}
+                                                className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-red-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-red-400 focus:ring-1 focus:ring-red-300"
+                                            >
+                                                <svg className="w-4 h-4 text-gray-600 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                            </button>
+                                        </Tooltip>
                                     ) : null;
                                 })()}
                             </div>
@@ -917,44 +910,51 @@ const LeadsGrid = () => {
 
                             {/* ── Group 2: View & filter — Clear filters + Refresh ── */}
                             <div className="flex items-center gap-1.5">
-                                <button
-                                    onClick={() => {
-                                        const cleared = {};
-                                        fields.forEach(f => { cleared[f] = ''; });
-                                        setFilters(cleared);
-                                        saveFilters(acctId, selectedCategory, null);
-                                        setAppliedFilters(prev => {
-                                            const updated = {};
-                                            if (prev.categoryId) updated.categoryId = prev.categoryId;
-                                            return updated;
-                                        });
-                                        setCurrentPage(1);
-                                    }}
-                                    disabled={loading || Object.keys(appliedFilters).filter(k => k !== 'categoryId').length === 0}
-                                    className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 disabled:opacity-40 disabled:cursor-not-allowed ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0
+                                <Tooltip
+                                    content={Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? `Clear ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length} active filter${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length !== 1 ? 's' : ''}` : 'No active filters'}
+                                    placement="top"
+                                >
+                                    <button
+                                        onClick={() => {
+                                            const cleared = {};
+                                            fields.forEach(f => { cleared[f] = ''; });
+                                            setFilters(cleared);
+                                            saveFilters(acctId, selectedCategory, null);
+                                            setAppliedFilters(prev => {
+                                                const updated = {};
+                                                if (prev.categoryId) updated.categoryId = prev.categoryId;
+                                                return updated;
+                                            });
+                                            setCurrentPage(1);
+                                        }}
+                                        disabled={loading || Object.keys(appliedFilters).filter(k => k !== 'categoryId').length === 0}
+                                        className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 disabled:opacity-40 disabled:cursor-not-allowed ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0
                                             ? 'bg-red-50 border-red-400 focus:ring-red-300'
                                             : 'bg-transparent border-gray-300 hover:bg-red-50 hover:border-red-400 focus:ring-red-300'
-                                        }`}
-                                    title={Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? `Clear ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length} active filter${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length !== 1 ? 's' : ''}` : 'No active filters'}
-                                >
-                                    <svg className={`w-4 h-4 transition-colors ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? 'text-red-500' : 'text-gray-600 group-hover:text-red-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12" />
-                                    </svg>
-                                </button>
-                                <button
-                                    onClick={fetchLeads}
-                                    disabled={loading}
-                                    className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-indigo-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-indigo-400 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                                    title={loading ? 'Loading...' : 'Refresh leads'}
-                                >
-                                    <svg
-                                        className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`}
-                                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                            }`}
+                                        title={Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? `Clear ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length} active filter${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length !== 1 ? 's' : ''}` : 'No active filters'}
                                     >
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                </button>
+                                        <svg className={`w-4 h-4 transition-colors ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? 'text-red-500' : 'text-gray-600 group-hover:text-red-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </Tooltip>
+                                <Tooltip content={loading ? 'Loading...' : 'Refresh leads'} placement="top">
+                                    <button
+                                        onClick={fetchLeads}
+                                        disabled={loading}
+                                        className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-indigo-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-indigo-400 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        title={loading ? 'Loading...' : 'Refresh leads'}
+                                    >
+                                        <svg
+                                            className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`}
+                                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    </button>
+                                </Tooltip>
                             </div>
 
                             {/* Divider */}
@@ -963,29 +963,31 @@ const LeadsGrid = () => {
                             {/* ── Group 3: Display — Show / hide columns ── */}
                             {fields.length > 0 && (
                                 <div className="relative" ref={columnSelectorRef}>
-                                    <button
-                                        onClick={() => setShowColumnSelector(v => !v)}
-                                        className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 focus:ring-indigo-400 ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
+                                    <Tooltip content="Show / hide columns" placement="top">
+                                        <button
+                                            onClick={() => setShowColumnSelector(v => !v)}
+                                            className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 focus:ring-indigo-400 ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
                                                 ? 'bg-indigo-50 border-indigo-400'
                                                 : 'bg-transparent border-gray-300 hover:bg-indigo-50 hover:border-indigo-400'
-                                            }`}
-                                        title="Show / hide columns"
-                                    >
-                                        <svg
-                                            className={`w-4 h-4 transition-colors ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
+                                                }`}
+                                            title="Show / hide columns"
+                                        >
+                                            <svg
+                                                className={`w-4 h-4 transition-colors ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
                                                     ? 'text-indigo-600'
                                                     : 'text-gray-600 group-hover:text-indigo-600'
-                                                }`}
-                                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                        >
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 6h18M3 14h18M3 18h18" />
-                                        </svg>
-                                        {visibleFields !== null && visibleFields.length !== fields.length && (
-                                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-indigo-600 rounded-full text-white text-[8px] flex items-center justify-center font-bold leading-none">
-                                                {visibleFields.length}
-                                            </span>
-                                        )}
-                                    </button>
+                                                    }`}
+                                                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                            >
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 6h18M3 14h18M3 18h18" />
+                                            </svg>
+                                            {visibleFields !== null && visibleFields.length !== fields.length && (
+                                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-indigo-600 rounded-full text-white text-[8px] flex items-center justify-center font-bold leading-none">
+                                                    {visibleFields.length}
+                                                </span>
+                                            )}
+                                        </button>
+                                    </Tooltip>
 
                                     {showColumnSelector && (
                                         <div className="absolute left-0 mt-1 w-52 bg-white rounded-lg shadow-2xl border border-gray-200 z-50">
@@ -1033,48 +1035,54 @@ const LeadsGrid = () => {
 
                             {/* ── Group 4: Output — Export + Analytics ── */}
                             <div className="flex items-center gap-1.5">
-                                <button
-                                    onClick={handleExportExcel}
-                                    disabled={isExporting || loading}
-                                    className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-emerald-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-emerald-500 focus:ring-1 focus:ring-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                                    title={isExporting ? 'Exporting...' : (Object.keys(appliedFilters).length > 0 ? `Export filtered leads (${totalRecords}) to Excel` : 'Export all leads to Excel')}
+                                <Tooltip
+                                    content={isExporting ? 'Exporting...' : (Object.keys(appliedFilters).length > 0 ? `Export filtered leads (${totalRecords}) to Excel` : 'Export all leads to Excel')}
+                                    placement="top"
                                 >
-                                    {isExporting ? (
-                                        <svg className="w-4 h-4 text-emerald-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    <button
+                                        onClick={handleExportExcel}
+                                        disabled={isExporting || loading}
+                                        className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-emerald-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-emerald-500 focus:ring-1 focus:ring-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        {isExporting ? (
+                                            <svg className="w-4 h-4 text-emerald-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                            </svg>
+                                        ) : (
+                                            <svg className="w-4 h-4 text-gray-600 group-hover:text-emerald-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                                            </svg>
+                                        )}
+                                    </button>
+                                </Tooltip>
+                                <Tooltip content="Open Analytics" placement="top">
+                                    <button
+                                        onClick={() => window.open('/analytics', '_blank')}
+                                        className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-blue-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-blue-500 focus:ring-1 focus:ring-blue-400"
+                                    >
+                                        <svg className="w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                         </svg>
-                                    ) : (
-                                        <svg className="w-4 h-4 text-gray-600 group-hover:text-emerald-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                                        </svg>
-                                    )}
-                                </button>
-                                <button
-                                    onClick={() => window.open('/analytics', '_blank')}
-                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-blue-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-blue-500 focus:ring-1 focus:ring-blue-400"
-                                    title="Open Analytics"
-                                >
-                                    <svg className="w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                    </svg>
-                                </button>
+                                    </button>
+                                </Tooltip>
                             </div>
 
                             {/* Divider */}
                             <div className="w-px h-6 bg-gray-200 mx-1.5" />
 
                             {/* ── Group 5: Primary action — Add new lead ── */}
-                            <button
-                                onClick={handleAdd}
-                                disabled={loading || fields.length === 0}
-                                className="group relative h-8 px-3 flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-all duration-300 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium shadow-md shadow-indigo-500/30"
-                                title="Add New Lead"
-                            >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                                </svg>
-                                Add Lead
-                            </button>
+                            <Tooltip content="Add New Lead" placement="top">
+                                <button
+                                    onClick={handleAdd}
+                                    disabled={loading || fields.length === 0}
+                                    className="group relative h-8 px-3 flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-all duration-300 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium shadow-md shadow-indigo-500/30"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    Add Lead
+                                </button>
+                            </Tooltip>
 
                         </div>
 
@@ -1232,24 +1240,26 @@ const LeadsGrid = () => {
                                                                 })}
                                                                 <td className="px-3 py-2 whitespace-nowrap text-center">
                                                                     <div className="flex items-center justify-center gap-1.5">
-                                                                        <button
-                                                                            onClick={() => handleEditOpen(lead)}
-                                                                            className="group relative w-6 h-6 flex items-center justify-center bg-transparent rounded-md hover:bg-blue-50 transition-all duration-200 hover:scale-110 border border-gray-300 hover:border-blue-300 focus:ring-1 focus:ring-blue-300"
-                                                                            title="Edit lead"
-                                                                        >
-                                                                            <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                                            </svg>
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => handleDeleteOpen(lead._id)}
-                                                                            className="group relative w-6 h-6 flex items-center justify-center bg-transparent rounded-md hover:bg-red-50 transition-all duration-200 hover:scale-110 border border-gray-300 hover:border-red-300 focus:ring-1 focus:ring-red-300"
-                                                                            title="Delete lead"
-                                                                        >
-                                                                            <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                                            </svg>
-                                                                        </button>
+                                                                        <Tooltip content="Edit lead" placement="top">
+                                                                            <button
+                                                                                onClick={() => handleEditOpen(lead)}
+                                                                                className="group relative w-6 h-6 flex items-center justify-center bg-transparent rounded-md hover:bg-blue-50 transition-all duration-200 hover:scale-110 border border-gray-300 hover:border-blue-300 focus:ring-1 focus:ring-blue-300"
+                                                                            >
+                                                                                <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                                </svg>
+                                                                            </button>
+                                                                        </Tooltip>
+                                                                        <Tooltip content="Delete lead" placement="top">
+                                                                            <button
+                                                                                onClick={() => handleDeleteOpen(lead._id)}
+                                                                                className="group relative w-6 h-6 flex items-center justify-center bg-transparent rounded-md hover:bg-red-50 transition-all duration-200 hover:scale-110 border border-gray-300 hover:border-red-300 focus:ring-1 focus:ring-red-300"
+                                                                            >
+                                                                                <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                                </svg>
+                                                                            </button>
+                                                                        </Tooltip>
                                                                     </div>
                                                                 </td>
                                                             </tr>

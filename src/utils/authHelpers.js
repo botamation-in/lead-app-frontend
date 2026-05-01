@@ -78,6 +78,7 @@ export const normalizeUserData = (userData = {}) => {
     if (normalized.userId) localStorage.setItem('userId', normalized.userId);
     if (normalized.acctId) localStorage.setItem('acctId', normalized.acctId);
     if (normalized.acctNo) localStorage.setItem('acctNo', normalized.acctNo);
+    if (normalized.email) localStorage.setItem('userEmail', normalized.email.trim().toLowerCase());
 
     return normalized;
 };

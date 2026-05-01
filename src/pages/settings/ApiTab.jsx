@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../../api/axiosConfig';
 import { useNotifications } from '../../components/Notifications';
 import ConfirmationDialog from '../../components/ConfirmationDialog';
+import Tooltip from '../../components/Tooltip';
 
 // ── Reusable copy-to-clipboard button ──────────────────────────────────────────
 const CopyButton = ({ text }) => {
@@ -19,9 +20,9 @@ const CopyButton = ({ text }) => {
         } catch { /* ignore */ }
     };
     return (
+        <Tooltip content={copied ? 'Copied!' : 'Copy'} placement="top">
         <button
             onClick={handleCopy}
-            title="Copy"
             className={`p-1 rounded transition-colors ${copied ? 'text-green-600' : 'text-gray-400 hover:text-gray-600'}`}
         >
             {copied ? (
@@ -37,6 +38,7 @@ const CopyButton = ({ text }) => {
                 </svg>
             )}
         </button>
+        </Tooltip>
     );
 };
 
@@ -236,10 +238,10 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                 </div>
 
                 {/* Show / Hide */}
+                <Tooltip content={showToken ? 'Hide token' : 'Show token'} placement="top">
                 <button
                     onClick={handleShowHide}
                     disabled={loading}
-                    title={showToken ? 'Hide token' : 'Show token'}
                     className="p-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors disabled:opacity-40"
                 >
                     {showToken ? (
@@ -255,12 +257,13 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                         </svg>
                     )}
                 </button>
+                </Tooltip>
 
                 {/* Copy */}
+                <Tooltip content={copySuccess ? 'Copied!' : 'Copy token'} placement="top">
                 <button
                     onClick={handleCopy}
                     disabled={loading}
-                    title="Copy token"
                     className={`p-2 rounded-lg border transition-colors disabled:opacity-40 ${copySuccess
                         ? 'border-green-400 bg-green-50'
                         : 'border-gray-300 bg-white hover:bg-gray-50'
@@ -279,6 +282,7 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                         </svg>
                     )}
                 </button>
+                </Tooltip>
             </div>
 
             {/* Regenerate button */}

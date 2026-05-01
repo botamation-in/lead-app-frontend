@@ -45,44 +45,6 @@ export const AccountProvider = ({ children }) => {
     // ── Notifications ──────────────────────────────────────────────────────────
     const { showSuccess, NotificationComponent } = useNotifications();
 
-    // ── Resolve currentUserAdmin in localStorage ───────────────────────────────
-    // Fetches admin list for the given account, matches the logged-in user's email
-    // against each admin's emailId, and stores the matched admin's _id.
-    const resolveCurrentUserAdmin = useCallback(async (resolveAcctId) => {
-        const userEmail = (userDetails?.email || user?.email || '').trim().toLowerCase();
-        if (!resolveAcctId || !userEmail) {
-            localStorage.removeItem('currentUserAdmin');
-            return;
-        }
-        try {
-            const res = await api.get('/api/ui/admins/list', { params: { acctId: resolveAcctId, limit: 200 } });
-            const raw = res.data;
-            const list = Array.isArray(raw)
-                ? raw
-                : Array.isArray(raw?.admins)
-                    ? raw.admins
-                    : Array.isArray(raw?.data)
-                        ? raw.data
-                        : Array.isArray(raw?.data?.admins)
-                            ? raw.data.admins
-                            : [];
-            const matched = list.find((a) => {
-                const adminEmail = (a.emailId || a.email || a.email_id || '').trim().toLowerCase();
-                return adminEmail && adminEmail === userEmail;
-            });
-            const adminId = matched
-                ? (matched._id || matched.id || matched.adminId || matched.authId || matched.authUserId || null)
-                : null;
-            if (adminId) {
-                localStorage.setItem('currentUserAdmin', String(adminId));
-            } else {
-                localStorage.removeItem('currentUserAdmin');
-            }
-        } catch (err) {
-            console.warn('[AccountContext] Failed to resolve currentUserAdmin:', err.message);
-        }
-    }, [user?.email, userDetails?.email]); // eslint-disable-line react-hooks/exhaustive-deps
-
     // ── Fetch linked accounts from backend ────────────────────────────────────
     const fetchAccounts = useCallback(async () => {
         const userId = user?.userId || localStorage.getItem('userId');
@@ -119,7 +81,6 @@ export const AccountProvider = ({ children }) => {
                         cleaned.find((a) => a.acctNo === activeNo) || cleaned[0];
 
                     applySelectedAccount(active);
-                    resolveCurrentUserAdmin(active.acctId);
                     // Always update URL if the ?acc= param is missing or doesn't match
                     if (!urlAcctNo || urlAcctNo !== active.acctNo) {
                         updateUrlWithAcctNo(active.acctNo, navigate, location);
@@ -169,7 +130,6 @@ export const AccountProvider = ({ children }) => {
     // ── Switch active account ──────────────────────────────────────────────────
     const switchAccount = (account) => {
         applySelectedAccount(account);
-        resolveCurrentUserAdmin(account.acctId);
         updateUrlWithAcctNo(account.acctNo, navigate, location);
     };
 
@@ -192,7 +152,6 @@ export const AccountProvider = ({ children }) => {
 
         setAccounts((prev) => [...prev, newAccount]);
         applySelectedAccount(newAccount);
-        resolveCurrentUserAdmin(newAccount.acctId);
         setIsAccountLinked(true);
         setIsLinkDialogOpen(false);
         updateUrlWithAcctNo(newAccount.acctNo, navigate, location);

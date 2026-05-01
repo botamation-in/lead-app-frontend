@@ -86,18 +86,45 @@ const AdminTab = ({ acctId }) => {
         setSyncing(true);
         setError('');
         try {
-            await api.get('/api/ui/admins', { params: { acctId } });
+            // Single call — backend syncs from Botamation platform then returns the refreshed list
             const activeFilters = Object.keys(appliedFilters).reduce((acc, k) => {
                 if (appliedFilters[k]) { acc[k] = appliedFilters[k]; }
                 return acc;
             }, {});
-            await loadAdminsFromDb(activeFilters, sortField, sortOrder, currentPage, pageSize);
+            const params = { acctId, page: currentPage, limit: pageSize, ...activeFilters };
+            if (sortField) { params.sortBy = sortField; params.sortOrder = sortOrder; }
+            const response = await api.get('/api/ui/admins', { params });
+            const data = response.data;
+            const list = Array.isArray(data) ? data : (data.admins || data.data || []);
+            const pagination = data.pagination || null;
+            setAdmins(list);
+            setTotalRecords(pagination?.total ?? list.length);
+            setTotalPages(pagination?.pages ?? 1);
+            setCurrentPage(pagination?.page ?? currentPage);
+            if (list.length > 0) {
+                const available = new Set(
+                    Object.keys(list[0]).filter((k) =>
+                        !EXCLUDE_KEYS.map(e => e.toLowerCase()).includes(k.toLowerCase()) && !isImageKey(k)
+                    )
+                );
+                const ordered = COLUMN_ORDER.filter(c =>
+                    [...available].some(a => a.toLowerCase() === c.toLowerCase())
+                ).map(c => [...available].find(a => a.toLowerCase() === c.toLowerCase()));
+                const rest = [...available].filter(a => !COLUMN_ORDER.some(c => c.toLowerCase() === a.toLowerCase()));
+                const cols = [...ordered, ...rest];
+                setColumns(cols);
+                setFilters(prev => {
+                    const init = {};
+                    cols.forEach((c) => { init[c] = prev[c] || ''; });
+                    return init;
+                });
+            }
         } catch (err) {
             setError(err.message || 'Failed to synchronize admins.');
         } finally {
             setSyncing(false);
         }
-    }, [acctId, appliedFilters, sortField, sortOrder, currentPage, pageSize, loadAdminsFromDb]);
+    }, [acctId, appliedFilters, sortField, sortOrder, currentPage, pageSize]);
 
     // Initial load
     useEffect(() => { loadAdminsFromDb(); }, [loadAdminsFromDb]);
