@@ -1,0 +1,179 @@
+/* ============================================================
+   INPUT / TEXTBOX COMPONENT
+   Consumes tokens from tokens.css
+   ============================================================ */
+
+/* -- Field wrapper ----------------------------------------- */
+.ds-field {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-1-5);
+}
+
+/* -- Label -------------------------------------------------- */
+.ds-field__label {
+  font-family:  var(--font-sans);
+  font-size:    var(--text-sm);
+  font-weight:  var(--font-medium);
+  color:        var(--color-text);
+  user-select:  none;
+}
+
+.ds-field__label--required::after {
+  content:     ' *';
+  color:       var(--color-danger);
+  font-weight: var(--font-normal);
+}
+
+/* -- Helper / error text ------------------------------------ */
+.ds-field__hint {
+  font-size: var(--text-xs);
+  color:     var(--color-text-subtle);
+}
+
+.ds-field__error {
+  font-size: var(--text-xs);
+  color:     var(--color-danger);
+  display:   flex;
+  align-items: center;
+  gap:       var(--space-1);
+}
+
+/* -- Input wrapper (for icons / addons) --------------------- */
+.ds-input-wrapper {
+  position: relative;
+  display:  flex;
+  align-items: center;
+}
+
+/* -- Base input --------------------------------------------- */
+.ds-input {
+  width:          100%;
+  height:         var(--height-input-md);
+  padding:        0 var(--space-3);
+
+  font-family:    var(--font-sans);
+  font-size:      var(--text-sm);
+  font-weight:    var(--font-normal);
+  line-height:    var(--leading-normal);
+  color:          var(--color-text);
+
+  background:     var(--color-surface);
+  border:         1px solid var(--color-border);
+  border-radius:  var(--radius-lg);
+  box-shadow:     var(--shadow-xs);
+
+  outline:        none;
+  transition:
+    border-color var(--transition-normal),
+    box-shadow   var(--transition-normal),
+    background   var(--transition-normal);
+
+  -webkit-appearance: none;
+  appearance:         none;
+}
+
+.ds-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.ds-input:hover:not(:disabled):not(:focus) {
+  border-color: var(--color-border-strong);
+}
+
+.ds-input:focus {
+  border-color: var(--color-border-focus);
+  box-shadow:   0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+/* -- Sizes -------------------------------------------------- */
+.ds-input--sm {
+  height:    var(--height-input-sm);
+  padding:   0 var(--space-2-5);
+  font-size: var(--text-xs);
+}
+
+.ds-input--lg {
+  height:    var(--height-input-lg);
+  padding:   0 var(--space-4);
+  font-size: var(--text-base);
+}
+
+/* -- States ------------------------------------------------- */
+.ds-input--error {
+  border-color: var(--color-danger);
+  box-shadow:   0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.ds-input--error:focus {
+  border-color: var(--color-danger);
+  box-shadow:   0 0 0 3px rgba(239, 68, 68, 0.20);
+}
+
+.ds-input--success {
+  border-color: var(--color-success);
+}
+
+.ds-input:disabled {
+  background:  var(--color-bg-subtle);
+  color:       var(--color-text-muted);
+  cursor:      not-allowed;
+  border-color: var(--color-border);
+}
+
+/* -- With leading / trailing icon --------------------------- */
+.ds-input--with-leading  { padding-left:  var(--space-10); }
+.ds-input--with-trailing { padding-right: var(--space-10); }
+
+.ds-input-icon {
+  position:    absolute;
+  top:         50%;
+  transform:   translateY(-50%);
+  color:       var(--color-text-muted);
+  width:       var(--space-5);
+  height:      var(--space-5);
+  pointer-events: none;
+}
+
+.ds-input-icon--leading  { left:  var(--space-3); }
+.ds-input-icon--trailing { right: var(--space-3); }
+
+/* -- Textarea ----------------------------------------------- */
+.ds-textarea {
+  width:          100%;
+  min-height:     6rem;
+  padding:        var(--space-3);
+
+  font-family:    var(--font-sans);
+  font-size:      var(--text-sm);
+  line-height:    var(--leading-relaxed);
+  color:          var(--color-text);
+
+  background:     var(--color-surface);
+  border:         1px solid var(--color-border);
+  border-radius:  var(--radius-lg);
+  box-shadow:     var(--shadow-xs);
+  resize:         vertical;
+
+  outline:        none;
+  transition:
+    border-color var(--transition-normal),
+    box-shadow   var(--transition-normal);
+}
+
+.ds-textarea::placeholder { color: var(--color-text-muted); }
+
+.ds-textarea:hover:not(:disabled):not(:focus) {
+  border-color: var(--color-border-strong);
+}
+
+.ds-textarea:focus {
+  border-color: var(--color-border-focus);
+  box-shadow:   0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.ds-textarea:disabled {
+  background:  var(--color-bg-subtle);
+  color:       var(--color-text-muted);
+  cursor:      not-allowed;
+}

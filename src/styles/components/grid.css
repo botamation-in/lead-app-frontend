@@ -1,0 +1,148 @@
+/* ============================================================
+   GRID / LAYOUT COMPONENT
+   Consumes tokens from tokens.css
+   ============================================================ */
+
+/* -- Container ---------------------------------------------- */
+.ds-container {
+  width:     100%;
+  margin:    0 auto;
+  padding:   0 var(--space-4);
+}
+
+.ds-container--sm  { max-width: var(--size-container-sm); }
+.ds-container--md  { max-width: var(--size-container-md); }
+.ds-container--lg  { max-width: var(--size-container-lg); }
+.ds-container--xl  { max-width: var(--size-container-xl); }
+.ds-container--2xl { max-width: var(--size-container-2xl); }
+.ds-container--fluid { max-width: none; }
+
+@media (min-width: 640px)  { .ds-container { padding: 0 var(--space-6); } }
+@media (min-width: 1024px) { .ds-container { padding: 0 var(--space-8); } }
+
+/* -- Section ------------------------------------------------ */
+.ds-section {
+  padding-top:    var(--space-12);
+  padding-bottom: var(--space-12);
+}
+
+.ds-section--sm {
+  padding-top:    var(--space-8);
+  padding-bottom: var(--space-8);
+}
+
+.ds-section--lg {
+  padding-top:    var(--space-20);
+  padding-bottom: var(--space-20);
+}
+
+/* -- Row ---------------------------------------------------- */
+.ds-row {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       var(--space-4);
+}
+
+.ds-row--no-wrap { flex-wrap: nowrap; }
+.ds-row--reverse { flex-direction: row-reverse; }
+
+/* Alignment */
+.ds-row--center  { justify-content: center; }
+.ds-row--end     { justify-content: flex-end; }
+.ds-row--between { justify-content: space-between; }
+.ds-row--around  { justify-content: space-around; }
+.ds-row--evenly  { justify-content: space-evenly; }
+
+/* Cross-axis */
+.ds-row--align-start   { align-items: flex-start; }
+.ds-row--align-center  { align-items: center; }
+.ds-row--align-end     { align-items: flex-end; }
+.ds-row--align-stretch { align-items: stretch; }
+
+/* Gap variants */
+.ds-row--gap-sm  { gap: var(--space-2); }
+.ds-row--gap-lg  { gap: var(--space-6); }
+.ds-row--gap-xl  { gap: var(--space-8); }
+.ds-row--gap-2xl { gap: var(--space-12); }
+
+/* -- Column ------------------------------------------------- */
+.ds-col {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+/* Fixed-width columns (12-column grid) */
+.ds-col-1  { flex: 0 0 calc(1/12  * 100% - var(--space-4)); max-width: calc(1/12  * 100% - var(--space-4)); }
+.ds-col-2  { flex: 0 0 calc(2/12  * 100% - var(--space-4)); max-width: calc(2/12  * 100% - var(--space-4)); }
+.ds-col-3  { flex: 0 0 calc(3/12  * 100% - var(--space-4)); max-width: calc(3/12  * 100% - var(--space-4)); }
+.ds-col-4  { flex: 0 0 calc(4/12  * 100% - var(--space-4)); max-width: calc(4/12  * 100% - var(--space-4)); }
+.ds-col-5  { flex: 0 0 calc(5/12  * 100% - var(--space-4)); max-width: calc(5/12  * 100% - var(--space-4)); }
+.ds-col-6  { flex: 0 0 calc(6/12  * 100% - var(--space-4)); max-width: calc(6/12  * 100% - var(--space-4)); }
+.ds-col-7  { flex: 0 0 calc(7/12  * 100% - var(--space-4)); max-width: calc(7/12  * 100% - var(--space-4)); }
+.ds-col-8  { flex: 0 0 calc(8/12  * 100% - var(--space-4)); max-width: calc(8/12  * 100% - var(--space-4)); }
+.ds-col-9  { flex: 0 0 calc(9/12  * 100% - var(--space-4)); max-width: calc(9/12  * 100% - var(--space-4)); }
+.ds-col-10 { flex: 0 0 calc(10/12 * 100% - var(--space-4)); max-width: calc(10/12 * 100% - var(--space-4)); }
+.ds-col-11 { flex: 0 0 calc(11/12 * 100% - var(--space-4)); max-width: calc(11/12 * 100% - var(--space-4)); }
+.ds-col-12 { flex: 0 0 100%; max-width: 100%; }
+
+.ds-col-auto { flex: 0 0 auto; }
+
+/* -- CSS Grid wrapper --------------------------------------- */
+.ds-grid {
+  display:               grid;
+  gap:                   var(--space-4);
+  grid-template-columns: repeat(var(--ds-grid-cols, 1), minmax(0, 1fr));
+}
+
+/* Column count helpers */
+.ds-grid--cols-1  { --ds-grid-cols: 1; }
+.ds-grid--cols-2  { --ds-grid-cols: 2; }
+.ds-grid--cols-3  { --ds-grid-cols: 3; }
+.ds-grid--cols-4  { --ds-grid-cols: 4; }
+.ds-grid--cols-6  { --ds-grid-cols: 6; }
+.ds-grid--cols-12 { --ds-grid-cols: 12; }
+
+/* Auto-fit responsive */
+.ds-grid--auto-sm  { grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); }
+.ds-grid--auto-md  { grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); }
+.ds-grid--auto-lg  { grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); }
+
+/* Gap variants */
+.ds-grid--gap-sm  { gap: var(--space-2); }
+.ds-grid--gap-lg  { gap: var(--space-6); }
+.ds-grid--gap-xl  { gap: var(--space-8); }
+
+/* -- Stack (vertical flex) ---------------------------------- */
+.ds-stack {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-4);
+}
+
+.ds-stack--sm  { gap: var(--space-2); }
+.ds-stack--lg  { gap: var(--space-6); }
+.ds-stack--xl  { gap: var(--space-8); }
+
+/* -- Card --------------------------------------------------- */
+.ds-card {
+  background:    var(--color-surface);
+  border:        1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow:    var(--shadow-sm);
+  overflow:      hidden;
+}
+
+.ds-card__header {
+  padding:       var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ds-card__body {
+  padding: var(--space-5);
+}
+
+.ds-card__footer {
+  padding:    var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+}

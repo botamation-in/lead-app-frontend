@@ -1,9 +1,23 @@
+/* ============================================================
+   Design System — token & component imports
+   (must precede @tailwind directives per PostCSS rules)
+   ============================================================ */
+@import './styles/tokens.css';
+@import './styles/components/button.css';
+@import './styles/components/typography.css';
+@import './styles/components/input.css';
+@import './styles/components/dropdown.css';
+@import './styles/components/header.css';
+@import './styles/components/grid.css';
+@import './styles/components/radio.css';
+@import './styles/components/combobox.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ============================================
-   DESIGN SYSTEM - CUSTOM PROPERTIES
+   LEGACY CUSTOM PROPERTIES (kept for backward compatibility)
    ============================================ */
 :root {
     /* Monochromatic Color Palette - Black, White, Grey */

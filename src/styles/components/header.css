@@ -1,0 +1,175 @@
+/* ============================================================
+   HEADER COMPONENT
+   Consumes tokens from tokens.css
+   ============================================================ */
+
+/* -- Root shell --------------------------------------------- */
+.ds-header {
+  position:   sticky;
+  top:        0;
+  z-index:    var(--z-sticky);
+  width:      100%;
+  height:     var(--height-header);
+
+  display:        flex;
+  align-items:    center;
+  padding:        0 var(--space-6);
+
+  background:     var(--color-surface);
+  border-bottom:  1px solid var(--color-border);
+  box-shadow:     var(--shadow-sm);
+
+  transition: box-shadow var(--transition-normal);
+}
+
+.ds-header--scrolled {
+  box-shadow: var(--shadow-md);
+}
+
+/* -- Dark variant ------------------------------------------- */
+.ds-header--dark {
+  background:    var(--color-gray-900);
+  border-bottom: 1px solid var(--color-gray-700);
+  color:         var(--color-text-inverse);
+}
+
+/* -- Glass variant ------------------------------------------ */
+.ds-header--glass {
+  background:    rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* -- Layout sections ---------------------------------------- */
+.ds-header__start,
+.ds-header__end {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-3);
+}
+
+.ds-header__center {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  flex:            1;
+  gap:             var(--space-3);
+}
+
+.ds-header__start { margin-right: auto; }
+.ds-header__end   { margin-left:  auto; }
+
+/* Start + center + end together */
+.ds-header--split .ds-header__start { flex: 1; }
+.ds-header--split .ds-header__end   { flex: 1; justify-content: flex-end; }
+
+/* -- Logo / brand ------------------------------------------- */
+.ds-header__brand {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2-5);
+  text-decoration: none;
+  color:       var(--color-text);
+  font-size:   var(--text-lg);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-tight);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ds-header--dark .ds-header__brand {
+  color: var(--color-text-inverse);
+}
+
+.ds-header__logo {
+  width:  2rem;
+  height: 2rem;
+  object-fit: contain;
+}
+
+/* -- Navigation links --------------------------------------- */
+.ds-header__nav {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-1);
+}
+
+.ds-header__nav-link {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-1-5);
+  padding:     var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+
+  font-family:  var(--font-sans);
+  font-size:    var(--text-sm);
+  font-weight:  var(--font-medium);
+  color:        var(--color-text-subtle);
+  text-decoration: none;
+  white-space:  nowrap;
+
+  transition:
+    background-color var(--transition-fast),
+    color            var(--transition-fast);
+}
+
+.ds-header__nav-link:hover {
+  background: var(--color-bg-subtle);
+  color:      var(--color-text);
+}
+
+.ds-header__nav-link--active {
+  background: var(--color-primary-50);
+  color:      var(--color-interactive);
+  font-weight: var(--font-semibold);
+}
+
+.ds-header--dark .ds-header__nav-link {
+  color: var(--color-gray-300);
+}
+
+.ds-header--dark .ds-header__nav-link:hover {
+  background: var(--color-gray-800);
+  color:      var(--color-text-inverse);
+}
+
+.ds-header--dark .ds-header__nav-link--active {
+  background: var(--color-gray-800);
+  color:      var(--color-text-inverse);
+}
+
+/* -- Divider ------------------------------------------------ */
+.ds-header__divider {
+  width:      1px;
+  height:     var(--space-6);
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+.ds-header--dark .ds-header__divider {
+  background: var(--color-gray-700);
+}
+
+/* -- Mobile hamburger --------------------------------------- */
+.ds-header__hamburger {
+  display:      none;
+  align-items:  center;
+  justify-content: center;
+  width:        var(--space-10);
+  height:       var(--space-10);
+  border:       1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background:   transparent;
+  cursor:       pointer;
+  color:        var(--color-text);
+  transition:   background-color var(--transition-fast);
+}
+
+.ds-header__hamburger:hover {
+  background: var(--color-bg-subtle);
+}
+
+@media (max-width: 768px) {
+  .ds-header__nav { display: none; }
+  .ds-header__hamburger { display: flex; }
+}
