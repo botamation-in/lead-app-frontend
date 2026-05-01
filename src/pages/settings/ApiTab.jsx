@@ -266,7 +266,7 @@ const ApiTab = ({ acctId: acctIdProp }) => {
                 {/* Copy */}
                 <Tooltip content={copySuccess ? 'Copied!' : 'Copy token'} placement="top">
                 <Button
-                    variant={copySuccess ? 'ghost' : 'secondary'}
+                    variant="secondary"
                     size="sm"
                     iconOnly
                     onClick={handleCopy}

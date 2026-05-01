@@ -211,7 +211,7 @@ const ProfilePage = () => {
         <div className="min-h-screen bg-gray-50">
             <NotificationComponent />
             {/* ── Navbar ───────────────────────────────────────────────────── */}
-            <AppNavbar activePage="" />
+            <AppNavbar activePage={null} />
             {/* ── Page body ─────────────────────────────────────────────────── */}
             <div className="container mx-auto px-4 py-8 max-w-2xl">
 
@@ -237,7 +237,7 @@ const ProfilePage = () => {
                             {/* Only JPEG/PNG accepted — validated in handleAvatarChange */}
                             <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleAvatarChange} />
                             <Button size="sm" loading={avatarLoading} onClick={() => fileInputRef.current?.click()} disabled={avatarLoading}>
-                                {avatarLoading ? 'Uploading...' : 'Change Photo'}
+                                Change Photo
                             </Button>
                             <p className="text-[11px] text-gray-400 mt-1.5">JPEG or PNG only</p>
                         </div>
@@ -288,7 +288,7 @@ const ProfilePage = () => {
                         </div>
 
                         <Button type="submit" size="sm" loading={emailLoading} disabled={emailLoading}>
-                            {emailLoading ? 'Updating...' : 'Update Email'}
+                            Update Email
                         </Button>
                     </form>
                 </div>
@@ -309,7 +309,7 @@ const ProfilePage = () => {
                         </div>
 
                         <Button type="submit" size="sm" loading={phoneLoading} disabled={phoneLoading}>
-                            {phoneLoading ? 'Updating...' : 'Update Phone'}
+                            Update Phone
                         </Button>
                     </form>
                 </div>
@@ -344,7 +344,7 @@ const ProfilePage = () => {
                         ))}
 
                         <Button type="submit" size="sm" loading={pwLoading} disabled={pwLoading}>
-                            {pwLoading ? 'Updating...' : 'Change Password'}
+                            Change Password
                         </Button>
                     </form>
                 </div>
