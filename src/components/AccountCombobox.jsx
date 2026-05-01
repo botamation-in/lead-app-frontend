@@ -59,7 +59,7 @@ const AccountCombobox = ({
         <div className="relative" ref={ref}>
             {isAccountLinked && acctNo ? (
                 <>
-                    <div className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 hover:border-gray-500 transition-all duration-200 focus-within:border-gray-400">
+                    <div className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 hover:border-gray-500 transition-all duration-200 focus-within:border-indigo-500 focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.25)]">
                         <input
                             ref={inputRef}
                             type="text"

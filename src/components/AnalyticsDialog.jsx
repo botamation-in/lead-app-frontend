@@ -633,7 +633,7 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                             type="date"
                             value={chartConfig.dateFilterFrom}
                             onChange={(e) => updateChartConfig(chartConfig.id, 'dateFilterFrom', e.target.value)}
-                            className="px-2 py-1 text-xs border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent transition-all"
+                            className="ds-input ds-input--sm"
                         />
                     </div>
                     <div className="flex items-center gap-2">
@@ -642,7 +642,7 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                             type="date"
                             value={chartConfig.dateFilterTo}
                             onChange={(e) => updateChartConfig(chartConfig.id, 'dateFilterTo', e.target.value)}
-                            className="px-2 py-1 text-xs border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent transition-all"
+                            className="ds-input ds-input--sm"
                         />
                     </div>
                     {(chartConfig.dateFilterFrom || chartConfig.dateFilterTo) && (

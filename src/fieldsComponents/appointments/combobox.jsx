@@ -51,7 +51,7 @@ export function Combobox({
             'text-xs text-slate-700 placeholder:text-slate-400',
             'border border-slate-300 data-hover:border-slate-400 dark:border-white/10 dark:data-hover:border-white/20',
             'bg-transparent dark:bg-white/5',
-            'focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:ring-inset focus:border-indigo-500',
+            'ds-input-focus',
             'data-invalid:border-red-500 data-invalid:data-hover:border-red-500 dark:data-invalid:border-red-500 dark:data-invalid:data-hover:border-red-500',
             'data-disabled:border-zinc-950/20 dark:data-disabled:border-white/15 dark:data-disabled:bg-white/2.5 dark:data-hover:data-disabled:border-white/15',
             'dark:scheme-dark',

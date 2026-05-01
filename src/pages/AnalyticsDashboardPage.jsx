@@ -53,7 +53,7 @@ const LabelInput = ({ initialValue, placeholder, onCommit }) => {
             type="text"
             value={val}
             placeholder={placeholder}
-            className="w-full px-2 py-1 text-[11px] bg-white border border-gray-200 rounded-md focus:outline-none focus:border-gray-600 focus:ring-1 focus:ring-gray-200 transition-all"
+            className="ds-input ds-input--sm"
             onChange={(e) => {
                 setVal(e.target.value);
                 onCommit(e.target.value || placeholder);
@@ -2821,7 +2821,7 @@ const AnalyticsDashboardPage = () => {
                                                         dateFilterTo: todayStr,
                                                     });
                                                 }}
-                                                className="w-14 px-1.5 py-0.5 text-[11px] text-center border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                                className="ds-input-focus w-14 px-1.5 py-0.5 text-[11px] text-center border border-gray-300 rounded transition-all"
                                             />
                                             <span className="text-[11px] text-gray-500">days</span>
                                         </div>
@@ -2836,7 +2836,7 @@ const AnalyticsDashboardPage = () => {
                                                     type="date"
                                                     value={mergedConfig.dateFilterFrom}
                                                     onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterFrom: e.target.value })}
-                                                    className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                                    className="ds-input-focus px-1.5 py-0.5 text-[11px] border border-gray-300 rounded transition-all"
                                                 />
                                             </div>
                                             <div className="flex items-center gap-1 shrink-0">
@@ -2845,7 +2845,7 @@ const AnalyticsDashboardPage = () => {
                                                     type="date"
                                                     value={mergedConfig.dateFilterTo}
                                                     onChange={(e) => updatePendingConfigBatch(chartConfig.id, { dateFilterTo: e.target.value })}
-                                                    className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-gray-700 transition-all"
+                                                    className="ds-input-focus px-1.5 py-0.5 text-[11px] border border-gray-300 rounded transition-all"
                                                 />
                                             </div>
                                         </>

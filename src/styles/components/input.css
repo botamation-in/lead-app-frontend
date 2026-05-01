@@ -138,6 +138,21 @@
 .ds-input-icon--leading  { left:  var(--space-3); }
 .ds-input-icon--trailing { right: var(--space-3); }
 
+/* -- Focus-ring-only utility --------------------------------
+   Use on compact / dark-context inputs that manage their own
+   size and border but need the themed indigo focus ring.     */
+.ds-input-focus {
+  outline: none;
+  transition:
+    border-color var(--transition-normal),
+    box-shadow   var(--transition-normal);
+}
+
+.ds-input-focus:focus {
+  border-color: var(--color-border-focus);
+  box-shadow:   0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
 /* -- Textarea ----------------------------------------------- */
 .ds-textarea {
   width:          100%;
