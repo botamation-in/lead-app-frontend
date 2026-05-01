@@ -107,13 +107,13 @@ const ConfirmationDialog = ({
 
                     {/* Buttons */}
                     <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
-                        <button
+                        <Button
+                            variant="secondary"
                             onClick={onCancel}
                             disabled={isLoading}
-                            className="w-full sm:w-auto px-6 py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {cancelText}
-                        </button>
+                        </Button>
                         <Button
                             variant={styles.btnVariant}
                             onClick={onConfirm}

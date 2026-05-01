@@ -3253,13 +3253,15 @@ const AnalyticsDashboardPage = () => {
                             </div>
                         </div>
                         <div className="flex justify-end gap-2">
-                            <button
+                            <Button
+                                size="sm"
+                                variant="secondary"
                                 onClick={() => setSaveWarningOpen(false)}
-                                className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                             >
                                 Cancel
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                size="sm"
                                 onClick={async () => {
                                     setSaveWarningOpen(false);
                                     const ownKey = localStorage.getItem('currentUserAdmin') || localStorage.getItem('userId') || 'default';
@@ -3271,10 +3273,9 @@ const AnalyticsDashboardPage = () => {
                                         await handleViewAsChange(ownAdmin);
                                     }
                                 }}
-                                className="px-4 py-2 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors"
                             >
                                 Yes, save to my dashboard
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
@@ -3301,16 +3302,18 @@ const AnalyticsDashboardPage = () => {
                             </div>
                         </div>
                         <div className="flex justify-end gap-2">
-                            <button
+                            <Button
+                                size="sm"
+                                variant="secondary"
                                 onClick={() => {
                                     setSwitchAdminWarningOpen(false);
                                     setPendingViewAsAdmin(null);
                                 }}
-                                className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                             >
                                 Cancel
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                size="sm"
                                 onClick={async () => {
                                     setSwitchAdminWarningOpen(false);
                                     await executeSchemaSave(viewingAs);
@@ -3319,10 +3322,9 @@ const AnalyticsDashboardPage = () => {
                                     }
                                     setPendingViewAsAdmin(null);
                                 }}
-                                className="px-4 py-2 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors"
                             >
                                 Save &amp; proceed
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
@@ -3345,21 +3347,23 @@ const AnalyticsDashboardPage = () => {
                             </div>
                         </div>
                         <div className="flex justify-end gap-2">
-                            <button
+                            <Button
+                                size="sm"
+                                variant="secondary"
                                 onClick={() => setPullOverwriteWarningOpen(false)}
-                                className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                             >
                                 Cancel
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="danger"
                                 onClick={() => {
                                     setPullOverwriteWarningOpen(false);
                                     handleSchemaSync(acctId, viewingAs);
                                 }}
-                                className="px-4 py-2 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
                             >
                                 Pull &amp; overwrite
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>

@@ -168,12 +168,13 @@ const LinkAccountDialog = ({ isOpen, onClose, onSave }) => {
 
                                 {/* Actions */}
                                 <div className="flex gap-2 justify-end">
-                                    <button
+                                    <Button
+                                        size="sm"
+                                        variant="secondary"
                                         onClick={handleClose}
-                                        className="px-4 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
                                     >
                                         Cancel
-                                    </button>
+                                    </Button>
                                     <Button
                                         size="sm"
                                         onClick={checkAccountNo}

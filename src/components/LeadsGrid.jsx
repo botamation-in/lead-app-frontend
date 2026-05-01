@@ -1238,14 +1238,14 @@ const LeadsGrid = () => {
                                              >
                                                  Save
                                              </Button>
-                                            <button
-                                                type="button"
+                                             <Button
+                                                size="sm"
+                                                variant="secondary"
                                                 onClick={cancelEdit}
                                                 disabled={isSaving}
-                                                className="rounded-md bg-white border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 disabled:opacity-40"
-                                            >
-                                                Cancel
-                                            </button>
+                                             >
+                                                 Cancel
+                                             </Button>
                                         </div>
                                     </div>
 
@@ -1315,13 +1315,14 @@ const LeadsGrid = () => {
                             </p>
                         </div>
                         <div className="flex gap-3">
-                            <button
+                            <Button
+                                block
+                                variant="secondary"
                                 onClick={() => setDeleteCategoryPending(null)}
                                 disabled={deleteCategoryLoading}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors disabled:opacity-50"
                             >
                                 Cancel
-                            </button>
+                            </Button>
                             <Button
                                 block
                                 variant="danger"
