@@ -11,6 +11,8 @@ import { useAccount } from '../../context/AccountContext';
 import { useNotifications } from '../../components/Notifications';
 import ConfirmationDialog from '../../components/ConfirmationDialog';
 import LoadingMask from '../../components/LoadingMask';
+import Button from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
 
 const DeleteAccountPage = ({ acctId: acctIdProp, accountFromUrl }) => {
     const navigate = useNavigate();
@@ -149,13 +151,12 @@ const DeleteAccountPage = ({ acctId: acctIdProp, accountFromUrl }) => {
                         <span className="ml-1 font-normal text-gray-400">( {storedAcctNo} )</span>
                     )}
                 </label>
-                <input
+                <Input
                     type="text"
                     value={typedAcctNo}
                     onChange={(e) => { setTypedAcctNo(e.target.value); setError(''); }}
                     placeholder="Enter your Account No."
                     disabled={isDeleting}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent outline-none transition-all disabled:opacity-50"
                 />
 
                 {/* Live match feedback */}
@@ -190,16 +191,18 @@ const DeleteAccountPage = ({ acctId: acctIdProp, accountFromUrl }) => {
 
             {/* Delete button — only visible when verified */}
             {isAccountNoMatch && (
-                <button
+                <Button
+                    variant="danger"
+                    size="sm"
                     onClick={handleDeleteRequest}
                     disabled={isDeleting}
-                    className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    loading={isDeleting}
                 >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
                     {isDeleting ? 'Deleting...' : 'Delete Account'}
-                </button>
+                </Button>
             )}
 
             {/* Confirmation dialog */}
