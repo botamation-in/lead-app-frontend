@@ -100,6 +100,7 @@
   gap:         var(--space-1-5);
   padding:     var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
+  position:    relative;
 
   font-family:  var(--font-sans);
   font-size:    var(--text-sm);
@@ -124,6 +125,17 @@
   font-weight: var(--font-semibold);
 }
 
+.ds-header__nav-link--active::after {
+  content: '';
+  position: absolute;
+  left:   var(--space-2);
+  right:  var(--space-2);
+  bottom: calc(-1 * var(--space-2-5));
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-interactive);
+}
+
 .ds-header--dark .ds-header__nav-link {
   color: var(--color-gray-300);
 }
@@ -136,6 +148,10 @@
 .ds-header--dark .ds-header__nav-link--active {
   background: var(--color-gray-800);
   color:      var(--color-text-inverse);
+}
+
+.ds-header--dark .ds-header__nav-link--active::after {
+  background: var(--color-primary-400);
 }
 
 /* -- Divider ------------------------------------------------ */
