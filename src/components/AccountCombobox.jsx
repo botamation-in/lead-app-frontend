@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import Button from './ui/Button';
 
 const AccountCombobox = ({
     accounts,
@@ -121,15 +122,15 @@ const AccountCombobox = ({
                     )}
                 </>
             ) : (
-                <button
+                <Button
+                    size="sm"
                     onClick={() => setIsLinkDialogOpen(true)}
-                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 transition-all duration-300 shadow-md shadow-indigo-500/30 text-white"
                 >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                     </svg>
-                    <span className="text-xs font-semibold hidden md:block">Link Account</span>
-                </button>
+                    <span className="hidden md:block">Link Account</span>
+                </Button>
             )}
         </div>
     );

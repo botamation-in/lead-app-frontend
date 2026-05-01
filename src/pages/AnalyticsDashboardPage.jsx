@@ -14,6 +14,7 @@ import DeleteConfirmation from '../components/DeleteConfirmation';
 import UITooltip from '../components/Tooltip';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import Button from '../components/ui/Button';
 
 // ── Controlled dimension input for width/height ──
 const DimensionInput = ({ value, onCommit, min, max, className }) => {
@@ -3561,15 +3562,14 @@ const AnalyticsDashboardPage = () => {
                             <h3 className="text-sm font-semibold text-gray-700 mb-1">No Charts Yet</h3>
                             <p className="text-xs text-gray-400 mb-5">{isViewingOtherAdmin ? 'This admin has no charts configured' : 'Add a chart to start visualizing your data'}</p>
                             {!isViewingOtherAdmin && (
-                            <button
+                            <Button
                                 onClick={addChart}
-                                className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5 shadow-md shadow-indigo-500/30"
                             >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                 </svg>
                                 Add Your First Chart
-                            </button>
+                            </Button>
                             )}
                         </div>
                     ) : (
