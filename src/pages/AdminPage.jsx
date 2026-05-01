@@ -37,8 +37,8 @@ const AdminPage = () => {
     return (
         <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
             {/* ── Navbar ─────────────────────────────────────────────────────── */}
-            <nav className="bg-gradient-to-b from-slate-900 to-slate-800 border-b border-slate-700/60 flex-shrink-0" style={{boxShadow: '0 4px 24px 0 rgba(99,102,241,0.10), 0 1px 0 0 rgba(255,255,255,0.04) inset'}}>
-                <div className="container mx-auto px-4">
+            <nav className="bg-gradient-to-b from-slate-900 to-slate-800 border-b border-slate-700/60 flex-shrink-0" style={{ boxShadow: '0 4px 24px 0 rgba(99,102,241,0.10), 0 1px 0 0 rgba(255,255,255,0.04) inset' }}>
+                <div className="w-full px-4">
                     <div className="flex items-center gap-4">
                         {/* Logo */}
                         <div className="py-2">
@@ -148,7 +148,7 @@ const AdminPage = () => {
                                         </button>
                                         <button
                                             onClick={() => { setShowUserMenu(false); logout(); }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-gray-900 hover:bg-gray-100 transition-colors flex items-center gap-1.5"
+                                            className="w-full px-3 py-2 text-left text-xs font-medium text-gray-900 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
                                         >
                                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
