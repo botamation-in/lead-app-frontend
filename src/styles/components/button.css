@@ -79,9 +79,9 @@
 }
 
 .btn--primary:hover:not(:disabled) {
-  background:  var(--color-primary-700);
-  box-shadow:  var(--shadow-lg);
-  transform:   translateY(-1px);
+  background: var(--gradient-primary-hover);
+  box-shadow: var(--shadow-lg);
+  transform:  translateY(-1px);
 }
 
 .btn--primary:active:not(:disabled) {
