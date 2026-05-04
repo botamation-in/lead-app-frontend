@@ -4,7 +4,7 @@ import api from '../api/axiosConfig';
 import { useAccount } from '../context/AccountContext';
 import LoadingMask from './LoadingMask';
 import { resolveActiveAcctNo } from '../utils/accountHelpers';
-import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
+import { Combobox } from './ui/Combobox';
 import {
     PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -722,51 +722,30 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                 <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
                     <Combobox
-                        value={chartConfig.chartType}
-                        onChange={(val) => updateChartConfig(chartConfig.id, 'chartType', val)}
-                        displayValue={(option) => option?.label}
+                        value={chartConfig.chartType?.value ?? null}
+                        onChange={(val) => updateChartConfig(chartConfig.id, 'chartType', chartTypes.find(o => o.value === val) ?? null)}
                         options={chartTypes}
-                    >
-                        {(option) => (
-                            <ComboboxOption key={option.value} value={option}>
-                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                            </ComboboxOption>
-                        )}
-                    </Combobox>
+                    />
                 </div>
                 <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">
                         {chartConfig.chartType?.value === 'pie' ? 'Category' : 'X Axis'}
                     </label>
                     <Combobox
-                        value={chartConfig.xAxis}
-                        onChange={(val) => updateChartConfig(chartConfig.id, 'xAxis', val)}
-                        displayValue={(option) => option?.label}
+                        value={chartConfig.xAxis?.value ?? null}
+                        onChange={(val) => updateChartConfig(chartConfig.id, 'xAxis', columns.find(o => o.value === val) ?? null)}
                         options={columns}
-                    >
-                        {(option) => (
-                            <ComboboxOption key={option.value} value={option}>
-                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                            </ComboboxOption>
-                        )}
-                    </Combobox>
+                    />
                 </div>
                 <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">
                         {chartConfig.chartType?.value === 'pie' ? 'Value' : 'Y Axis'}
                     </label>
                     <Combobox
-                        value={chartConfig.yAxis}
-                        onChange={(val) => updateChartConfig(chartConfig.id, 'yAxis', val)}
-                        displayValue={(option) => option?.label}
+                        value={chartConfig.yAxis?.value ?? null}
+                        onChange={(val) => updateChartConfig(chartConfig.id, 'yAxis', columns.find(o => o.value === val) ?? null)}
                         options={columns}
-                    >
-                        {(option) => (
-                            <ComboboxOption key={option.value} value={option}>
-                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                            </ComboboxOption>
-                        )}
-                    </Combobox>
+                    />
                 </div>
                 {/* Group By — only for grouped/stacked modes */}
                 {(chartConfig.chartType?.value === 'pie' || chartConfig.chartType?.value === 'bar') &&
@@ -774,33 +753,19 @@ const AnalyticsDialog = ({ isOpen, onClose }) => {
                         <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Group By</label>
                             <Combobox
-                                value={chartConfig.zAxis}
-                                onChange={(val) => updateChartConfig(chartConfig.id, 'zAxis', val)}
-                                displayValue={(option) => option?.label || 'None'}
+                                value={chartConfig.zAxis?.value ?? null}
+                                onChange={(val) => updateChartConfig(chartConfig.id, 'zAxis', columns.find(o => o.value === val) ?? null)}
                                 options={columns}
-                            >
-                                {(option) => (
-                                    <ComboboxOption key={option.value} value={option}>
-                                        <ComboboxLabel>{option.label}</ComboboxLabel>
-                                    </ComboboxOption>
-                                )}
-                            </Combobox>
+                            />
                         </div>
                     )}
                 <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Aggregation</label>
                     <Combobox
-                        value={chartConfig.aggregation}
-                        onChange={(val) => updateChartConfig(chartConfig.id, 'aggregation', val)}
-                        displayValue={(option) => option?.label}
+                        value={chartConfig.aggregation?.value ?? null}
+                        onChange={(val) => updateChartConfig(chartConfig.id, 'aggregation', aggregationTypes.find(o => o.value === val) ?? null)}
                         options={aggregationTypes}
-                    >
-                        {(option) => (
-                            <ComboboxOption key={option.value} value={option}>
-                                <ComboboxLabel>{option.label}</ComboboxLabel>
-                            </ComboboxOption>
-                        )}
-                    </Combobox>
+                    />
                 </div>
             </div>
 

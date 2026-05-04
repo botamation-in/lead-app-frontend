@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import api from '../api/axiosConfig';
 import { useAccount } from '../context/AccountContext';
-import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
+import { Combobox } from './ui/Combobox';
 import { useNotifications } from './Notifications';
 import LoadingMask from './LoadingMask';
 import DeleteConfirmation from './DeleteConfirmation';
@@ -741,23 +741,13 @@ const LeadsGrid = () => {
                             {/* ── Group 1: Data context — Category selector + delete ── */}
                             <div className="flex items-center gap-1.5">
                                 <Combobox
-                                    value={
-                                        (selectedCategory ? categories.find(c => c._id === selectedCategory) : null) ?? null
-                                    }
-                                    onChange={(val) => handleCategoryChange(val?._id || '')}
-                                    displayValue={(option) => option?.categoryName || ''}
-                                    options={categories}
+                                    value={selectedCategory || null}
+                                    onChange={(val) => handleCategoryChange(val || '')}
+                                    options={categories.map(c => ({ value: c._id, label: c.categoryName }))}
                                     disabled={categoryLoading || !acctId}
                                     placeholder="Select Category"
                                     className="w-40"
-                                    dropdownClassName="!min-w-0"
-                                >
-                                    {(option) => (
-                                        <ComboboxOption key={option._id} value={option}>
-                                            <ComboboxLabel>{option.categoryName}</ComboboxLabel>
-                                        </ComboboxOption>
-                                    )}
-                                </Combobox>
+                                />
                                 {selectedCategory && (() => {
                                     const activeCat = categories.find(c => c._id === selectedCategory);
                                     return activeCat ? (

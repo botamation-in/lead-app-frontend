@@ -4,7 +4,7 @@ import api from '../api/axiosConfig';
 import { useAccount } from '../context/AccountContext';
 import { useAuth } from '../context/AuthContext';
 import { resolveActiveAcctNo, getAcctIdFromLocalStorage } from '../utils/accountHelpers';
-import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
+import { Combobox } from '../components/ui/Combobox';
 import {
     PieChart, Pie, Cell, Sector, BarChart, Bar, AreaChart, Area, LineChart, Line,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList, ResponsiveContainer, Customized
@@ -2602,14 +2602,13 @@ const AnalyticsDashboardPage = () => {
                                     value={
                                         mergedConfig.chartCategory
                                             ? (typeof mergedConfig.chartCategory === 'object'
-                                                ? mergedConfig.chartCategory
-                                                : categories.find(c => c._id === mergedConfig.chartCategory) || null)
+                                                ? mergedConfig.chartCategory._id
+                                                : mergedConfig.chartCategory)
                                             : null
                                     }
                                     onChange={(val) => {
                                         const todayISO = getTodayISO();
-                                        const catId = val?._id || val;
-                                        if (catId) fetchFieldsForCategory(catId);
+                                        if (val) fetchFieldsForCategory(val);
                                         // Reset all query-dependent fields in pending when category changes
                                         updatePendingConfigBatch(chartConfig.id, {
                                             chartCategory: val || null,
@@ -2627,17 +2626,10 @@ const AnalyticsDashboardPage = () => {
                                             _lastNDays: 2,
                                         });
                                     }}
-                                    displayValue={(option) => option?.categoryName || ''}
-                                    options={categories}
+                                    options={categories.map(c => ({ value: c._id, label: c.categoryName }))}
                                     placeholder="Select category..."
                                     dropdownClassName="!z-[500] !min-w-[160px]"
-                                >
-                                    {(option) => (
-                                        <ComboboxOption key={`cat-${chartConfig.id}-${option._id}`} value={option}>
-                                            <ComboboxLabel>{option.categoryName}</ComboboxLabel>
-                                        </ComboboxOption>
-                                    )}
-                                </Combobox>
+                                />
                             </div>
                             {mergedConfig.chartCategory && (
                                 <UITooltip content="Clear category filter" placement="top">
@@ -2790,18 +2782,11 @@ const AnalyticsDashboardPage = () => {
                                     <span className="text-xs font-semibold text-gray-700 shrink-0">Filter:</span>
                                     <div className="w-32 [&_input]:!py-0.5 [&_input]:!text-[11px] [&_input]:!pl-2 [&_input]:!pr-7 [&_svg]:!size-3">
                                         <Combobox
-                                            value={activePresetOption}
-                                            onChange={(val) => val && applyDatePreset(val.value)}
-                                            displayValue={(option) => option?.label || ''}
+                                            value={activePresetOption?.value ?? null}
+                                            onChange={(val) => val && applyDatePreset(val)}
                                             options={DATE_PRESET_OPTIONS}
                                             dropdownClassName="!z-[500] !min-w-[160px]"
-                                        >
-                                            {(option) => (
-                                                <ComboboxOption key={`date-preset-${chartConfig.id}-${option.value}`} value={option}>
-                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
-                                                </ComboboxOption>
-                                            )}
-                                        </Combobox>
+                                        />
                                     </div>
 
                                     {/* Last N Days number input */}
@@ -3036,18 +3021,11 @@ const AnalyticsDashboardPage = () => {
                                     <div>
                                         <label className="block text-xs font-semibold text-gray-700 mb-1.5">Chart Type</label>
                                         <Combobox
-                                            value={mergedConfig.chartType}
-                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'chartType', val)}
-                                            displayValue={(option) => option?.label || 'Select...'}
+                                            value={mergedConfig.chartType?.value ?? null}
+                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'chartType', chartTypes.find(o => o.value === val) ?? null)}
                                             options={chartTypes}
                                             dropdownClassName="!z-[500] !min-w-[160px]"
-                                        >
-                                            {(option) => (
-                                                <ComboboxOption key={`chart-type-${chartConfig.id}-${option.value}`} value={option}>
-                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
-                                                </ComboboxOption>
-                                            )}
-                                        </Combobox>
+                                        />
                                     </div>
                                     {mergedConfig.chartType?.value !== 'number' && (
                                         <div>
@@ -3055,18 +3033,11 @@ const AnalyticsDashboardPage = () => {
                                                 {mergedConfig.chartType?.value === 'pie' ? 'Group By' : 'X Axis'}
                                             </label>
                                             <Combobox
-                                                value={mergedConfig.xAxis}
-                                                onChange={(val) => updatePendingConfig(chartConfig.id, 'xAxis', val)}
-                                                displayValue={(option) => option?.label || 'Select...'}
+                                                value={mergedConfig.xAxis?.value ?? null}
+                                                onChange={(val) => updatePendingConfig(chartConfig.id, 'xAxis', columns.find(o => o.value === val) ?? null)}
                                                 options={columns}
                                                 dropdownClassName="!z-[500] !min-w-[160px]"
-                                            >
-                                                {(option) => (
-                                                    <ComboboxOption key={`x-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                                        <ComboboxLabel>{option.label}</ComboboxLabel>
-                                                    </ComboboxOption>
-                                                )}
-                                            </Combobox>
+                                            />
                                         </div>
                                     )}
                                     <div>
@@ -3074,18 +3045,11 @@ const AnalyticsDashboardPage = () => {
                                             {mergedConfig.chartType?.value === 'pie' ? 'Value' : mergedConfig.chartType?.value === 'number' ? 'Value' : 'Y Axis'}
                                         </label>
                                         <Combobox
-                                            value={mergedConfig.yAxis}
-                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'yAxis', val)}
-                                            displayValue={(option) => option?.label || 'Select...'}
+                                            value={mergedConfig.yAxis?.value ?? null}
+                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'yAxis', columns.find(o => o.value === val) ?? null)}
                                             options={columns}
                                             dropdownClassName="!z-[500] !min-w-[160px]"
-                                        >
-                                            {(option) => (
-                                                <ComboboxOption key={`y-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
-                                                </ComboboxOption>
-                                            )}
-                                        </Combobox>
+                                        />
                                     </div>
                                     {/* Z Axis — for Grouped / Stacked modes */}
                                     {(mergedConfig.chartType?.value === 'pie' || mergedConfig.chartType?.value === 'bar') && (mergedConfig.chartMode === 'grouped' || mergedConfig.chartMode === 'stacked') && (
@@ -3094,53 +3058,32 @@ const AnalyticsDashboardPage = () => {
                                                 Group By
                                             </label>
                                             <Combobox
-                                                value={mergedConfig.zAxis}
-                                                onChange={(val) => updatePendingConfig(chartConfig.id, 'zAxis', val)}
-                                                displayValue={(option) => option?.label || 'None'}
+                                                value={mergedConfig.zAxis?.value ?? null}
+                                                onChange={(val) => updatePendingConfig(chartConfig.id, 'zAxis', columns.find(o => o.value === val) ?? null)}
                                                 options={columns}
                                                 dropdownClassName="!z-[500] !min-w-[160px]"
-                                            >
-                                                {(option) => (
-                                                    <ComboboxOption key={`z-axis-${chartConfig.id}-${option.value}`} value={option}>
-                                                        <ComboboxLabel>{option.label}</ComboboxLabel>
-                                                    </ComboboxOption>
-                                                )}
-                                            </Combobox>
+                                            />
                                         </div>
                                     )}
                                     <div>
                                         <label className="block text-xs font-semibold text-gray-700 mb-1.5">Aggregation</label>
                                         <Combobox
-                                            value={mergedConfig.aggregation}
-                                            onChange={(val) => updatePendingConfig(chartConfig.id, 'aggregation', val)}
-                                            displayValue={(option) => option?.label || 'Select...'}
+                                            value={mergedConfig.aggregation?.value ?? null}
+                                            onChange={(val) => { const opts = mergedConfig.chartType?.value === 'number' ? aggregationTypesNumber : aggregationTypes; updatePendingConfig(chartConfig.id, 'aggregation', opts.find(o => o.value === val) ?? null); }}
                                             options={mergedConfig.chartType?.value === 'number' ? aggregationTypesNumber : aggregationTypes}
                                             dropdownClassName="!z-[500] !min-w-[160px]"
-                                        >
-                                            {(option) => (
-                                                <ComboboxOption key={`agg-${chartConfig.id}-${option.value}`} value={option}>
-                                                    <ComboboxLabel>{option.label}</ComboboxLabel>
-                                                </ComboboxOption>
-                                            )}
-                                        </Combobox>
+                                        />
                                     </div>
                                     {/* Date Granularity — only when xAxis is a timestamp field */}
                                     {isDateXAxis && (
                                         <div>
                                             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Granularity</label>
                                             <Combobox
-                                                value={activeDateGranularityOption}
-                                                onChange={(val) => val && updatePendingConfig(chartConfig.id, 'dateGranularity', val.value)}
-                                                displayValue={(option) => option?.label || 'Daily'}
+                                                value={activeDateGranularityOption?.value ?? null}
+                                                onChange={(val) => val && updatePendingConfig(chartConfig.id, 'dateGranularity', val)}
                                                 options={DATE_GRANULARITY_OPTIONS}
                                                 dropdownClassName="!z-[500] !min-w-[140px]"
-                                            >
-                                                {(option) => (
-                                                    <ComboboxOption key={`gran-${chartConfig.id}-${option.value}`} value={option}>
-                                                        <ComboboxLabel>{option.label}</ComboboxLabel>
-                                                    </ComboboxOption>
-                                                )}
-                                            </Combobox>
+                                            />
                                         </div>
                                     )}
                                 </div>

@@ -64,6 +64,7 @@ export function Combobox({
   loading = false,
   emptyText = 'No options',
   className = '',
+  dropdownClassName = '',
   id: externalId,
 }) {
   const generatedId = useId();
@@ -196,7 +197,7 @@ export function Combobox({
       </div>
 
       {open && (
-        <div ref={listRef} className="ds-combobox__panel" role="listbox">
+        <div ref={listRef} className={['ds-combobox__panel', dropdownClassName].filter(Boolean).join(' ')} role="listbox">
           {loading ? (
             <div className="ds-combobox__loading">Loading…</div>
           ) : filtered.length === 0 ? (
