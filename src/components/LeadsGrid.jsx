@@ -1220,23 +1220,23 @@ const LeadsGrid = () => {
                                             {editLead ? 'Edit Lead' : 'Add New Lead'}
                                         </h3>
                                         <div className="flex items-center gap-2">
-                                             <Button
+                                            <Button
                                                 size="sm"
                                                 onClick={handleEditSave}
                                                 disabled={isSaving || !isEditFormDirty}
                                                 loading={isSaving}
-                                             >
-                                                 Save
-                                             </Button>
-                                             <Button
+                                            >
+                                                Save
+                                            </Button>
+                                            <Button
                                                 size="sm"
                                                 variant="secondary"
                                                 scheme="primary"
                                                 onClick={cancelEdit}
                                                 disabled={isSaving}
-                                             >
-                                                 Cancel
-                                             </Button>
+                                            >
+                                                Cancel
+                                            </Button>
                                         </div>
                                     </div>
 

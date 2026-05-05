@@ -83,10 +83,10 @@ export function Combobox({
   // Filter options
   const filtered = query
     ? options.filter(
-        (o) =>
-          o.label.toLowerCase().includes(query.toLowerCase()) ||
-          String(o.value).toLowerCase().includes(query.toLowerCase())
-      )
+      (o) =>
+        o.label.toLowerCase().includes(query.toLowerCase()) ||
+        String(o.value).toLowerCase().includes(query.toLowerCase())
+    )
     : options;
 
   const closeMenu = useCallback(() => {
@@ -210,9 +210,9 @@ export function Combobox({
                 aria-selected={opt.value === value}
                 className={[
                   'ds-combobox__option',
-                  opt.value === value    ? 'ds-combobox__option--selected' : '',
-                  idx === focusedIndex   ? 'ds-combobox__option--focused'  : '',
-                  opt.disabled           ? 'ds-combobox__option--disabled' : '',
+                  opt.value === value ? 'ds-combobox__option--selected' : '',
+                  idx === focusedIndex ? 'ds-combobox__option--focused' : '',
+                  opt.disabled ? 'ds-combobox__option--disabled' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
@@ -275,29 +275,29 @@ Select.displayName = 'Select';
 
 // ---- Prop types --------------------------------------------------------------
 const optionShape = PropTypes.shape({
-  value:       PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  label:       PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  label: PropTypes.string.isRequired,
   description: PropTypes.string,
-  disabled:    PropTypes.bool,
+  disabled: PropTypes.bool,
 });
 
 Combobox.propTypes = {
-  options:     PropTypes.arrayOf(optionShape),
-  value:       PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  onChange:    PropTypes.func,
+  options: PropTypes.arrayOf(optionShape),
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  onChange: PropTypes.func,
   placeholder: PropTypes.string,
-  searchable:  PropTypes.bool,
-  clearable:   PropTypes.bool,
-  disabled:    PropTypes.bool,
-  loading:     PropTypes.bool,
-  emptyText:   PropTypes.string,
-  className:   PropTypes.string,
-  id:          PropTypes.string,
+  searchable: PropTypes.bool,
+  clearable: PropTypes.bool,
+  disabled: PropTypes.bool,
+  loading: PropTypes.bool,
+  emptyText: PropTypes.string,
+  className: PropTypes.string,
+  id: PropTypes.string,
 };
 
 Select.propTypes = {
-  options:   PropTypes.array,
-  size:      PropTypes.oneOf(['sm', 'md', 'lg']),
+  options: PropTypes.array,
+  size: PropTypes.oneOf(['sm', 'md', 'lg']),
   className: PropTypes.string,
-  children:  PropTypes.node,
+  children: PropTypes.node,
 };

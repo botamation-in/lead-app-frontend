@@ -2413,7 +2413,7 @@ const AnalyticsDashboardPage = () => {
                 }}
             >
                 {/* ── Always-visible name bar with drag handle ── */}
-                <div data-pdf-hide="true" className="flex items-center gap-2 px-3 py-2 border-b border-indigo-500/20 cursor-grab active:cursor-grabbing select-none" style={{background: 'linear-gradient(180deg, #334155 0%, #1e293b 100%)'}}>
+                <div data-pdf-hide="true" className="flex items-center gap-2 px-3 py-2 border-b border-indigo-500/20 cursor-grab active:cursor-grabbing select-none" style={{ background: 'linear-gradient(180deg, #334155 0%, #1e293b 100%)' }}>
                     <svg className="w-4 h-4 text-gray-500 shrink-0" fill="currentColor" viewBox="0 0 16 16">
                         <circle cx="5" cy="4" r="1.2" /><circle cx="11" cy="4" r="1.2" />
                         <circle cx="5" cy="8" r="1.2" /><circle cx="11" cy="8" r="1.2" />
@@ -2432,101 +2432,101 @@ const AnalyticsDashboardPage = () => {
                     />
                     {/* Settings toggle button */}
                     {!isViewingOtherAdmin && (
-                    <UITooltip content={filterIsVisible ? 'Close settings' : 'Open settings'} placement="top">
-                    <button
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            if (filterVisible[chartConfig.id]) {
-                                hideFilter(chartConfig.id);
-                            } else {
-                                updateFilterPanelPos(chartConfig.id);
-                                setFilterVisible(prev => ({ ...prev, [chartConfig.id]: true }));
-                            }
-                        }}
-                        className={`p-1 transition-colors shrink-0 cursor-pointer ${filterIsVisible ? 'text-white' : 'text-gray-400 hover:text-white'}`}
-                    >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                        </svg>
-                    </button>
-                    </UITooltip>
+                        <UITooltip content={filterIsVisible ? 'Close settings' : 'Open settings'} placement="top">
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (filterVisible[chartConfig.id]) {
+                                        hideFilter(chartConfig.id);
+                                    } else {
+                                        updateFilterPanelPos(chartConfig.id);
+                                        setFilterVisible(prev => ({ ...prev, [chartConfig.id]: true }));
+                                    }
+                                }}
+                                className={`p-1 transition-colors shrink-0 cursor-pointer ${filterIsVisible ? 'text-white' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                                </svg>
+                            </button>
+                        </UITooltip>
                     )}
 
                     {/* Width + height controls */}
                     {!isViewingOtherAdmin && (
-                    <div className="flex items-center gap-1 shrink-0">
-                        <UITooltip content="Chart Width" placement="top">
-                        <div className="flex items-center border border-gray-700 rounded overflow-hidden text-[10px] font-semibold">
-                            <button
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartWidthPx', Math.max(200, (chartConfig.chartWidthPx || 500) - 40)); }}
-                                className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
-                            >−</button>
-                            <DimensionInput
-                                value={chartConfig.chartWidthPx || 500}
-                                onCommit={(v) => updateChartConfig(chartConfig.id, 'chartWidthPx', v)}
-                                min={200} max={2400}
-                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-slate-800 m-0"
-                            />
-                            <button
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartWidthPx', Math.min(2400, (chartConfig.chartWidthPx || 500) + 40)); }}
-                                className="px-1.5 py-0.5 text-gray-400 hover:bg-slate-700 hover:text-white font-bold text-xs transition-all"
-                            >+</button>
+                        <div className="flex items-center gap-1 shrink-0">
+                            <UITooltip content="Chart Width" placement="top">
+                                <div className="flex items-center border border-gray-700 rounded overflow-hidden text-[10px] font-semibold">
+                                    <button
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartWidthPx', Math.max(200, (chartConfig.chartWidthPx || 500) - 40)); }}
+                                        className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
+                                    >−</button>
+                                    <DimensionInput
+                                        value={chartConfig.chartWidthPx || 500}
+                                        onCommit={(v) => updateChartConfig(chartConfig.id, 'chartWidthPx', v)}
+                                        min={200} max={2400}
+                                        className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-slate-800 m-0"
+                                    />
+                                    <button
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartWidthPx', Math.min(2400, (chartConfig.chartWidthPx || 500) + 40)); }}
+                                        className="px-1.5 py-0.5 text-gray-400 hover:bg-slate-700 hover:text-white font-bold text-xs transition-all"
+                                    >+</button>
+                                </div>
+                            </UITooltip>
+                            <UITooltip content="Chart Height" placement="top">
+                                <div className="flex items-center border border-gray-700 rounded overflow-hidden">
+                                    <button
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartHeight', Math.max(180, (chartConfig.chartHeight || 320) - 40)); }}
+                                        className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
+                                    >−</button>
+                                    <DimensionInput
+                                        value={chartConfig.chartHeight || 320}
+                                        onCommit={(v) => updateChartConfig(chartConfig.id, 'chartHeight', v)}
+                                        min={180} max={800}
+                                        className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-slate-800 m-0"
+                                    />
+                                    <button
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartHeight', Math.min(800, (chartConfig.chartHeight || 320) + 40)); }}
+                                        className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
+                                    >+</button>
+                                </div>
+                            </UITooltip>
                         </div>
-                        </UITooltip>
-                        <UITooltip content="Chart Height" placement="top">
-                        <div className="flex items-center border border-gray-700 rounded overflow-hidden">
-                            <button
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartHeight', Math.max(180, (chartConfig.chartHeight || 320) - 40)); }}
-                                className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
-                            >−</button>
-                            <DimensionInput
-                                value={chartConfig.chartHeight || 320}
-                                onCommit={(v) => updateChartConfig(chartConfig.id, 'chartHeight', v)}
-                                min={180} max={800}
-                                className="px-1 py-0.5 text-[10px] font-semibold text-gray-300 bg-transparent text-center border-x border-gray-700 w-[38px] focus:outline-none focus:bg-slate-800 m-0"
-                            />
-                            <button
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => { e.stopPropagation(); updateChartConfig(chartConfig.id, 'chartHeight', Math.min(800, (chartConfig.chartHeight || 320) + 40)); }}
-                                className="px-1.5 py-0.5 text-gray-400 hover:bg-gray-700 hover:text-white font-bold text-xs transition-all"
-                            >+</button>
-                        </div>
-                        </UITooltip>
-                    </div>
                     )}
 
                     {/* Per-chart refresh button */}
                     {!isViewingOtherAdmin && (
-                    <UITooltip content="Refresh chart" placement="top">
-                    <button
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); fetchChartDataFromBackend(chartConfig.id, chartConfig); }}
-                        className="p-1 text-gray-400 hover:text-white transition-colors shrink-0 cursor-pointer"
-                    >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                    </button>
-                    </UITooltip>
+                        <UITooltip content="Refresh chart" placement="top">
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); fetchChartDataFromBackend(chartConfig.id, chartConfig); }}
+                                className="p-1 text-gray-400 hover:text-white transition-colors shrink-0 cursor-pointer"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                            </button>
+                        </UITooltip>
                     )}
 
                     {/* Delete button */}
                     {!isViewingOtherAdmin && (
-                    <UITooltip content="Delete chart" placement="top">
-                    <button
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); setPendingDeleteId(chartConfig.id); }}
-                        className="p-1 text-gray-400 hover:text-red-400 transition-colors shrink-0 cursor-pointer"
-                    >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                    </button>
-                    </UITooltip>
+                        <UITooltip content="Delete chart" placement="top">
+                            <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); setPendingDeleteId(chartConfig.id); }}
+                                className="p-1 text-gray-400 hover:text-red-400 transition-colors shrink-0 cursor-pointer"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                            </button>
+                        </UITooltip>
                     )}
 
                     {/* Auto-refresh countdown arc — only shown when auto-refresh is enabled */}
@@ -2543,28 +2543,28 @@ const AnalyticsDashboardPage = () => {
                             : `${remaining}s`;
                         return (
                             <UITooltip content={`Auto-refresh in ${fmt} (every ${totalSecs < 60 ? `${totalSecs}s` : totalSecs < 3600 ? `${Math.round(totalSecs / 60)}m` : '1h'})`} placement="top">
-                            <div
-                                className="flex items-center gap-1 shrink-0 select-none"
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => { e.stopPropagation(); fetchChartDataFromBackend(chartConfig.id, chartConfig); }}
-                            >
-                                <svg width="20" height="20" viewBox="0 0 20 20" className="cursor-pointer">
-                                    {/* Track */}
-                                    <circle cx="10" cy="10" r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2" />
-                                    {/* Progress arc */}
-                                    <circle
-                                        cx="10" cy="10" r={r}
-                                        fill="none"
-                                        stroke={progress > 0.25 ? '#6ee7b7' : '#f87171'}
-                                        strokeWidth="2"
-                                        strokeDasharray={`${dash} ${circ}`}
-                                        strokeLinecap="round"
-                                        transform="rotate(-90 10 10)"
-                                        style={{ transition: 'stroke-dasharray 0.9s linear' }}
-                                    />
-                                </svg>
-                                <span className="text-[9px] font-mono text-gray-400 min-w-[22px]">{fmt}</span>
-                            </div>
+                                <div
+                                    className="flex items-center gap-1 shrink-0 select-none"
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => { e.stopPropagation(); fetchChartDataFromBackend(chartConfig.id, chartConfig); }}
+                                >
+                                    <svg width="20" height="20" viewBox="0 0 20 20" className="cursor-pointer">
+                                        {/* Track */}
+                                        <circle cx="10" cy="10" r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2" />
+                                        {/* Progress arc */}
+                                        <circle
+                                            cx="10" cy="10" r={r}
+                                            fill="none"
+                                            stroke={progress > 0.25 ? '#6ee7b7' : '#f87171'}
+                                            strokeWidth="2"
+                                            strokeDasharray={`${dash} ${circ}`}
+                                            strokeLinecap="round"
+                                            transform="rotate(-90 10 10)"
+                                            style={{ transition: 'stroke-dasharray 0.9s linear' }}
+                                        />
+                                    </svg>
+                                    <span className="text-[9px] font-mono text-gray-400 min-w-[22px]">{fmt}</span>
+                                </div>
                             </UITooltip>
                         );
                     })()}
@@ -2633,20 +2633,20 @@ const AnalyticsDashboardPage = () => {
                             </div>
                             {mergedConfig.chartCategory && (
                                 <UITooltip content="Clear category filter" placement="top">
-                                <button
-                                    onClick={() => updatePendingConfigBatch(chartConfig.id, {
-                                        chartCategory: null,
-                                        chartType: null,
-                                        xAxis: null,
-                                        yAxis: null,
-                                        zAxis: null,
-                                        aggregation: null,
-                                        chartMode: null,
-                                    })}
-                                    className="text-gray-400 hover:text-gray-700 transition-colors text-base leading-none px-1"
-                                >
-                                    ×
-                                </button>
+                                    <button
+                                        onClick={() => updatePendingConfigBatch(chartConfig.id, {
+                                            chartCategory: null,
+                                            chartType: null,
+                                            xAxis: null,
+                                            yAxis: null,
+                                            zAxis: null,
+                                            aggregation: null,
+                                            chartMode: null,
+                                        })}
+                                        className="text-gray-400 hover:text-gray-700 transition-colors text-base leading-none px-1"
+                                    >
+                                        ×
+                                    </button>
                                 </UITooltip>
                             )}
                             {/* ── Update Chart button in header row ── */}
@@ -3118,41 +3118,41 @@ const AnalyticsDashboardPage = () => {
                     )}
                     {/* Right edge — horizontal resize */}
                     {!isViewingOtherAdmin && (
-                    <div
-                        data-pdf-hide="true"
-                        className="absolute top-0 right-0 bottom-0 w-3 cursor-ew-resize z-10 flex items-center justify-end pr-0.5 group/rh hover:bg-gray-100 transition-colors"
-                        onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, dragWidths[chartConfig.id] ?? chartConfig.chartWidthPx ?? 500, 'x')}
-                    >
-                        <div className="h-10 w-1 rounded-full bg-gray-300 group-hover/rh:bg-gray-700 transition-colors" />
-                    </div>
+                        <div
+                            data-pdf-hide="true"
+                            className="absolute top-0 right-0 bottom-0 w-3 cursor-ew-resize z-10 flex items-center justify-end pr-0.5 group/rh hover:bg-gray-100 transition-colors"
+                            onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, dragWidths[chartConfig.id] ?? chartConfig.chartWidthPx ?? 500, 'x')}
+                        >
+                            <div className="h-10 w-1 rounded-full bg-gray-300 group-hover/rh:bg-gray-700 transition-colors" />
+                        </div>
                     )}
                     {/* Bottom-right corner — both directions */}
                     {!isViewingOtherAdmin && (
-                    <div
-                        data-pdf-hide="true"
-                        className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-30"
-                        onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, dragWidths[chartConfig.id] ?? chartConfig.chartWidthPx ?? 500, 'both')}
-                    >
-                        <svg className="w-4 h-4 text-gray-400 hover:text-gray-700 transition-colors" viewBox="0 0 16 16" fill="currentColor">
-                            <circle cx="5" cy="11" r="1.2" />
-                            <circle cx="9" cy="11" r="1.2" />
-                            <circle cx="13" cy="11" r="1.2" />
-                            <circle cx="9" cy="7" r="1.2" />
-                            <circle cx="13" cy="7" r="1.2" />
-                            <circle cx="13" cy="3" r="1.2" />
-                        </svg>
-                    </div>
+                        <div
+                            data-pdf-hide="true"
+                            className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-30"
+                            onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, dragWidths[chartConfig.id] ?? chartConfig.chartWidthPx ?? 500, 'both')}
+                        >
+                            <svg className="w-4 h-4 text-gray-400 hover:text-gray-700 transition-colors" viewBox="0 0 16 16" fill="currentColor">
+                                <circle cx="5" cy="11" r="1.2" />
+                                <circle cx="9" cy="11" r="1.2" />
+                                <circle cx="13" cy="11" r="1.2" />
+                                <circle cx="9" cy="7" r="1.2" />
+                                <circle cx="13" cy="7" r="1.2" />
+                                <circle cx="13" cy="3" r="1.2" />
+                            </svg>
+                        </div>
                     )}
                 </div>
 
                 {/* Bottom edge — vertical resize */}
                 {!isViewingOtherAdmin && (
-                <div
-                    className="h-3 cursor-ns-resize flex items-center justify-center bg-white border-t border-gray-100 group/resize hover:bg-gray-100 transition-colors shrink-0 z-10"
-                    onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, 0, 'y')}
-                >
-                    <div className="w-12 h-1 rounded-full bg-gray-300 group-hover/resize:bg-gray-700 transition-colors" />
-                </div>
+                    <div
+                        className="h-3 cursor-ns-resize flex items-center justify-center bg-white border-t border-gray-100 group/resize hover:bg-gray-100 transition-colors shrink-0 z-10"
+                        onMouseDown={(e) => startResize(e, chartConfig.id, dragHeights[chartConfig.id] ?? chartConfig.chartHeight ?? 400, 0, 'y')}
+                    >
+                        <div className="w-12 h-1 rounded-full bg-gray-300 group-hover/resize:bg-gray-700 transition-colors" />
+                    </div>
                 )}
             </div>
         );
@@ -3335,116 +3335,116 @@ const AnalyticsDashboardPage = () => {
                             </h1>
                             <div className="flex items-center gap-2">
                                 {!isViewingOtherAdmin && (
-                                <UITooltip content="Refresh all charts" placement="bottom">
-                                <button
-                                    onClick={refreshAllCharts}
-                                    disabled={globalRefreshing}
-                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-gray-100 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                                >
-                                    <svg className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${globalRefreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                </button>
-                                </UITooltip>
+                                    <UITooltip content="Refresh all charts" placement="bottom">
+                                        <button
+                                            onClick={refreshAllCharts}
+                                            disabled={globalRefreshing}
+                                            className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-gray-100 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-gray-400 focus:ring-1 focus:ring-gray-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            <svg className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${globalRefreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                            </svg>
+                                        </button>
+                                    </UITooltip>
                                 )}
                                 {!isViewingOtherAdmin && (
-                                <UITooltip content="Download all charts as PDF" placement="bottom">
-                                <button
-                                    onClick={handleDownloadPDF}
-                                    disabled={pdfDownloading || charts.length === 0}
-                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-indigo-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-indigo-500 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                                >
-                                    {pdfDownloading ? (
-                                        <svg className="w-4 h-4 text-indigo-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                        </svg>
-                                    ) : (
-                                        <svg className="w-4 h-4 text-gray-600 group-hover:text-indigo-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                                        </svg>
-                                    )}
-                                </button>
-                                </UITooltip>
+                                    <UITooltip content="Download all charts as PDF" placement="bottom">
+                                        <button
+                                            onClick={handleDownloadPDF}
+                                            disabled={pdfDownloading || charts.length === 0}
+                                            className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-indigo-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-indigo-500 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            {pdfDownloading ? (
+                                                <svg className="w-4 h-4 text-indigo-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                </svg>
+                                            ) : (
+                                                <svg className="w-4 h-4 text-gray-600 group-hover:text-indigo-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    </UITooltip>
                                 )}
                                 {/* Pull changes from collection */}
                                 <UITooltip content="Pull changes" placement="bottom">
-                                <button
-                                    onClick={() => {
-                                        // If viewing own dashboard and there are unsaved changes, warn before overwriting
-                                        if (hasUnsavedChanges) {
-                                            setPullOverwriteWarningOpen(true);
-                                        } else {
-                                            handleSchemaSync(acctId, viewingAs);
-                                        }
-                                    }}
-                                    disabled={schemaSyncing}
-                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-blue-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-blue-500 focus:ring-1 focus:ring-blue-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                                >
-                                    <svg className={`w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors ${schemaSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                                    </svg>
-                                </button>
+                                    <button
+                                        onClick={() => {
+                                            // If viewing own dashboard and there are unsaved changes, warn before overwriting
+                                            if (hasUnsavedChanges) {
+                                                setPullOverwriteWarningOpen(true);
+                                            } else {
+                                                handleSchemaSync(acctId, viewingAs);
+                                            }
+                                        }}
+                                        disabled={schemaSyncing}
+                                        className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-blue-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-blue-500 focus:ring-1 focus:ring-blue-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        <svg className={`w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors ${schemaSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                                        </svg>
+                                    </button>
                                 </UITooltip>
                                 {/* Save changes — hidden when viewing another admin */}
                                 {!isViewingOtherAdmin && (
-                                <UITooltip content={hasUnsavedChanges ? 'Save changes' : 'No unsaved changes'} placement="bottom">
-                                <button
-                                    onClick={handleSchemaSave}
-                                    disabled={schemaSaving || !hasUnsavedChanges}
-                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-yellow-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-yellow-400 focus:ring-1 focus:ring-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
-                                >
-                                    <svg className={`w-4 h-4 text-gray-600 group-hover:text-yellow-600 transition-colors ${schemaSaving ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                    </svg>
-                                </button>
-                                </UITooltip>
+                                    <UITooltip content={hasUnsavedChanges ? 'Save changes' : 'No unsaved changes'} placement="bottom">
+                                        <button
+                                            onClick={handleSchemaSave}
+                                            disabled={schemaSaving || !hasUnsavedChanges}
+                                            className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-yellow-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-yellow-400 focus:ring-1 focus:ring-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            <svg className={`w-4 h-4 text-gray-600 group-hover:text-yellow-600 transition-colors ${schemaSaving ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                            </svg>
+                                        </button>
+                                    </UITooltip>
                                 )}
                                 {/* Copy to my dashboard — only visible when viewing another admin */}
                                 {isViewingOtherAdmin && (
-                                <UITooltip content="Copy analytics to my dashboard" placement="bottom">
-                                <button
-                                    onClick={handleSchemaSave}
-                                    disabled={schemaSaving}
-                                    className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-purple-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-purple-400 focus:ring-1 focus:ring-purple-300 disabled:opacity-40 disabled:cursor-not-allowed"
-                                >
-                                    <svg className={`w-4 h-4 text-gray-600 group-hover:text-purple-600 transition-colors ${schemaSaving ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                    </svg>
-                                </button>
-                                </UITooltip>
+                                    <UITooltip content="Copy analytics to my dashboard" placement="bottom">
+                                        <button
+                                            onClick={handleSchemaSave}
+                                            disabled={schemaSaving}
+                                            className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-purple-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-purple-400 focus:ring-1 focus:ring-purple-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            <svg className={`w-4 h-4 text-gray-600 group-hover:text-purple-600 transition-colors ${schemaSaving ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                            </svg>
+                                        </button>
+                                    </UITooltip>
                                 )}
                                 {/* View As dropdown */}
                                 <div ref={viewAsRef} className="relative">
                                     <UITooltip content="View As" placement="bottom">
-                                    <button
-                                        onClick={() => setViewAsOpen(o => !o)}
-                                        className="inline-flex items-center justify-between gap-1.5 h-8 w-max min-w-[9rem] px-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all text-xs font-medium"
-                                    >
-                                        {viewAsAdmin ? (
-                                            getAdminAvatar(viewAsAdmin) && !viewAsAvatarError ? (
-                                                <img
-                                                    src={getAdminAvatar(viewAsAdmin)}
-                                                    alt=""
-                                                    className="w-5 h-5 rounded-full object-cover flex-shrink-0"
-                                                    onError={() => setViewAsAvatarError(true)}
-                                                />
+                                        <button
+                                            onClick={() => setViewAsOpen(o => !o)}
+                                            className="inline-flex items-center justify-between gap-1.5 h-8 w-max min-w-[9rem] px-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all text-xs font-medium"
+                                        >
+                                            {viewAsAdmin ? (
+                                                getAdminAvatar(viewAsAdmin) && !viewAsAvatarError ? (
+                                                    <img
+                                                        src={getAdminAvatar(viewAsAdmin)}
+                                                        alt=""
+                                                        className="w-5 h-5 rounded-full object-cover flex-shrink-0"
+                                                        onError={() => setViewAsAvatarError(true)}
+                                                    />
+                                                ) : (
+                                                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ background: getAdminColor(viewAsAdmin) }}>
+                                                        {getAdminInitials(viewAsAdmin)}
+                                                    </span>
+                                                )
                                             ) : (
-                                                <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ background: getAdminColor(viewAsAdmin) }}>
-                                                    {getAdminInitials(viewAsAdmin)}
-                                                </span>
-                                            )
-                                        ) : (
-                                            <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                </svg>
+                                            )}
+                                            <span className="whitespace-nowrap">
+                                                {viewAsAdmin ? getAdminDisplayName(viewAsAdmin) : 'View As'}
+                                            </span>
+                                            <svg className={`w-3 h-3 text-gray-400 transition-transform ${viewAsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                             </svg>
-                                        )}
-                                        <span className="whitespace-nowrap">
-                                            {viewAsAdmin ? getAdminDisplayName(viewAsAdmin) : 'View As'}
-                                        </span>
-                                        <svg className={`w-3 h-3 text-gray-400 transition-transform ${viewAsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                    </button>
+                                        </button>
                                     </UITooltip>
                                     {viewAsOpen && (
                                         <div className="absolute right-0 top-full mt-1 min-w-full w-max bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1 max-h-64 overflow-y-auto">
@@ -3453,45 +3453,45 @@ const AnalyticsDashboardPage = () => {
                                                 const selectedPlatformId = String(viewAsAdmin?.adminId || viewAsAdmin?.id || viewAsAdmin?._id || '');
                                                 const isSelected = adminPlatformId && adminPlatformId === selectedPlatformId;
                                                 return (
-                                                <button
-                                                    key={admin.adminId || admin._id || idx}
-                                                    onClick={() => !isSelected && handleViewAsChange(admin)}
-                                                    disabled={isSelected}
-                                                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors
+                                                    <button
+                                                        key={admin.adminId || admin._id || idx}
+                                                        onClick={() => !isSelected && handleViewAsChange(admin)}
+                                                        disabled={isSelected}
+                                                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors
                                                         ${isSelected
-                                                            ? 'font-semibold text-gray-900 bg-gray-100 cursor-not-allowed opacity-60'
-                                                            : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer'
-                                                        }`}
-                                                >
-                                                    {getAdminAvatar(admin) ? (
-                                                        <>
-                                                            <img
-                                                                src={getAdminAvatar(admin)}
-                                                                alt=""
-                                                                className="w-6 h-6 rounded-full object-cover flex-shrink-0"
-                                                                onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
-                                                            />
-                                                            <span style={{ display: 'none', background: getAdminColor(admin) }} className="w-6 h-6 rounded-full items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                                                                ? 'font-semibold text-gray-900 bg-gray-100 cursor-not-allowed opacity-60'
+                                                                : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer'
+                                                            }`}
+                                                    >
+                                                        {getAdminAvatar(admin) ? (
+                                                            <>
+                                                                <img
+                                                                    src={getAdminAvatar(admin)}
+                                                                    alt=""
+                                                                    className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+                                                                    onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+                                                                />
+                                                                <span style={{ display: 'none', background: getAdminColor(admin) }} className="w-6 h-6 rounded-full items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                                                                    {getAdminInitials(admin)}
+                                                                </span>
+                                                            </>
+                                                        ) : (
+                                                            <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ background: getAdminColor(admin) }}>
                                                                 {getAdminInitials(admin)}
                                                             </span>
-                                                        </>
-                                                    ) : (
-                                                        <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ background: getAdminColor(admin) }}>
-                                                            {getAdminInitials(admin)}
-                                                        </span>
-                                                    )}
-                                                    <span className="truncate flex-1">{getAdminDisplayName(admin)}</span>
-                                                    {isSelected && (
-                                                        <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                                                        </svg>
-                                                    )}
-                                                </button>
+                                                        )}
+                                                        <span className="truncate flex-1">{getAdminDisplayName(admin)}</span>
+                                                        {isSelected && (
+                                                            <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                                            </svg>
+                                                        )}
+                                                    </button>
                                                 );
                                             })}
                                             {viewAsAdmins.length === 0 && (
-                                                    <p className="px-3 py-2 text-xs text-gray-400">No admins found</p>
-                                                )}
+                                                <p className="px-3 py-2 text-xs text-gray-400">No admins found</p>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -3512,14 +3512,14 @@ const AnalyticsDashboardPage = () => {
                             <h3 className="text-sm font-semibold text-gray-700 mb-1">No Charts Yet</h3>
                             <p className="text-xs text-gray-400 mb-5">{isViewingOtherAdmin ? 'This admin has no charts configured' : 'Add a chart to start visualizing your data'}</p>
                             {!isViewingOtherAdmin && (
-                            <Button
-                                onClick={addChart}
-                            >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                </svg>
-                                Add Your First Chart
-                            </Button>
+                                <Button
+                                    onClick={addChart}
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    Add Your First Chart
+                                </Button>
                             )}
                         </div>
                     ) : (
@@ -3530,17 +3530,17 @@ const AnalyticsDashboardPage = () => {
 
                             {/* Floating Add Chart Button — hidden when viewing another admin */}
                             {!isViewingOtherAdmin && (
-                            <div className="flex justify-center mt-6">
-                                <button
-                                    onClick={addChart}
-                                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5 hover:scale-105"
-                                >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                    </svg>
-                                    Add Another Chart
-                                </button>
-                            </div>
+                                <div className="flex justify-center mt-6">
+                                    <button
+                                        onClick={addChart}
+                                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-all inline-flex items-center gap-1.5 hover:scale-105"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        Add Another Chart
+                                    </button>
+                                </div>
                             )}
                         </>
                     )}
