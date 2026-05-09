@@ -10,10 +10,128 @@ import DeleteConfirmation from './DeleteConfirmation';
 import Tooltip from './Tooltip';
 import AppNavbar from './AppNavbar';
 import Button from './ui/Button';
+import {
+    DndContext,
+    DragOverlay,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    closestCenter,
+} from '@dnd-kit/core';
+import {
+    SortableContext,
+    horizontalListSortingStrategy,
+    useSortable,
+    arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 
 // Avatar colour palette — used in lead row renderer
 const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0284c7'];
+
+// Sortable column header cell — used inside DndContext for drag-and-drop reordering
+const SortableColumnHeader = ({
+    field,
+    formatFieldName,
+    renderSortIcon,
+    handleSort,
+    getColumnAlignClass,
+    filters,
+    handleFilterChange,
+    handleFilterKeyDown,
+    isDragging,
+}) => {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging: isSelfDragging,
+    } = useSortable({ id: field });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isSelfDragging ? 0.4 : 1,
+        cursor: isSelfDragging ? 'grabbing' : 'grab',
+        position: 'relative',
+        zIndex: isSelfDragging ? 999 : undefined,
+    };
+
+    return (
+        <th
+            ref={setNodeRef}
+            style={style}
+            {...attributes}
+            {...listeners}
+            className={`px-3 py-2.5 relative align-bottom select-none ${getColumnAlignClass(field, 'th')} ${isSelfDragging ? '' : 'hover:bg-indigo-50/60 transition-colors'}`}
+        >
+            <div
+                className={`flex items-center group/sort mb-1.5 transition-colors ${getColumnAlignClass(field, 'flex')}`}
+                onClick={(e) => {
+                    // Only trigger sort when it's a pure click (no drag movement)
+                    if (!isDragging) handleSort(field);
+                }}
+            >
+                <div className="relative inline-flex items-center gap-1">
+                    {/* Drag indicator — subtle vertical dots visible on hover */}
+                    <span className="text-slate-300 group-hover/sort:text-slate-400 transition-colors text-[9px] leading-none mr-0.5 select-none" aria-hidden="true">
+                        ⠿
+                    </span>
+                    <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider group-hover/sort:text-indigo-600 transition-colors">
+                        {formatFieldName(field)}
+                    </span>
+                    {renderSortIcon(field)}
+                </div>
+            </div>
+            <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
+                <div className="overflow-hidden">
+                    <div className="pb-1 pt-0.5 px-0.5">
+                        <div className="relative rounded-md bg-slate-200/80 focus-within:bg-gradient-to-r focus-within:from-indigo-500 focus-within:via-violet-400 focus-within:to-indigo-500 p-[1px] transition-all duration-300 shadow-sm focus-within:shadow-[0_0_10px_rgba(99,102,241,0.3)]">
+                            <input
+                                type="text"
+                                placeholder="Filter..."
+                                value={filters[field] || ''}
+                                onChange={(e) => handleFilterChange(field, e.target.value)}
+                                onKeyDown={(e) => handleFilterKeyDown(e, field)}
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                className={`w-full px-2 py-1 text-[10px] bg-white/70 focus:bg-white text-slate-700 rounded-[5px] outline-none placeholder-slate-400 transition-all ${getColumnAlignClass(field, 'input')}`}
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </th>
+    );
+};
+
+// Ghost overlay shown while dragging a column header
+const DragOverlayColumnHeader = ({ field, formatFieldName, renderSortIcon, getColumnAlignClass }) => (
+    <table className="border-separate" style={{ tableLayout: 'auto' }}>
+        <thead>
+            <tr>
+                <th
+                    className={`px-3 py-2.5 align-bottom bg-white shadow-2xl ring-2 ring-indigo-400 rounded-lg opacity-95 ${getColumnAlignClass(field, 'th')}`}
+                    style={{ cursor: 'grabbing', minWidth: 100 }}
+                >
+                    <div className={`flex items-center group/sort mb-1.5 ${getColumnAlignClass(field, 'flex')}`}>
+                        <div className="relative inline-flex items-center gap-1">
+                            <span className="text-indigo-300 text-[9px] leading-none mr-0.5 select-none" aria-hidden="true">⠿</span>
+                            <span className="text-[11px] font-extrabold text-indigo-600 uppercase tracking-wider">
+                                {formatFieldName(field)}
+                            </span>
+                            {renderSortIcon(field)}
+                        </div>
+                    </div>
+                </th>
+            </tr>
+        </thead>
+    </table>
+);
+
 const LeadsGrid = () => {
     const navigate = useNavigate();
     const location = useLocation();
@@ -54,6 +172,7 @@ const LeadsGrid = () => {
     const COL_VIS_KEY = 'colVis';
     const FILTERS_KEY = 'filters';
     const SELECTED_CATEGORY_KEY = 'selectedCategory';
+    const COL_ORDER_KEY = 'colOrder';
 
     const readFiltersStore = () => {
         try {
@@ -156,6 +275,50 @@ const LeadsGrid = () => {
         setVisibleFields(newVal);
         saveColVis(acctId, selectedCategory, newVal);
     };
+
+    // Column order helpers (persists drag-and-drop reordering)
+    const readColOrderStore = () => {
+        try {
+            const raw = localStorage.getItem(COL_ORDER_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+        } catch { return {}; }
+    };
+
+    const loadColOrder = (acctId, categoryId) => {
+        try {
+            const store = readColOrderStore();
+            const saved = store[acctId]?.[categoryId || ''];
+            return Array.isArray(saved) ? saved : null;
+        } catch { return null; }
+    };
+
+    const saveColOrder = (acctId, categoryId, value) => {
+        try {
+            const store = readColOrderStore();
+            store[acctId] = store[acctId] || {};
+            if (!value) {
+                delete store[acctId][categoryId || ''];
+            } else {
+                store[acctId][categoryId || ''] = value;
+            }
+            localStorage.setItem(COL_ORDER_KEY, JSON.stringify(store));
+        } catch { /* ignore */ }
+    };
+
+    // Apply a saved order to a list of fields:
+    // fields that appear in savedOrder come first (in savedOrder sequence),
+    // any new fields not yet in the saved order are appended at the end.
+    const applyColOrder = (displayFields, savedOrder) => {
+        if (!savedOrder || !Array.isArray(savedOrder)) return displayFields;
+        const ordered = savedOrder.filter(f => displayFields.includes(f));
+        const newFields = displayFields.filter(f => !savedOrder.includes(f));
+        return [...ordered, ...newFields];
+    };
+
+    // Drag state for column reordering
+    const [activeColId, setActiveColId] = useState(null);
 
     // Close dropdowns when clicking outside
     useEffect(() => {
@@ -352,7 +515,11 @@ const LeadsGrid = () => {
                 : [];
             const baseFields = apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields;
             // Deduplicate while preserving order (guards against backend sending duplicate fields)
-            const displayFields = [...new Set(baseFields)];
+            const rawDisplayFields = [...new Set(baseFields)];
+
+            // Apply saved column order (from drag-and-drop) if available
+            const savedOrder = loadColOrder(acctId, selectedCategory);
+            const displayFields = applyColOrder(rawDisplayFields, savedOrder);
 
             if (displayFields.length > 0) {
                 setFields(displayFields);
@@ -393,6 +560,41 @@ const LeadsGrid = () => {
     useEffect(() => {
         fetchLeads();
     }, [currentPage, pageSize, sortField, sortOrder, appliedFilters, acctId, isAccountLinked, categoriesReady]);
+
+        // Handle column drag-and-drop reordering
+    const handleColumnDragStart = (event) => {
+        setActiveColId(event.active.id);
+    };
+
+    const handleColumnDragEnd = (event) => {
+        setActiveColId(null);
+        const { active, over } = event;
+        if (!over || active.id === over.id) return;
+
+        const currentCols = visibleFields ?? fields;
+        const oldIndex = currentCols.indexOf(active.id);
+        const newIndex = currentCols.indexOf(over.id);
+        if (oldIndex === -1 || newIndex === -1) return;
+
+        const reordered = arrayMove(currentCols, oldIndex, newIndex);
+
+        // Update both fields and visibleFields to stay in sync
+        setFields(prev => {
+            // For fields not in currentCols (hidden ones), keep them at the end
+            const hidden = prev.filter(f => !currentCols.includes(f));
+            return [...reordered, ...hidden];
+        });
+        if (visibleFields) setVisibleFields(reordered);
+
+        // Persist the new order
+        saveColOrder(acctId, selectedCategory, reordered);
+    };
+
+    // dnd-kit sensors — require 5px movement before drag activates
+    // so that click (sort) vs drag is distinguished automatically
+    const dndSensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    );
 
     // Handle sorting
     const handleSort = (field) => {
@@ -1003,54 +1205,61 @@ const LeadsGrid = () => {
                                         <div className="flex-1 overflow-y-scroll overflow-x-auto min-h-0">
                                             <table className="min-w-full divide-y divide-gray-200">
                                                 <thead className="sticky top-0 z-10 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] transition-all group/header">
-                                                    <tr>
-                                                        {(visibleFields ?? fields).map((field) => (
-                                                            <th key={field} className={`px-3 py-2.5 relative align-bottom ${getColumnAlignClass(field, 'th')}`}>
-                                                                <div
-                                                                    className={`flex items-center cursor-pointer group/sort mb-1.5 transition-colors ${getColumnAlignClass(field, 'flex')}`}
-                                                                    onClick={() => handleSort(field)}
-                                                                >
-                                                                    <div className="relative inline-flex items-center">
-                                                                        <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider group-hover/sort:text-indigo-600 transition-colors">
-                                                                            {formatFieldName(field)}
-                                                                        </span>
-                                                                        {renderSortIcon(field)}
+                                                    <DndContext
+                                                        sensors={dndSensors}
+                                                        collisionDetection={closestCenter}
+                                                        onDragStart={handleColumnDragStart}
+                                                        onDragEnd={handleColumnDragEnd}
+                                                    >
+                                                        <SortableContext
+                                                            items={visibleFields ?? fields}
+                                                            strategy={horizontalListSortingStrategy}
+                                                        >
+                                                            <tr>
+                                                                {(visibleFields ?? fields).map((field) => (
+                                                                    <SortableColumnHeader
+                                                                        key={field}
+                                                                        field={field}
+                                                                        formatFieldName={formatFieldName}
+                                                                        renderSortIcon={renderSortIcon}
+                                                                        handleSort={handleSort}
+                                                                        getColumnAlignClass={getColumnAlignClass}
+                                                                        filters={filters}
+                                                                        handleFilterChange={handleFilterChange}
+                                                                        handleFilterKeyDown={handleFilterKeyDown}
+                                                                        isDragging={activeColId !== null}
+                                                                    />
+                                                                ))}
+                                                                <th className="px-3 py-2.5 text-center w-20 align-bottom">
+                                                                    <div className="flex items-center justify-center gap-1 mb-1.5">
+                                                                        <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Actions</span>
                                                                     </div>
-                                                                </div>
-                                                                <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
-                                                                    <div className="overflow-hidden">
-                                                                        <div className="pb-1 pt-0.5 px-0.5">
-                                                                            <div className="relative rounded-md bg-slate-200/80 focus-within:bg-gradient-to-r focus-within:from-indigo-500 focus-within:via-violet-400 focus-within:to-indigo-500 p-[1px] transition-all duration-300 shadow-sm focus-within:shadow-[0_0_10px_rgba(99,102,241,0.3)]">
-                                                                                <input
-                                                                                    type="text"
-                                                                                    placeholder="Filter..."
-                                                                                    value={filters[field] || ''}
-                                                                                    onChange={(e) => handleFilterChange(field, e.target.value)}
-                                                                                    onKeyDown={(e) => handleFilterKeyDown(e, field)}
-                                                                                    onClick={(e) => e.stopPropagation()}
-                                                                                    className={`w-full px-2 py-1 text-[10px] bg-white/70 focus:bg-white text-slate-700 rounded-[5px] outline-none placeholder-slate-400 transition-all ${getColumnAlignClass(field, 'input')}`}
-                                                                                />
+                                                                    <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
+                                                                        <div className="overflow-hidden">
+                                                                            <div className="pb-1 pt-0.5 px-0.5 opacity-0 pointer-events-none">
+                                                                                <div className="p-[1px]">
+                                                                                    <input type="text" className="w-full px-2 py-1 text-[10px]" disabled />
+                                                                                </div>
                                                                             </div>
                                                                         </div>
                                                                     </div>
-                                                                </div>
-                                                            </th>
-                                                        ))}
-                                                        <th className="px-3 py-2.5 text-center w-20 align-bottom">
-                                                            <div className="flex items-center justify-center gap-1 mb-1.5">
-                                                                <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Actions</span>
-                                                            </div>
-                                                            <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
-                                                                <div className="overflow-hidden">
-                                                                    <div className="pb-1 pt-0.5 px-0.5 opacity-0 pointer-events-none">
-                                                                        <div className="p-[1px]">
-                                                                            <input type="text" className="w-full px-2 py-1 text-[10px]" disabled />
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </th>
-                                                    </tr>
+                                                                </th>
+                                                            </tr>
+                                                        </SortableContext>
+                                                        <DragOverlay dropAnimation={{
+                                                            duration: 200,
+                                                            easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+                                                        }}>
+                                                            {activeColId ? (
+                                                                <DragOverlayColumnHeader
+                                                                    field={activeColId}
+                                                                    formatFieldName={formatFieldName}
+                                                                    renderSortIcon={renderSortIcon}
+                                                                    getColumnAlignClass={getColumnAlignClass}
+                                                                />
+                                                            ) : null}
+                                                        </DragOverlay>
+                                                    </DndContext>
                                                     <tr>
                                                         <th colSpan="100" className="p-0 h-[3px] bg-gradient-to-r from-indigo-500 via-violet-400 to-indigo-500 border-none shadow-[0_0_15px_rgba(99,102,241,0.6)] relative z-20"></th>
                                                     </tr>
