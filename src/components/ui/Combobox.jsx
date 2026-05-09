@@ -169,6 +169,7 @@ export function Combobox({
           readOnly={!searchable}
           disabled={disabled}
           onFocus={openMenu}
+          onClick={() => { if (!open) openMenu(); }}
           onChange={(e) => {
             setQuery(e.target.value);
             setFocusedIndex(-1);
