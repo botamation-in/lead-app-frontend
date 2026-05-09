@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useId, useCallback, forwardRef } from 'react';
+import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
 import '../../styles/components/combobox.css';
 
@@ -73,9 +74,11 @@ export function Combobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(-1);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const containerRef = useRef(null);
   const inputRef = useRef(null);
   const listRef = useRef(null);
+  const justOpenedByFocusRef = useRef(false);
 
   const selectedOption = options.find((o) => o.value === value) || null;
   const displayValue = open && searchable ? query : (selectedOption?.label ?? '');
@@ -99,9 +102,9 @@ export function Combobox({
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        closeMenu();
-      }
+      const inTrigger = containerRef.current && containerRef.current.contains(e.target);
+      const inPanel = listRef.current && listRef.current.contains(e.target);
+      if (!inTrigger && !inPanel) closeMenu();
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -117,6 +120,18 @@ export function Combobox({
 
   function openMenu() {
     if (disabled) return;
+    justOpenedByFocusRef.current = true;
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const dropdownHeight = Math.min(240, filtered.length * 36 + 8);
+      const showAbove = spaceBelow < dropdownHeight && rect.top > dropdownHeight;
+      setDropdownPos({
+        top: showAbove ? rect.top + window.scrollY - dropdownHeight - 4 : rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      });
+    }
     setOpen(true);
     setQuery('');
     setFocusedIndex(-1);
@@ -169,7 +184,13 @@ export function Combobox({
           readOnly={!searchable}
           disabled={disabled}
           onFocus={openMenu}
-          onClick={() => { if (!open) openMenu(); }}
+          onClick={() => {
+            if (justOpenedByFocusRef.current) {
+              justOpenedByFocusRef.current = false;
+              return;
+            }
+            if (open) closeMenu(); else openMenu();
+          }}
           onChange={(e) => {
             setQuery(e.target.value);
             setFocusedIndex(-1);
@@ -197,8 +218,19 @@ export function Combobox({
         <ChevronIcon />
       </div>
 
-      {open && (
-        <div ref={listRef} className={['ds-combobox__panel', dropdownClassName].filter(Boolean).join(' ')} role="listbox">
+      {open && createPortal(
+        <div
+          ref={listRef}
+          className={['ds-combobox__panel', dropdownClassName].filter(Boolean).join(' ')}
+          role="listbox"
+          style={{
+            position: 'absolute',
+            top: dropdownPos.top,
+            left: dropdownPos.left,
+            width: dropdownPos.width,
+            zIndex: 9999,
+          }}
+        >
           {loading ? (
             <div className="ds-combobox__loading">Loading…</div>
           ) : filtered.length === 0 ? (
@@ -228,7 +260,8 @@ export function Combobox({
               </div>
             ))
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

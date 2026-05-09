@@ -3561,50 +3561,70 @@ const AnalyticsDashboardPage = () => {
                                     </UITooltip>
                                     {viewAsOpen && (
                                         <div className="absolute right-0 top-full mt-1 min-w-full w-max bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1 max-h-64 overflow-y-auto">
-                                            {viewAsAdmins.map((admin, idx) => {
-                                                const adminPlatformId = String(admin.adminId || admin.id || admin._id || '');
-                                                const selectedPlatformId = String(viewAsAdmin?.adminId || viewAsAdmin?.id || viewAsAdmin?._id || '');
-                                                const isSelected = adminPlatformId && adminPlatformId === selectedPlatformId;
-                                                return (
-                                                    <button
-                                                        key={admin.adminId || admin._id || idx}
-                                                        onClick={() => !isSelected && handleViewAsChange(admin)}
-                                                        disabled={isSelected}
-                                                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors
-                                                        ${isSelected
-                                                                ? 'font-semibold text-gray-900 bg-gray-100 cursor-not-allowed opacity-60'
-                                                                : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer'
-                                                            }`}
-                                                    >
-                                                        {getAdminAvatar(admin) ? (
-                                                            <>
-                                                                <img
-                                                                    src={getAdminAvatar(admin)}
-                                                                    alt=""
-                                                                    className="w-6 h-6 rounded-full object-cover flex-shrink-0"
-                                                                    onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
-                                                                />
-                                                                <span style={{ display: 'none', background: getAdminColor(admin) }} className="w-6 h-6 rounded-full items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                                            {(() => {
+                                                const currentUserAdminId = localStorage.getItem('currentUserAdmin');
+                                                const me = viewAsAdmins.find(a => String(a.adminId || a.id || a._id || '') === currentUserAdminId);
+                                                const others = viewAsAdmins.filter(a => String(a.adminId || a.id || a._id || '') !== currentUserAdminId);
+
+                                                const renderAdminBtn = (admin, idx) => {
+                                                    const adminPlatformId = String(admin.adminId || admin.id || admin._id || '');
+                                                    const selectedPlatformId = String(viewAsAdmin?.adminId || viewAsAdmin?.id || viewAsAdmin?._id || '');
+                                                    const isSelected = adminPlatformId && adminPlatformId === selectedPlatformId;
+                                                    const isMe = adminPlatformId === currentUserAdminId;
+                                                    return (
+                                                        <button
+                                                            key={admin.adminId || admin._id || idx}
+                                                            onClick={() => !isSelected && handleViewAsChange(admin)}
+                                                            disabled={isSelected}
+                                                            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors
+                                                            ${isSelected
+                                                                    ? 'font-semibold text-gray-900 bg-gray-100 cursor-not-allowed opacity-60'
+                                                                    : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer'
+                                                                }`}
+                                                        >
+                                                            {getAdminAvatar(admin) ? (
+                                                                <>
+                                                                    <img
+                                                                        src={getAdminAvatar(admin)}
+                                                                        alt=""
+                                                                        className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+                                                                        onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+                                                                    />
+                                                                    <span style={{ display: 'none', background: getAdminColor(admin) }} className="w-6 h-6 rounded-full items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                                                                        {getAdminInitials(admin)}
+                                                                    </span>
+                                                                </>
+                                                            ) : (
+                                                                <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ background: getAdminColor(admin) }}>
                                                                     {getAdminInitials(admin)}
                                                                 </span>
-                                                            </>
-                                                        ) : (
-                                                            <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ background: getAdminColor(admin) }}>
-                                                                {getAdminInitials(admin)}
-                                                            </span>
+                                                            )}
+                                                            <span className="truncate flex-1">{getAdminDisplayName(admin)}</span>
+                                                            {isMe && !isSelected && (
+                                                                <span className="text-[9px] font-semibold text-indigo-500 bg-indigo-50 border border-indigo-200 rounded px-1 py-0.5 flex-shrink-0">You</span>
+                                                            )}
+                                                            {isSelected && (
+                                                                <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                                                </svg>
+                                                            )}
+                                                        </button>
+                                                    );
+                                                };
+
+                                                return (
+                                                    <>
+                                                        {me && renderAdminBtn(me, 'me')}
+                                                        {me && others.length > 0 && (
+                                                            <div className="my-1 border-t border-gray-100" />
                                                         )}
-                                                        <span className="truncate flex-1">{getAdminDisplayName(admin)}</span>
-                                                        {isSelected && (
-                                                            <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                                                            </svg>
+                                                        {others.map((admin, idx) => renderAdminBtn(admin, idx))}
+                                                        {viewAsAdmins.length === 0 && (
+                                                            <p className="px-3 py-2 text-xs text-gray-400">No admins found</p>
                                                         )}
-                                                    </button>
+                                                    </>
                                                 );
-                                            })}
-                                            {viewAsAdmins.length === 0 && (
-                                                <p className="px-3 py-2 text-xs text-gray-400">No admins found</p>
-                                            )}
+                                            })()}
                                         </div>
                                     )}
                                 </div>
@@ -3699,6 +3719,7 @@ const AnalyticsDashboardPage = () => {
                 isOpen={aiChatOpen}
                 onClose={() => setAiChatOpen(false)}
                 acctId={acctId}
+                categories={categories}
                 currentCharts={charts}
                 onAddCharts={handleAiChartsGenerated}
             />

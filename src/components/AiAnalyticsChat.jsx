@@ -298,24 +298,45 @@ const MessageBubble = ({ msg, onAddChart, addedChartIds, onRetry }) => {
                                     added={addedChartIds.has(`${msg.id}-${i}`)}
                                 />
                             ))}
-                            {msg.charts.length > 1 && (
-                                <button
-                                    onClick={() => msg.charts.forEach((c, i) => {
-                                        if (!addedChartIds.has(`${msg.id}-${i}`)) onAddChart(c, msg.id, i);
-                                    })}
-                                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 mt-1"
-                                    style={{
-                                        border: '1px solid var(--color-interactive)',
-                                        color: 'var(--color-interactive)',
-                                        background: 'transparent',
-                                    }}
-                                >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                    </svg>
-                                    Add All {msg.charts.length} Charts
-                                </button>
-                            )}
+                            {msg.charts.length > 1 && (() => {
+                                const allAdded = msg.charts.every((_, i) => addedChartIds.has(`${msg.id}-${i}`));
+                                return (
+                                    <button
+                                        onClick={() => msg.charts.forEach((c, i) => {
+                                            if (!addedChartIds.has(`${msg.id}-${i}`)) onAddChart(c, msg.id, i);
+                                        })}
+                                        disabled={allAdded}
+                                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 mt-1"
+                                        style={allAdded ? {
+                                            border: '1px solid var(--color-border)',
+                                            color: 'var(--color-text-muted)',
+                                            background: 'transparent',
+                                            cursor: 'default',
+                                            opacity: 0.5,
+                                        } : {
+                                            border: '1px solid var(--color-interactive)',
+                                            color: 'var(--color-interactive)',
+                                            background: 'transparent',
+                                        }}
+                                    >
+                                        {allAdded ? (
+                                            <>
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                                All {msg.charts.length} Charts Added
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                </svg>
+                                                Add All {msg.charts.length} Charts
+                                            </>
+                                        )}
+                                    </button>
+                                );
+                            })()}
                         </div>
                     )}
 
@@ -496,17 +517,43 @@ function detectEditIntent(msgText, currentCharts) {
 /**
  * @param {{ isOpen: boolean, onClose: () => void, acctId: string, currentCharts: object[], onAddCharts: (charts: object[]) => void }} props
  */
-const AiAnalyticsChat = ({ isOpen, onClose, acctId, currentCharts = [], onAddCharts }) => {
+const AiAnalyticsChat = ({ isOpen, onClose, acctId, categories = [], currentCharts = [], onAddCharts }) => {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [addedChartIds, setAddedChartIds] = useState(new Set());
     const [resumeSession, setResumeSession] = useState(null); // { messages, history, savedAt }
+    const [categoryFields, setCategoryFields] = useState({}); // { [categoryId]: ['field1', ...] }
     const messageIdRef = useRef(0);
     const scrollRef = useRef(null);
     const inputRef = useRef(null);
     const historyRef = useRef([]);
     const lastUserMessageRef = useRef(''); // for retry
+
+    // Fetch fields for all categories to use in welcome message examples
+    useEffect(() => {
+        if (!acctId || categories.length === 0) return;
+        api.get('/api/ui/leads/fields', { params: { acctId } })
+            .then(res => {
+                const raw = res.data;
+                const fields = {};
+                if (Array.isArray(raw?.categories)) {
+                    raw.categories.forEach(cat => {
+                        if (cat.categoryId && Array.isArray(cat.fields)) {
+                            fields[cat.categoryId] = cat.fields.filter(f => typeof f === 'string');
+                        }
+                    });
+                }
+                setCategoryFields(fields);
+            })
+            .catch(() => {}); // silent — welcome message falls back to generic
+    }, [acctId, categories]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Lock body scroll when panel is open to prevent double scrollbar
+    useEffect(() => {
+        document.body.style.overflow = isOpen ? 'hidden' : '';
+        return () => { document.body.style.overflow = ''; };
+    }, [isOpen]);
 
     // Auto-scroll to bottom when messages change
     useEffect(() => {
@@ -535,6 +582,15 @@ const AiAnalyticsChat = ({ isOpen, onClose, acctId, currentCharts = [], onAddCha
         }
     }, [isOpen, acctId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Re-render the welcome message with category context once categories/fields arrive
+    useEffect(() => {
+        if (!isOpen || categories.length === 0) return;
+        // Only update if we're still showing just the initial welcome (no user interaction yet)
+        if (messages.length === 1 && messages[0].role === 'assistant' && !resumeSession) {
+            showWelcome();
+        }
+    }, [categories, categoryFields]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // Save session to localStorage whenever messages change
     useEffect(() => {
         if (!acctId || messages.length === 0) return;
@@ -543,11 +599,64 @@ const AiAnalyticsChat = ({ isOpen, onClose, acctId, currentCharts = [], onAddCha
 
     const showWelcome = () => {
         const welcomeId = ++messageIdRef.current;
+
+        // Convert camelCase / snake_case field names to readable labels
+        const toLabel = (field) =>
+            field
+                .replace(/_/g, ' ')
+                .replace(/([a-z])([A-Z])/g, '$1 $2')
+                .replace(/\b\w/g, c => c.toUpperCase());
+
+        let text;
+        let quickReplies;
+
+        if (categories && categories.length > 0) {
+            const names = categories.map(c => c.categoryName);
+            const primary = names[0];
+            const primaryId = categories[0]._id;
+            const second = names[1] || names[0];
+            const secondId = (categories[1] || categories[0])._id;
+
+            // Pick up to 2 real fields from the primary category
+            const primaryFieldRaw = (categoryFields[primaryId] || []).filter(f => f);
+            const field1 = primaryFieldRaw[0] ? toLabel(primaryFieldRaw[0]) : null;
+            const field2 = primaryFieldRaw[1] ? toLabel(primaryFieldRaw[1]) : null;
+
+            // Build example bullets using real fields where available, else time-based fallback
+            const bullets = [
+                `"Show me daily ${primary} leads this month"`,
+                field1
+                    ? `"Breakdown of ${primary} leads by ${field1}"`
+                    : `"Breakdown of ${second} leads over the last 7 days"`,
+                field2
+                    ? `"How many ${primary} leads per ${field2}?"`
+                    : names.length > 1
+                        ? `"Compare ${primary} vs ${second} leads this week"`
+                        : `"Top performing days for ${primary} leads"`,
+            ];
+
+            text = `Hi! I'm your AI analytics assistant.\n\nI can see you have ${
+                names.length === 1
+                    ? `**${primary}**`
+                    : names.map(n => `**${n}**`).join(', ')
+            } categor${names.length === 1 ? 'y' : 'ies'} set up. Here are some things you can ask:\n\n${bullets.map(b => `• ${b}`).join('\n')}`;
+
+            quickReplies = [
+                `Daily ${primary} trend`,
+                field1 ? `${primary} leads by ${field1}` : `${primary} leads this month`,
+                field2 ? `${primary} leads by ${field2}` : names.length > 1 ? `${second} leads trend` : `${primary} leads this week`,
+                names.length > 1 ? `Compare ${primary} vs ${second}` : `Top days for ${primary}`,
+            ];
+        } else {
+            text = "Hi! I'm your AI analytics assistant. Tell me what you'd like to visualize — for example:\n\n• \"Show me daily leads this month\"\n• \"Breakdown of leads by status\"\n• \"How many leads per trainer?\"";
+            quickReplies = ['Daily leads trend', 'Leads by status', 'Leads by trainer', 'Top lead sources'];
+        }
+
         setMessages([{
             id: welcomeId,
             role: 'assistant',
-            text: "Hi! I'm your AI analytics assistant. Tell me what you'd like to visualize — for example:\n\n• \"Show me daily leads this month\"\n• \"Breakdown of leads by status\"\n• \"How many leads per trainer?\"",
-            quickReplies: ['Daily leads trend', 'Leads by status', 'Leads by trainer', 'Top lead sources'],
+            text,
+            quickReplies,
             onQuickReply: (reply) => sendMessage(reply),
         }]);
     };
@@ -715,7 +824,7 @@ const AiAnalyticsChat = ({ isOpen, onClose, acctId, currentCharts = [], onAddCha
             {/* ── Backdrop ── */}
             <div
                 onClick={handleClose}
-                className="fixed inset-0 z-40 transition-opacity duration-300"
+                className="fixed inset-0 z-[240] transition-opacity duration-300"
                 style={{
                     background: 'rgba(0,0,0,0.25)',
                     backdropFilter: 'blur(2px)',
@@ -726,7 +835,7 @@ const AiAnalyticsChat = ({ isOpen, onClose, acctId, currentCharts = [], onAddCha
 
             {/* ── Slide-in Panel ── */}
             <div
-                className="fixed top-0 right-0 h-full z-50 flex flex-col"
+                className="fixed top-0 right-0 h-full z-[250] flex flex-col"
                 style={{
                     width: 400,
                     maxWidth: '100vw',

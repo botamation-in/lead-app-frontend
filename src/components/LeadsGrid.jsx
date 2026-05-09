@@ -397,7 +397,13 @@ const LeadsGrid = () => {
     // Handle sorting
     const handleSort = (field) => {
         if (sortField === field) {
-            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+            if (sortOrder === 'asc') {
+                setSortOrder('desc');
+            } else {
+                // third click — clear sorting for this column
+                setSortField('');
+                setSortOrder('asc');
+            }
         } else {
             setSortField(field);
             setSortOrder('asc');
@@ -768,7 +774,7 @@ const LeadsGrid = () => {
                             {/* Divider */}
                             <div className="w-px h-6 bg-gray-200 mx-1.5" />
 
-                            {/* ── Group 2: View & filter — Clear filters + Refresh ── */}
+                            {/* ── Group 2: View & filter — Clear filters + Clear sorting + Refresh ── */}
                             <div className="flex items-center gap-1.5">
                                 <Tooltip
                                     content={Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? `Clear ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length} active filter${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length !== 1 ? 's' : ''}` : 'No active filters'}
@@ -792,10 +798,31 @@ const LeadsGrid = () => {
                                             ? 'bg-red-50 border-red-400 focus:ring-red-300'
                                             : 'bg-transparent border-gray-300 hover:bg-red-50 hover:border-red-400 focus:ring-red-300'
                                             }`}
-                                        title={Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? `Clear ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length} active filter${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length !== 1 ? 's' : ''}` : 'No active filters'}
                                     >
                                         <svg className={`w-4 h-4 transition-colors ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? 'text-red-500' : 'text-gray-600 group-hover:text-red-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </Tooltip>
+                                <Tooltip
+                                    content={sortField ? `Clear sort: ${sortField} (${sortOrder})` : 'No active sorting'}
+                                    placement="top"
+                                >
+                                    <button
+                                        onClick={() => {
+                                            setSortField('');
+                                            setSortOrder('asc');
+                                            setCurrentPage(1);
+                                        }}
+                                        disabled={loading || !sortField}
+                                        className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 disabled:opacity-40 disabled:cursor-not-allowed ${sortField
+                                            ? 'bg-orange-50 border-orange-400 focus:ring-orange-300'
+                                            : 'bg-transparent border-gray-300 hover:bg-orange-50 hover:border-orange-400 focus:ring-orange-300'
+                                            }`}
+                                    >
+                                        <svg className={`w-4 h-4 transition-colors ${sortField ? 'text-orange-500' : 'text-gray-600 group-hover:text-orange-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6h18M7 12h10M11 18h2" />
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12" />
                                         </svg>
                                     </button>
@@ -805,7 +832,6 @@ const LeadsGrid = () => {
                                         onClick={fetchLeads}
                                         disabled={loading}
                                         className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-indigo-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-indigo-400 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                                        title={loading ? 'Loading...' : 'Refresh leads'}
                                     >
                                         <svg
                                             className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`}

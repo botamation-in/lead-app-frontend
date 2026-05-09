@@ -5,7 +5,7 @@ const DeleteConfirmation = ({ isOpen, onClose, onConfirm, title, message, confir
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
       {/* Overlay */}
       <div
         className="fixed inset-0 bg-black opacity-50"
