@@ -575,7 +575,7 @@ const AiAnalyticsChat = ({ isOpen, onClose, acctId, categories = [], currentChar
         if (messages.length > 0 || resumeSession) return; // already initialised
 
         const saved = loadSession(acctId);
-        if (saved?.messages?.length > 0) {
+        if (saved?.messages?.some(m => m.role === 'user')) {
             setResumeSession(saved);
         } else {
             showWelcome();
