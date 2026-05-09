@@ -226,7 +226,7 @@ const AnalyticsDashboardPage = () => {
         dateGranularity: 'day',
         showLegend: true,
         showDataLabels: true,
-        numberSplitCount: 4,
+        numberSplitCount: 0,
         fieldLabels: {},
     };
 
@@ -285,7 +285,7 @@ const AnalyticsDashboardPage = () => {
                 chartMode: chart.chartMode || null,
                 chartCategory: chart.chartCategory || null,
                 fieldLabels: chart.fieldLabels || {},
-                numberSplitCount: chart.numberSplitCount ?? 4,
+                numberSplitCount: chart.numberSplitCount ?? 0,
                 dateGranularity: chart.dateGranularity || 'day',
                 showLegend: chart.showLegend ?? true,
                 showDataLabels: chart.showDataLabels ?? true
@@ -884,6 +884,7 @@ const AnalyticsDashboardPage = () => {
     const [schemaSyncing, setSchemaSyncing] = useState(false);
     const [schemaSaving, setSchemaSaving] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const [schemaSavedOnce, setSchemaSavedOnce] = useState(false);
     const [saveWarningOpen, setSaveWarningOpen] = useState(false);
     // AI chart assistant panel
     const [aiChatOpen, setAiChatOpen] = useState(false);
@@ -1015,6 +1016,7 @@ const AnalyticsDashboardPage = () => {
             });
 
             setHasUnsavedChanges(false);
+            setSchemaSavedOnce(true);
             console.log('Analytics schema saved successfully');
         } catch (error) {
             console.error('Error saving analytics schema:', error);
@@ -1423,18 +1425,8 @@ const AnalyticsDashboardPage = () => {
     }, [acctId, userDetails]);
     // Handle View As selection change
     const handleViewAsChange = async (selectedAdmin) => {
-        const currentUserId = localStorage.getItem('userId');
-
         if (!acctId) {
             console.error('Cannot change view: no account selected');
-            return;
-        }
-
-        // If there are unsaved changes, hold the switch and show the warning modal
-        if (hasUnsavedChanges) {
-            setPendingViewAsAdmin(selectedAdmin);
-            setSwitchAdminWarningOpen(true);
-            setViewAsOpen(false);
             return;
         }
 
@@ -1474,8 +1466,33 @@ const AnalyticsDashboardPage = () => {
             const viewingAsId = response.data?.viewingAs || null;
             const schema = response.data?.schema || null;
 
-            // If backend returned a schema, save it to localStorage
-            if (schema && viewingAsId) {
+            // If backend returned a schema, save it to localStorage — but only when NOT
+            // switching back to own admin. For own admin, localStorage is the source of truth
+            // (it may contain unsaved work that hasn't been pushed to DB yet).
+            const isOwnAdmin = viewingAsId && viewingAsId === localStorage.getItem('currentUserAdmin');
+            const localCharts = isOwnAdmin ? loadCharts(acctId, viewingAsId) : [];
+
+            if (isOwnAdmin && localCharts.length > 0) {
+                // Own admin — prefer localStorage over DB schema
+                const restored = localCharts.map(entry => normalizeChart(entry));
+                skipSaveRef.current = true;
+                chartsRef.current = restored;
+                setCharts(restored);
+                setNextChartId(restored.length > 0 ? Math.max(...restored.map(c => c.id)) + 1 : 1);
+                setChartRequestSignatures(Object.fromEntries(restored.map(chart => [chart.id, getChartRequestSignature(chart)])));
+                setChartDataCache({});
+
+                const usedCategories = [...new Set(restored.map(c => c.chartCategory?._id || c.chartCategory).filter(Boolean))];
+                usedCategories.forEach(catId => fetchFieldsForCategory(catId));
+                restored.forEach(chart => {
+                    const isNum = chart.chartType?.value === 'number';
+                    if (isNum ? (chart.yAxis && chart.aggregation) : (chart.xAxis && chart.yAxis && chart.aggregation)) {
+                        fetchChartDataFromBackend(chart.id, chart, true);
+                    }
+                });
+                setChartsReady(true);
+                skipViewingAsEffectRef.current = true;
+            } else if (schema && viewingAsId) {
                 const store = readStore();
                 store[acctId] = store[acctId] || {};
                 store[acctId][viewingAsId] = schema;
@@ -1506,14 +1523,14 @@ const AnalyticsDashboardPage = () => {
                 // Charts already loaded above — tell the viewingAs useEffect to skip duplicate work
                 skipViewingAsEffectRef.current = true;
             } else if (viewingAsId) {
-                // Backend returned no schema inline — clean up any stale localStorage entry.
-                // Do NOT clear charts yet; handleSchemaSync (triggered via the viewingAs useEffect)
-                // will fetch from the backend and either populate with real charts or clear to empty
-                // only once it's confirmed there is truly no schema. This prevents a blank flash.
-                const store = readStore();
-                if (store[acctId]) {
-                    delete store[acctId][viewingAsId];
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+                // Backend returned no schema inline — clean up any stale localStorage entry,
+                // but only if this is NOT own admin (own admin localStorage is the source of truth).
+                if (!isOwnAdmin) {
+                    const store = readStore();
+                    if (store[acctId]) {
+                        delete store[acctId][viewingAsId];
+                        localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+                    }
                 }
             }
 
@@ -2316,7 +2333,7 @@ const AnalyticsDashboardPage = () => {
         const showDataLabels = chartConfig.showDataLabels !== false;
         const fieldLabels = chartConfig.fieldLabels || {};
         const lbl = (key) => fieldLabels[key] || key;
-        const splitCount = chartConfig.numberSplitCount ?? 4;
+        const splitCount = chartConfig.numberSplitCount ?? 0;
         // Apply field label override to yAxisLabel for all chart types
         const displayYLabel = fieldLabels[chartConfig.yAxis?.value] || yAxisLabel;
         switch (chartConfig.chartType.value) {
@@ -3316,56 +3333,6 @@ const AnalyticsDashboardPage = () => {
                     </div>
                 </div>
             )}
-            {/* ── Admin-switch unsaved-changes warning modal ── */}
-            {switchAdminWarningOpen && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
-                        <div className="flex items-start gap-3 mb-4">
-                            <div className="flex-shrink-0 w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
-                                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                                </svg>
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-900 mb-1">Unsaved changes</h3>
-                                <p className="text-xs text-gray-500 leading-relaxed">
-                                    You have unsaved changes in the current dashboard. Switching to{' '}
-                                    <span className="font-semibold text-gray-700">
-                                        {pendingViewAsAdmin ? getAdminDisplayName(pendingViewAsAdmin) : 'another admin'}
-                                    </span>
-                                    's view will discard them. Save your changes first or proceed and lose them.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex justify-end gap-2">
-                            <Button
-                                size="sm"
-                                variant="secondary"
-                                scheme="primary"
-                                onClick={() => {
-                                    setSwitchAdminWarningOpen(false);
-                                    setPendingViewAsAdmin(null);
-                                }}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                size="sm"
-                                onClick={async () => {
-                                    setSwitchAdminWarningOpen(false);
-                                    await executeSchemaSave(viewingAs);
-                                    if (pendingViewAsAdmin) {
-                                        await executeViewAsChange(pendingViewAsAdmin);
-                                    }
-                                    setPendingViewAsAdmin(null);
-                                }}
-                            >
-                                Save &amp; proceed
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
             {/* ── Pull-overwrite warning modal (unsaved changes exist when pulling) ── */}
             {pullOverwriteWarningOpen && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
@@ -3500,10 +3467,10 @@ const AnalyticsDashboardPage = () => {
                                 </UITooltip>
                                 {/* Save changes — hidden when viewing another admin */}
                                 {!isViewingOtherAdmin && (
-                                    <UITooltip content={hasUnsavedChanges ? 'Save changes' : 'No unsaved changes'} placement="bottom">
+                                    <UITooltip content="Save changes" placement="bottom">
                                         <button
                                             onClick={handleSchemaSave}
-                                            disabled={schemaSaving || !hasUnsavedChanges}
+                                            disabled={schemaSaving || (schemaSavedOnce && !hasUnsavedChanges)}
                                             className="group relative w-8 h-8 bg-transparent rounded-lg hover:bg-yellow-50 transition-all duration-300 flex items-center justify-center hover:scale-110 border border-gray-300 hover:border-yellow-400 focus:ring-1 focus:ring-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
                                         >
                                             <svg className={`w-4 h-4 text-gray-600 group-hover:text-yellow-600 transition-colors ${schemaSaving ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
