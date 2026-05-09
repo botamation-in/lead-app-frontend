@@ -1207,6 +1207,8 @@ const AnalyticsDashboardPage = () => {
     // Keep viewingAsRef current so fetch callbacks always use the latest viewingAs
     useEffect(() => {
         viewingAsRef.current = viewingAs;
+        // Re-enable the save button whenever the viewed admin changes (treat like a fresh load)
+        setSchemaSavedOnce(false);
     }, [viewingAs]);
 
     // Auto-refresh timer manager — starts/restarts a countdown for each chart
