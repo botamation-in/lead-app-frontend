@@ -38,12 +38,20 @@ export function initBrandAssets() {
     }
 
     if (BRAND_FAVICON_URL) {
-        let link = document.querySelector("link[rel~='icon']");
-        if (!link) {
-            link = document.createElement('link');
-            link.rel = 'icon';
-            document.head.appendChild(link);
-        }
-        link.href = BRAND_FAVICON_URL;
+        fetch(BRAND_FAVICON_URL, { referrerPolicy: 'no-referrer' })
+            .then((res) => res.blob())
+            .then((blob) => {
+                const blobUrl = URL.createObjectURL(blob);
+                let link = document.querySelector("link[rel~='icon']");
+                if (!link) {
+                    link = document.createElement('link');
+                    link.rel = 'icon';
+                    document.head.appendChild(link);
+                }
+                link.href = blobUrl;
+            })
+            .catch(() => {
+                console.warn('[BrandAssets] Could not load favicon from:', BRAND_FAVICON_URL);
+            });
     }
 }
