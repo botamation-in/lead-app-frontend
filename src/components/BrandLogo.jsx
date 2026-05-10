@@ -15,6 +15,7 @@ const BrandLogo = ({ className = 'w-10 h-10 object-contain rounded-lg shadow-lg'
                 src={src}
                 alt={`${BRAND_NAME} Logo`}
                 className={className}
+                referrerPolicy="no-referrer"
                 onError={() => {
                     console.error('[BrandLogo] Failed to load logo from:', src);
                     setFailed(true);
