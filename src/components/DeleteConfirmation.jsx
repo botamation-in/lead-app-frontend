@@ -1,10 +1,11 @@
 import React from 'react';
+import Button from './ui/Button';
 
 const DeleteConfirmation = ({ isOpen, onClose, onConfirm, title, message, confirmLabel = 'Delete' }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
       {/* Overlay */}
       <div
         className="fixed inset-0 bg-black opacity-50"
@@ -28,20 +29,19 @@ const DeleteConfirmation = ({ isOpen, onClose, onConfirm, title, message, confir
           </div>
 
           <div className="mt-6 flex justify-end space-x-4">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              scheme="danger"
               onClick={onClose}
-              className="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               Cancel
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="danger"
               onClick={onConfirm}
-              className="inline-flex justify-center rounded-md border border-transparent bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
             >
               {confirmLabel}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

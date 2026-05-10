@@ -1,36 +1,149 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import BrandLogo from './BrandLogo';
 import ExcelJS from 'exceljs';
 import api from '../api/axiosConfig';
-import { useAuth } from '../context/AuthContext';
 import { useAccount } from '../context/AccountContext';
-import AccountCombobox from './AccountCombobox';
-import { Combobox, ComboboxOption, ComboboxLabel } from '../fieldsComponents/appointments/combobox';
+import { Combobox } from './ui/Combobox';
 import { useNotifications } from './Notifications';
 import LoadingMask from './LoadingMask';
 import DeleteConfirmation from './DeleteConfirmation';
 import Tooltip from './Tooltip';
+import AppNavbar from './AppNavbar';
+import Button from './ui/Button';
+import {
+    DndContext,
+    DragOverlay,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    closestCenter,
+} from '@dnd-kit/core';
+import {
+    SortableContext,
+    horizontalListSortingStrategy,
+    useSortable,
+    arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 
 // Avatar colour palette — used in lead row renderer
 const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0284c7'];
+
+// Sortable column header cell — used inside DndContext for drag-and-drop reordering
+const SortableColumnHeader = ({
+    field,
+    formatFieldName,
+    renderSortIcon,
+    handleSort,
+    getColumnAlignClass,
+    filters,
+    handleFilterChange,
+    handleFilterKeyDown,
+    isDragging,
+}) => {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging: isSelfDragging,
+    } = useSortable({ id: field });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isSelfDragging ? 0.4 : 1,
+        cursor: isSelfDragging ? 'grabbing' : 'grab',
+        position: 'relative',
+        zIndex: isSelfDragging ? 999 : undefined,
+    };
+
+    return (
+        <th
+            ref={setNodeRef}
+            style={style}
+            {...attributes}
+            {...listeners}
+            className={`px-3 py-2.5 relative align-bottom select-none ${getColumnAlignClass(field, 'th')} ${isSelfDragging ? '' : 'hover:bg-indigo-50/60 transition-colors'}`}
+        >
+            <div
+                className={`flex items-center group/sort mb-1.5 transition-colors ${getColumnAlignClass(field, 'flex')}`}
+                onClick={(e) => {
+                    // Only trigger sort when it's a pure click (no drag movement)
+                    if (!isDragging) handleSort(field);
+                }}
+            >
+                <div className="relative inline-flex items-center gap-1">
+                    {/* Drag indicator — subtle vertical dots visible on hover */}
+                    <span className="text-slate-300 group-hover/sort:text-slate-400 transition-colors text-[9px] leading-none mr-0.5 select-none" aria-hidden="true">
+                        ⠿
+                    </span>
+                    <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider group-hover/sort:text-indigo-600 transition-colors">
+                        {formatFieldName(field)}
+                    </span>
+                    {renderSortIcon(field)}
+                </div>
+            </div>
+            <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
+                <div className="overflow-hidden">
+                    <div className="pb-1 pt-0.5 px-0.5">
+                        <div className="relative rounded-md bg-slate-200/80 focus-within:bg-gradient-to-r focus-within:from-indigo-500 focus-within:via-violet-400 focus-within:to-indigo-500 p-[1px] transition-all duration-300 shadow-sm focus-within:shadow-[0_0_10px_rgba(99,102,241,0.3)]">
+                            <input
+                                type="text"
+                                placeholder="Filter..."
+                                value={filters[field] || ''}
+                                onChange={(e) => handleFilterChange(field, e.target.value)}
+                                onKeyDown={(e) => handleFilterKeyDown(e, field)}
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                className={`w-full px-2 py-1 text-[10px] bg-white/70 focus:bg-white text-slate-700 rounded-[5px] outline-none placeholder-slate-400 transition-all ${getColumnAlignClass(field, 'input')}`}
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </th>
+    );
+};
+
+// Ghost overlay shown while dragging a column header
+const DragOverlayColumnHeader = ({ field, formatFieldName, renderSortIcon, getColumnAlignClass }) => (
+    <table className="border-separate" style={{ tableLayout: 'auto' }}>
+        <thead>
+            <tr>
+                <th
+                    className={`px-3 py-2.5 align-bottom bg-white shadow-2xl ring-2 ring-indigo-400 rounded-lg opacity-95 ${getColumnAlignClass(field, 'th')}`}
+                    style={{ cursor: 'grabbing', minWidth: 100 }}
+                >
+                    <div className={`flex items-center group/sort mb-1.5 ${getColumnAlignClass(field, 'flex')}`}>
+                        <div className="relative inline-flex items-center gap-1">
+                            <span className="text-indigo-300 text-[9px] leading-none mr-0.5 select-none" aria-hidden="true">⠿</span>
+                            <span className="text-[11px] font-extrabold text-indigo-600 uppercase tracking-wider">
+                                {formatFieldName(field)}
+                            </span>
+                            {renderSortIcon(field)}
+                        </div>
+                    </div>
+                </th>
+            </tr>
+        </thead>
+    </table>
+);
+
 const LeadsGrid = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { user, userDetails, logout } = useAuth();
+    const { showSuccess, showError, NotificationComponent } = useNotifications();
     const {
         acctNo,
         acctId,
-        acctName,
-        accounts,
         isAccountLinked,
         accountsLoaded,
         accountsLoading,
         setIsLinkDialogOpen,
-        switchAccount,
     } = useAccount();
-    const { showSuccess, showError, NotificationComponent } = useNotifications();
     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -46,10 +159,8 @@ const LeadsGrid = () => {
     const [error, setError] = useState(null);
     const [fields, setFields] = useState([]);
 
-    const [showUserMenu, setShowUserMenu] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
 
-    const userMenuRef = useRef(null);
     const filterTimerRef = useRef(null);
     const columnSelectorRef = useRef(null);
 
@@ -61,6 +172,7 @@ const LeadsGrid = () => {
     const COL_VIS_KEY = 'colVis';
     const FILTERS_KEY = 'filters';
     const SELECTED_CATEGORY_KEY = 'selectedCategory';
+    const COL_ORDER_KEY = 'colOrder';
 
     const readFiltersStore = () => {
         try {
@@ -164,12 +276,53 @@ const LeadsGrid = () => {
         saveColVis(acctId, selectedCategory, newVal);
     };
 
+    // Column order helpers (persists drag-and-drop reordering)
+    const readColOrderStore = () => {
+        try {
+            const raw = localStorage.getItem(COL_ORDER_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+        } catch { return {}; }
+    };
+
+    const loadColOrder = (acctId, categoryId) => {
+        try {
+            const store = readColOrderStore();
+            const saved = store[acctId]?.[categoryId || ''];
+            return Array.isArray(saved) ? saved : null;
+        } catch { return null; }
+    };
+
+    const saveColOrder = (acctId, categoryId, value) => {
+        try {
+            const store = readColOrderStore();
+            store[acctId] = store[acctId] || {};
+            if (!value) {
+                delete store[acctId][categoryId || ''];
+            } else {
+                store[acctId][categoryId || ''] = value;
+            }
+            localStorage.setItem(COL_ORDER_KEY, JSON.stringify(store));
+        } catch { /* ignore */ }
+    };
+
+    // Apply a saved order to a list of fields:
+    // fields that appear in savedOrder come first (in savedOrder sequence),
+    // any new fields not yet in the saved order are appended at the end.
+    const applyColOrder = (displayFields, savedOrder) => {
+        if (!savedOrder || !Array.isArray(savedOrder)) return displayFields;
+        const ordered = savedOrder.filter(f => displayFields.includes(f));
+        const newFields = displayFields.filter(f => !savedOrder.includes(f));
+        return [...ordered, ...newFields];
+    };
+
+    // Drag state for column reordering
+    const [activeColId, setActiveColId] = useState(null);
+
     // Close dropdowns when clicking outside
     useEffect(() => {
         const handleClickOutside = (e) => {
-            if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
-                setShowUserMenu(false);
-            }
             if (columnSelectorRef.current && !columnSelectorRef.current.contains(e.target)) {
                 setShowColumnSelector(false);
             }
@@ -362,7 +515,11 @@ const LeadsGrid = () => {
                 : [];
             const baseFields = apiCategoryFields.length > 0 ? apiCategoryFields : fallbackFields;
             // Deduplicate while preserving order (guards against backend sending duplicate fields)
-            const displayFields = [...new Set(baseFields)];
+            const rawDisplayFields = [...new Set(baseFields)];
+
+            // Apply saved column order (from drag-and-drop) if available
+            const savedOrder = loadColOrder(acctId, selectedCategory);
+            const displayFields = applyColOrder(rawDisplayFields, savedOrder);
 
             if (displayFields.length > 0) {
                 setFields(displayFields);
@@ -404,10 +561,51 @@ const LeadsGrid = () => {
         fetchLeads();
     }, [currentPage, pageSize, sortField, sortOrder, appliedFilters, acctId, isAccountLinked, categoriesReady]);
 
+        // Handle column drag-and-drop reordering
+    const handleColumnDragStart = (event) => {
+        setActiveColId(event.active.id);
+    };
+
+    const handleColumnDragEnd = (event) => {
+        setActiveColId(null);
+        const { active, over } = event;
+        if (!over || active.id === over.id) return;
+
+        const currentCols = visibleFields ?? fields;
+        const oldIndex = currentCols.indexOf(active.id);
+        const newIndex = currentCols.indexOf(over.id);
+        if (oldIndex === -1 || newIndex === -1) return;
+
+        const reordered = arrayMove(currentCols, oldIndex, newIndex);
+
+        // Update both fields and visibleFields to stay in sync
+        setFields(prev => {
+            // For fields not in currentCols (hidden ones), keep them at the end
+            const hidden = prev.filter(f => !currentCols.includes(f));
+            return [...reordered, ...hidden];
+        });
+        if (visibleFields) setVisibleFields(reordered);
+
+        // Persist the new order
+        saveColOrder(acctId, selectedCategory, reordered);
+    };
+
+    // dnd-kit sensors — require 5px movement before drag activates
+    // so that click (sort) vs drag is distinguished automatically
+    const dndSensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    );
+
     // Handle sorting
     const handleSort = (field) => {
         if (sortField === field) {
-            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+            if (sortOrder === 'asc') {
+                setSortOrder('desc');
+            } else {
+                // third click — clear sorting for this column
+                setSortField('');
+                setSortOrder('asc');
+            }
         } else {
             setSortField(field);
             setSortOrder('asc');
@@ -718,126 +916,7 @@ const LeadsGrid = () => {
             <LoadingMask loading={isExporting} title="Exporting..." message="Please wait while we export your leads to Excel" />
             <NotificationComponent />
             {/* Navigation Menu */}
-            <nav className="bg-gradient-to-b from-slate-900 to-slate-800 border-b border-slate-700/60 animate-fade-in shadow-xl flex-shrink-0" style={{ boxShadow: '0 4px 24px 0 rgba(99,102,241,0.10),0 1px 0 0 rgba(255,255,255,0.04) inset' }}>
-                <div className="w-full px-4">
-                    <div className="flex items-center gap-4">
-                        {/* Logo */}
-                        <div className="py-2">
-                            <BrandLogo />
-                        </div>
-
-                        {/* Menu Items */}
-                        <div className="flex items-center gap-1">
-                            <button
-                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative bg-gradient-to-b from-slate-700/80 to-slate-800/80 text-white shadow-lg"
-                            >
-                                <div className="flex items-center gap-1.5">
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                    </svg>
-                                    Leads
-                                </div>
-                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-indigo-400 to-violet-400 rounded-t-full"></div>
-                            </button>
-                            <button
-                                onClick={() => navigate('/admin')}
-                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white"
-                            >
-                                <div className="flex items-center gap-1.5">
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    Admin
-                                </div>
-                            </button>
-                            <button
-                                onClick={() => navigate('/settings')}
-                                className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white"
-                            >
-                                <div className="flex items-center gap-1.5">
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    Settings
-                                </div>
-                            </button>
-                        </div>
-
-                        {/* Right side: Account + User */}
-                        <div className="ml-auto py-2 flex items-center gap-2">
-
-                            {/* Account dropdown */}
-                            <AccountCombobox
-                                accounts={accounts}
-                                acctNo={acctNo}
-                                acctName={acctName}
-                                isAccountLinked={isAccountLinked}
-                                accountsLoaded={accountsLoaded}
-                                switchAccount={switchAccount}
-                                setIsLinkDialogOpen={setIsLinkDialogOpen}
-                                onOpen={() => setShowUserMenu(false)}
-                            />
-
-                            {/* User Profile */}
-                            <div className="relative" ref={userMenuRef}>
-                                <button
-                                    onClick={() => { setShowUserMenu(v => !v); }}
-                                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/70 transition-all duration-300 border border-slate-600/70 backdrop-blur-sm"
-                                >
-                                    {(() => {
-                                        const imgUrl = userDetails?.profileImageUrl || '';
-                                        const src = imgUrl;
-                                        return src
-                                            ? <img src={src} alt="avatar" className="w-6 h-6 rounded-full object-cover border border-gray-600 flex-shrink-0" />
-                                            : <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold shadow-lg border border-indigo-400/40">
-                                                {userDetails?.name?.charAt(0)?.toUpperCase() || user?.name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
-                                            </div>;
-                                    })()}
-                                    <span className="text-xs font-medium text-white hidden md:block">{userDetails?.name || user?.name || user?.email || 'User'}</span>
-                                    <svg className={`w-3 h-3 text-gray-400 transition-transform duration-300 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </button>
-
-                                {/* Dropdown Menu */}
-                                {showUserMenu && (
-                                    <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-2xl border border-gray-200 py-1 z-50 animate-scale-in">
-                                        <div className="px-3 py-2 border-b border-gray-100">
-                                            <p className="text-xs font-semibold text-gray-900">{userDetails?.name || user?.name || 'User'}</p>
-                                            <p className="text-[10px] text-gray-500 truncate mt-0.5">{user?.email || ''}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => { setShowUserMenu(false); navigate('/profile'); }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                            </svg>
-                                            My Profile
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                setShowUserMenu(false);
-                                                logout();
-                                            }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                                            </svg>
-                                            Logout
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                            {/* end User Profile */}
-
-                        </div>
-                        {/* end Right side */}
-                    </div>
-                </div>
-            </nav>
+            <AppNavbar activePage="leads" />
 
             {/* Content Area */}
             <div className="flex-1 overflow-hidden flex flex-col px-3 sm:px-4 py-3 relative">
@@ -854,12 +933,11 @@ const LeadsGrid = () => {
                             <p className="text-xs text-gray-500 mb-5">
                                 You need to link a business account to view and manage leads.
                             </p>
-                            <button
+                            <Button
                                 onClick={() => setIsLinkDialogOpen(true)}
-                                className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-semibold rounded-lg hover:from-indigo-500 hover:to-violet-500 transition-all shadow-md shadow-indigo-500/25"
                             >
                                 Link Account
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 )}
@@ -871,23 +949,13 @@ const LeadsGrid = () => {
                             {/* ── Group 1: Data context — Category selector + delete ── */}
                             <div className="flex items-center gap-1.5">
                                 <Combobox
-                                    value={
-                                        (selectedCategory ? categories.find(c => c._id === selectedCategory) : null) ?? null
-                                    }
-                                    onChange={(val) => handleCategoryChange(val?._id || '')}
-                                    displayValue={(option) => option?.categoryName || ''}
-                                    options={categories}
+                                    value={selectedCategory || null}
+                                    onChange={(val) => handleCategoryChange(val || '')}
+                                    options={categories.map(c => ({ value: c._id, label: c.categoryName }))}
                                     disabled={categoryLoading || !acctId}
                                     placeholder="Select Category"
                                     className="w-40"
-                                    dropdownClassName="!min-w-0"
-                                >
-                                    {(option) => (
-                                        <ComboboxOption key={option._id} value={option}>
-                                            <ComboboxLabel>{option.categoryName}</ComboboxLabel>
-                                        </ComboboxOption>
-                                    )}
-                                </Combobox>
+                                />
                                 {selectedCategory && (() => {
                                     const activeCat = categories.find(c => c._id === selectedCategory);
                                     return activeCat ? (
@@ -908,7 +976,7 @@ const LeadsGrid = () => {
                             {/* Divider */}
                             <div className="w-px h-6 bg-gray-200 mx-1.5" />
 
-                            {/* ── Group 2: View & filter — Clear filters + Refresh ── */}
+                            {/* ── Group 2: View & filter — Clear filters + Clear sorting + Refresh ── */}
                             <div className="flex items-center gap-1.5">
                                 <Tooltip
                                     content={Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? `Clear ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length} active filter${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length !== 1 ? 's' : ''}` : 'No active filters'}
@@ -932,10 +1000,31 @@ const LeadsGrid = () => {
                                             ? 'bg-red-50 border-red-400 focus:ring-red-300'
                                             : 'bg-transparent border-gray-300 hover:bg-red-50 hover:border-red-400 focus:ring-red-300'
                                             }`}
-                                        title={Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? `Clear ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length} active filter${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length !== 1 ? 's' : ''}` : 'No active filters'}
                                     >
                                         <svg className={`w-4 h-4 transition-colors ${Object.keys(appliedFilters).filter(k => k !== 'categoryId').length > 0 ? 'text-red-500' : 'text-gray-600 group-hover:text-red-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </Tooltip>
+                                <Tooltip
+                                    content={sortField ? `Clear sort: ${sortField} (${sortOrder})` : 'No active sorting'}
+                                    placement="top"
+                                >
+                                    <button
+                                        onClick={() => {
+                                            setSortField('');
+                                            setSortOrder('asc');
+                                            setCurrentPage(1);
+                                        }}
+                                        disabled={loading || !sortField}
+                                        className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 disabled:opacity-40 disabled:cursor-not-allowed ${sortField
+                                            ? 'bg-orange-50 border-orange-400 focus:ring-orange-300'
+                                            : 'bg-transparent border-gray-300 hover:bg-orange-50 hover:border-orange-400 focus:ring-orange-300'
+                                            }`}
+                                    >
+                                        <svg className={`w-4 h-4 transition-colors ${sortField ? 'text-orange-500' : 'text-gray-600 group-hover:text-orange-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6h18M7 12h10M11 18h2" />
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12" />
                                         </svg>
                                     </button>
@@ -945,7 +1034,6 @@ const LeadsGrid = () => {
                                         onClick={fetchLeads}
                                         disabled={loading}
                                         className="group relative w-8 h-8 flex items-center justify-center bg-transparent rounded-lg hover:bg-indigo-50 transition-all duration-300 hover:scale-110 border border-gray-300 hover:border-indigo-400 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                                        title={loading ? 'Loading...' : 'Refresh leads'}
                                     >
                                         <svg
                                             className={`w-4 h-4 text-gray-700 group-hover:text-gray-900 transition-colors ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`}
@@ -966,23 +1054,23 @@ const LeadsGrid = () => {
                                     <Tooltip content="Show / hide columns" placement="top">
                                         <button
                                             onClick={() => setShowColumnSelector(v => !v)}
-                                            className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 focus:ring-indigo-400 ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
-                                                ? 'bg-indigo-50 border-indigo-400'
-                                                : 'bg-transparent border-gray-300 hover:bg-indigo-50 hover:border-indigo-400'
+                                            className={`group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-300 hover:scale-110 border focus:ring-1 focus:ring-violet-400 ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
+                                                ? 'bg-violet-50 border-violet-400'
+                                                : 'bg-transparent border-gray-300 hover:bg-violet-50 hover:border-violet-400'
                                                 }`}
                                             title="Show / hide columns"
                                         >
                                             <svg
                                                 className={`w-4 h-4 transition-colors ${(visibleFields !== null && visibleFields.length !== fields.length) || showColumnSelector
-                                                    ? 'text-indigo-600'
-                                                    : 'text-gray-600 group-hover:text-indigo-600'
+                                                    ? 'text-violet-600'
+                                                    : 'text-gray-600 group-hover:text-violet-600'
                                                     }`}
                                                 fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                             >
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 6h18M3 14h18M3 18h18" />
                                             </svg>
                                             {visibleFields !== null && visibleFields.length !== fields.length && (
-                                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-indigo-600 rounded-full text-white text-[8px] flex items-center justify-center font-bold leading-none">
+                                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-violet-600 rounded-full text-white text-[8px] flex items-center justify-center font-bold leading-none">
                                                     {visibleFields.length}
                                                 </span>
                                             )}
@@ -1072,16 +1160,16 @@ const LeadsGrid = () => {
 
                             {/* ── Group 5: Primary action — Add new lead ── */}
                             <Tooltip content="Add New Lead" placement="top">
-                                <button
+                                <Button
+                                    size="sm"
                                     onClick={handleAdd}
                                     disabled={loading || fields.length === 0}
-                                    className="group relative h-8 px-3 flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-all duration-300 focus:ring-1 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium shadow-md shadow-indigo-500/30"
                                 >
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
                                     </svg>
                                     Add Lead
-                                </button>
+                                </Button>
                             </Tooltip>
 
                         </div>
@@ -1117,54 +1205,61 @@ const LeadsGrid = () => {
                                         <div className="flex-1 overflow-y-scroll overflow-x-auto min-h-0">
                                             <table className="min-w-full divide-y divide-gray-200">
                                                 <thead className="sticky top-0 z-10 bg-white/70 backdrop-blur-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] transition-all group/header">
-                                                    <tr>
-                                                        {(visibleFields ?? fields).map((field) => (
-                                                            <th key={field} className={`px-3 py-2.5 relative align-bottom ${getColumnAlignClass(field, 'th')}`}>
-                                                                <div
-                                                                    className={`flex items-center cursor-pointer group/sort mb-1.5 transition-colors ${getColumnAlignClass(field, 'flex')}`}
-                                                                    onClick={() => handleSort(field)}
-                                                                >
-                                                                    <div className="relative inline-flex items-center">
-                                                                        <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider group-hover/sort:text-indigo-600 transition-colors">
-                                                                            {formatFieldName(field)}
-                                                                        </span>
-                                                                        {renderSortIcon(field)}
+                                                    <DndContext
+                                                        sensors={dndSensors}
+                                                        collisionDetection={closestCenter}
+                                                        onDragStart={handleColumnDragStart}
+                                                        onDragEnd={handleColumnDragEnd}
+                                                    >
+                                                        <SortableContext
+                                                            items={visibleFields ?? fields}
+                                                            strategy={horizontalListSortingStrategy}
+                                                        >
+                                                            <tr>
+                                                                {(visibleFields ?? fields).map((field) => (
+                                                                    <SortableColumnHeader
+                                                                        key={field}
+                                                                        field={field}
+                                                                        formatFieldName={formatFieldName}
+                                                                        renderSortIcon={renderSortIcon}
+                                                                        handleSort={handleSort}
+                                                                        getColumnAlignClass={getColumnAlignClass}
+                                                                        filters={filters}
+                                                                        handleFilterChange={handleFilterChange}
+                                                                        handleFilterKeyDown={handleFilterKeyDown}
+                                                                        isDragging={activeColId !== null}
+                                                                    />
+                                                                ))}
+                                                                <th className="px-3 py-2.5 text-center w-20 align-bottom">
+                                                                    <div className="flex items-center justify-center gap-1 mb-1.5">
+                                                                        <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Actions</span>
                                                                     </div>
-                                                                </div>
-                                                                <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
-                                                                    <div className="overflow-hidden">
-                                                                        <div className="pb-1 pt-0.5 px-0.5">
-                                                                            <div className="relative rounded-md bg-slate-200/80 focus-within:bg-gradient-to-r focus-within:from-indigo-500 focus-within:via-violet-400 focus-within:to-indigo-500 p-[1px] transition-all duration-300 shadow-sm focus-within:shadow-[0_0_10px_rgba(99,102,241,0.3)]">
-                                                                                <input
-                                                                                    type="text"
-                                                                                    placeholder="Filter..."
-                                                                                    value={filters[field] || ''}
-                                                                                    onChange={(e) => handleFilterChange(field, e.target.value)}
-                                                                                    onKeyDown={(e) => handleFilterKeyDown(e, field)}
-                                                                                    onClick={(e) => e.stopPropagation()}
-                                                                                    className={`w-full px-2 py-1 text-[10px] bg-white/70 focus:bg-white text-slate-700 rounded-[5px] outline-none placeholder-slate-400 transition-all ${getColumnAlignClass(field, 'input')}`}
-                                                                                />
+                                                                    <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
+                                                                        <div className="overflow-hidden">
+                                                                            <div className="pb-1 pt-0.5 px-0.5 opacity-0 pointer-events-none">
+                                                                                <div className="p-[1px]">
+                                                                                    <input type="text" className="w-full px-2 py-1 text-[10px]" disabled />
+                                                                                </div>
                                                                             </div>
                                                                         </div>
                                                                     </div>
-                                                                </div>
-                                                            </th>
-                                                        ))}
-                                                        <th className="px-3 py-2.5 text-center w-20 align-bottom">
-                                                            <div className="flex items-center justify-center gap-1 mb-1.5">
-                                                                <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Actions</span>
-                                                            </div>
-                                                            <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${Object.values(filters).some(Boolean) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] group-hover/header:grid-rows-[1fr] group-focus-within/header:grid-rows-[1fr]'}`}>
-                                                                <div className="overflow-hidden">
-                                                                    <div className="pb-1 pt-0.5 px-0.5 opacity-0 pointer-events-none">
-                                                                        <div className="p-[1px]">
-                                                                            <input type="text" className="w-full px-2 py-1 text-[10px]" disabled />
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </th>
-                                                    </tr>
+                                                                </th>
+                                                            </tr>
+                                                        </SortableContext>
+                                                        <DragOverlay dropAnimation={{
+                                                            duration: 200,
+                                                            easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+                                                        }}>
+                                                            {activeColId ? (
+                                                                <DragOverlayColumnHeader
+                                                                    field={activeColId}
+                                                                    formatFieldName={formatFieldName}
+                                                                    renderSortIcon={renderSortIcon}
+                                                                    getColumnAlignClass={getColumnAlignClass}
+                                                                />
+                                                            ) : null}
+                                                        </DragOverlay>
+                                                    </DndContext>
                                                     <tr>
                                                         <th colSpan="100" className="p-0 h-[3px] bg-gradient-to-r from-indigo-500 via-violet-400 to-indigo-500 border-none shadow-[0_0_15px_rgba(99,102,241,0.6)] relative z-20"></th>
                                                     </tr>
@@ -1360,27 +1455,23 @@ const LeadsGrid = () => {
                                             {editLead ? 'Edit Lead' : 'Add New Lead'}
                                         </h3>
                                         <div className="flex items-center gap-2">
-                                            <button
-                                                type="button"
+                                            <Button
+                                                size="sm"
                                                 onClick={handleEditSave}
                                                 disabled={isSaving || !isEditFormDirty}
-                                                className={`rounded-md px-3 py-1.5 text-xs font-semibold shadow-sm transition-all duration-200 ${isSaving
-                                                    ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
-                                                    : !isEditFormDirty
-                                                        ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                                                        : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 shadow-indigo-500/25 cursor-pointer'
-                                                    }`}
+                                                loading={isSaving}
                                             >
-                                                {isSaving ? 'Saving...' : 'Save'}
-                                            </button>
-                                            <button
-                                                type="button"
+                                                Save
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="secondary"
+                                                scheme="primary"
                                                 onClick={cancelEdit}
                                                 disabled={isSaving}
-                                                className="rounded-md bg-white border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 disabled:opacity-40"
                                             >
                                                 Cancel
-                                            </button>
+                                            </Button>
                                         </div>
                                     </div>
 
@@ -1400,7 +1491,7 @@ const LeadsGrid = () => {
                                                             type={isNumeric ? 'number' : 'text'}
                                                             value={editForm[field] ?? ''}
                                                             onChange={e => setEditForm(prev => ({ ...prev, [field]: isNumeric ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
-                                                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                                                            className="ds-input ds-input--sm"
                                                             disabled={isSaving}
                                                         />
                                                     </div>
@@ -1450,29 +1541,27 @@ const LeadsGrid = () => {
                             </p>
                         </div>
                         <div className="flex gap-3">
-                            <button
+                            <Button
+                                block
+                                variant="secondary"
+                                scheme="danger"
                                 onClick={() => setDeleteCategoryPending(null)}
                                 disabled={deleteCategoryLoading}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors disabled:opacity-50"
                             >
                                 Cancel
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                block
+                                variant="danger"
                                 onClick={handleDeleteCategoryConfirm}
                                 disabled={deleteCategoryLoading}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-lg transition-all shadow-md shadow-indigo-500/25 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                                loading={deleteCategoryLoading}
                             >
-                                {deleteCategoryLoading ? (
-                                    <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                ) : (
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                )}
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
                                 Delete permanently
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>

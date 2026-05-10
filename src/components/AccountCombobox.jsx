@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import Button from './ui/Button';
 
 const AccountCombobox = ({
     accounts,
@@ -58,12 +59,13 @@ const AccountCombobox = ({
         <div className="relative" ref={ref}>
             {isAccountLinked && acctNo ? (
                 <>
-                    <div className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 hover:border-gray-500 transition-all duration-200 focus-within:border-gray-400">
+                    <div className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 hover:border-gray-500 transition-all duration-200 focus-within:border-indigo-500 focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.25)]">
                         <input
                             ref={inputRef}
                             type="text"
                             value={inputValue}
                             onFocus={handleFocus}
+                            onClick={() => { if (!open) { setInputValue(''); setOpen(true); if (onOpen) onOpen(); } }}
                             onChange={handleChange}
                             className="w-[15vw] min-w-[7rem] max-w-[11rem] text-xs font-medium text-white bg-transparent outline-none placeholder-gray-500 truncate"
                             placeholder="Search account..."
@@ -72,7 +74,7 @@ const AccountCombobox = ({
                         <svg
                             className={`w-3 h-3 text-gray-400 flex-shrink-0 transition-transform duration-200 cursor-pointer ${open ? 'rotate-180' : ''}`}
                             fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                            onMouseDown={(e) => { e.preventDefault(); if (open) { setOpen(false); } else { setOpen(true); inputRef.current?.focus(); if (onOpen) onOpen(); } }}
+                            onMouseDown={(e) => { e.preventDefault(); if (open) { setOpen(false); } else { setInputValue(''); setOpen(true); inputRef.current?.focus(); if (onOpen) onOpen(); } }}
                         >
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
@@ -121,15 +123,15 @@ const AccountCombobox = ({
                     )}
                 </>
             ) : (
-                <button
+                <Button
+                    size="sm"
                     onClick={() => setIsLinkDialogOpen(true)}
-                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 transition-all duration-300 shadow-md shadow-indigo-500/30 text-white"
                 >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                     </svg>
-                    <span className="text-xs font-semibold hidden md:block">Link Account</span>
-                </button>
+                    <span className="hidden md:block">Link Account</span>
+                </Button>
             )}
         </div>
     );

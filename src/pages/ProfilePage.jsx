@@ -1,34 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
 import { useAccount } from '../context/AccountContext';
 import { authApi } from '../api/axiosConfig';
 import { compressImage } from '../utils/imageCompression';
 import { validateImageFile } from '../utils/fileValidation';
-import AccountCombobox from '../components/AccountCombobox';
 import { useNotifications } from '../components/Notifications';
+import Button from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import AppNavbar from '../components/AppNavbar';
 
 const ProfilePage = () => {
-    const navigate = useNavigate();
-    const { user, userDetails, logout, checkAuth, adminViewActive } = useAuth();
-    const {
-        acctId, acctNo, acctName, accounts,
-        isAccountLinked, accountsLoaded,
-        setIsLinkDialogOpen, switchAccount,
-    } = useAccount();
+    const { user, userDetails, checkAuth, adminViewActive } = useAuth();
+    const { acctId } = useAccount();
     const { showSuccess, showError, NotificationComponent } = useNotifications();
-
-    const [showUserMenu, setShowUserMenu] = useState(false);
-    const userMenuRef = useRef(null);
-
-    useEffect(() => {
-        const handleClickOutside = (e) => {
-            if (userMenuRef.current && !userMenuRef.current.contains(e.target)) setShowUserMenu(false);
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
 
     const userId = localStorage.getItem('userId') || user?.userId || user?.id || '';
 
@@ -227,114 +211,7 @@ const ProfilePage = () => {
         <div className="min-h-screen bg-gray-50">
             <NotificationComponent />
             {/* ── Navbar ───────────────────────────────────────────────────── */}
-            <nav className="bg-gradient-to-b from-slate-900 to-slate-800 border-b border-slate-700/60" style={{ boxShadow: '0 4px 24px 0 rgba(99,102,241,0.10), 0 1px 0 0 rgba(255,255,255,0.04) inset' }}>
-                <div className="w-full px-4">
-                    <div className="flex items-center gap-4">
-                        {/* Logo */}
-                        <div className="py-2">
-                            <BrandLogo />
-                        </div>
-
-                        {/* Nav tabs */}
-                        <div className="flex items-center gap-1">
-                            <button onClick={() => navigate('/leads')} className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white">
-                                <div className="flex items-center gap-1.5">
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                    </svg>
-                                    Leads
-                                </div>
-                            </button>
-                            <button onClick={() => navigate('/admin')} className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white">
-                                <div className="flex items-center gap-1.5">
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    Admin
-                                </div>
-                            </button>
-                            <button onClick={() => navigate('/settings')} className="px-3 py-2 text-xs font-semibold transition-all duration-300 rounded-t-lg relative text-slate-400 hover:bg-slate-700/50 hover:text-white">
-                                <div className="flex items-center gap-1.5">
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    Settings
-                                </div>
-                            </button>
-                        </div>
-
-                        {/* Right side */}
-                        <div className="ml-auto py-2 flex items-center gap-2">
-
-                            {/* Account dropdown */}
-                            <AccountCombobox
-                                accounts={accounts}
-                                acctNo={acctNo}
-                                acctName={acctName}
-                                isAccountLinked={isAccountLinked}
-                                accountsLoaded={accountsLoaded}
-                                switchAccount={switchAccount}
-                                setIsLinkDialogOpen={setIsLinkDialogOpen}
-                                onOpen={() => setShowUserMenu(false)}
-                            />
-
-                            {/* User Profile */}
-                            <div className="relative" ref={userMenuRef}>
-                                <button
-                                    onClick={() => { setShowUserMenu(false); navigate('/profile'); }}
-                                    className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 bg-indigo-50/50"
-                                >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                    </svg>
-                                    My Profile
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setShowUserMenu(false);
-                                        logout();
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"
-                                >
-                                    {avatarPreview
-                                        ? <img src={avatarPreview} alt="avatar" className="w-6 h-6 rounded-full object-cover border border-indigo-400/40" />
-                                        : <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold shadow-lg border border-indigo-400/40">{initials}</div>
-                                    }
-                                    <span className="text-xs font-medium text-white hidden md:block">{userData.name || user?.name || user?.email || 'User'}</span>
-                                    <svg className={`w-3 h-3 text-gray-400 transition-transform duration-300 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </button>
-                                {showUserMenu && (
-                                    <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-2xl border border-gray-200 py-1 z-50">
-                                        <div className="px-3 py-2 border-b border-gray-100">
-                                            <p className="text-xs font-semibold text-gray-900">{userData.name || 'User'}</p>
-                                            <p className="text-[10px] text-gray-500 truncate mt-0.5">{userData.email || ''}</p>
-                                        </div>
-                                        <button onClick={() => { setShowUserMenu(false); navigate('/profile'); }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 bg-indigo-50">
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                            </svg>
-                                            My Profile
-                                        </button>
-                                        <button onClick={() => { setShowUserMenu(false); logout(); }}
-                                            className="w-full px-3 py-2 text-left text-xs font-medium text-gray-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center gap-1.5">
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                                            </svg>
-                                            Logout
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-
-                        </div>
-                    </div>
-                </div>
-            </nav>
-
+            <AppNavbar activePage={null} />
             {/* ── Page body ─────────────────────────────────────────────────── */}
             <div className="container mx-auto px-4 py-8 max-w-2xl">
 
@@ -359,10 +236,9 @@ const ProfilePage = () => {
                         <div>
                             {/* Only JPEG/PNG accepted — validated in handleAvatarChange */}
                             <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleAvatarChange} />
-                            <button onClick={() => fileInputRef.current?.click()} disabled={avatarLoading}
-                                className="px-4 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-colors shadow-md shadow-indigo-500/30 disabled:opacity-50">
-                                {avatarLoading ? 'Uploading...' : 'Change Photo'}
-                            </button>
+                            <Button size="sm" loading={avatarLoading} onClick={() => fileInputRef.current?.click()} disabled={avatarLoading}>
+                                Change Photo
+                            </Button>
                             <p className="text-[11px] text-gray-400 mt-1.5">JPEG or PNG only</p>
                         </div>
                     </div>
@@ -403,27 +279,17 @@ const ProfilePage = () => {
                     <form onSubmit={handleUpdateEmail} className="space-y-4">
                         <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">Email Address</label>
-                            <input
+                            <Input
                                 type="email"
                                 value={newEmail}
                                 onChange={e => setNewEmail(e.target.value)}
                                 placeholder="you@example.com"
-                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                             />
                         </div>
 
-                        <button type="submit" disabled={emailLoading}
-                            className="px-5 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-colors shadow-md shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
-                            {emailLoading ? (
-                                <>
-                                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                                    </svg>
-                                    Updating...
-                                </>
-                            ) : 'Update Email'}
-                        </button>
+                        <Button type="submit" size="sm" loading={emailLoading} disabled={emailLoading}>
+                            Update Email
+                        </Button>
                     </form>
                 </div>
 
@@ -434,27 +300,17 @@ const ProfilePage = () => {
                     <form onSubmit={handleUpdatePhone} className="space-y-4">
                         <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">Phone Number</label>
-                            <input
+                            <Input
                                 type="tel"
                                 value={newPhone}
                                 onChange={e => setNewPhone(e.target.value)}
                                 placeholder="+1 234 567 8900"
-                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                             />
                         </div>
 
-                        <button type="submit" disabled={phoneLoading}
-                            className="px-5 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-colors shadow-md shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
-                            {phoneLoading ? (
-                                <>
-                                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                                    </svg>
-                                    Updating...
-                                </>
-                            ) : 'Update Phone'}
-                        </button>
+                        <Button type="submit" size="sm" loading={phoneLoading} disabled={phoneLoading}>
+                            Update Phone
+                        </Button>
                     </form>
                 </div>
 
@@ -469,37 +325,27 @@ const ProfilePage = () => {
                         ].map(({ key, label }) => (
                             <div key={key}>
                                 <label className="block text-xs font-semibold text-gray-700 mb-1">{label}</label>
-                                <div className="relative">
-                                    <input
-                                        type={showPw[key] ? 'text' : 'password'}
-                                        value={pwForm[key]}
-                                        onChange={e => setPwForm(f => ({ ...f, [key]: e.target.value }))}
-                                        placeholder="••••••••"
-                                        className="w-full px-3 py-2 pr-9 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                                    />
-                                    <button type="button" onClick={() => setShowPw(s => ({ ...s, [key]: !s[key] }))}
-                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                                        {showPw[key]
-                                            ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
-                                            : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                                        }
-                                    </button>
-                                </div>
+                                <Input
+                                    type={showPw[key] ? 'text' : 'password'}
+                                    value={pwForm[key]}
+                                    onChange={e => setPwForm(f => ({ ...f, [key]: e.target.value }))}
+                                    placeholder="••••••••"
+                                    trailingIcon={
+                                        <button type="button" onClick={() => setShowPw(s => ({ ...s, [key]: !s[key] }))}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-subtle)', display: 'flex', alignItems: 'center' }}>
+                                            {showPw[key]
+                                                ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                                                : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                            }
+                                        </button>
+                                    }
+                                />
                             </div>
                         ))}
 
-                        <button type="submit" disabled={pwLoading}
-                            className="px-5 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-colors shadow-md shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
-                            {pwLoading ? (
-                                <>
-                                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                                    </svg>
-                                    Updating...
-                                </>
-                            ) : 'Change Password'}
-                        </button>
+                        <Button type="submit" size="sm" loading={pwLoading} disabled={pwLoading}>
+                            Change Password
+                        </Button>
                     </form>
                 </div>
 
