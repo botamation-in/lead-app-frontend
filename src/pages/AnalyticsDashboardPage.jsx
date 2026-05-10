@@ -393,6 +393,8 @@ const AnalyticsDashboardPage = () => {
     // Pending (draft) chart configs — changes inside the slider that haven't been applied yet
     const [pendingChartConfigs, setPendingChartConfigs] = useState({});
     const [updateSuccess, setUpdateSuccess] = useState({});
+    // Tracks charts mid-submit (between button click and chartLoadingState going true) to prevent flash
+    const [submittingCharts, setSubmittingCharts] = useState({});
     // Ref to track charts whose "Update Chart" fetch is in-flight (for auto-hide after load)
     const userFetchInFlightRef = React.useRef({});
 
@@ -499,9 +501,14 @@ const AnalyticsDashboardPage = () => {
         const inFlight = userFetchInFlightRef.current;
         Object.keys(inFlight).forEach(id => {
             const chartId = Number(id);
+            // Once loading starts, clear the submitting bridge state
+            if (inFlight[chartId] && chartLoadingState[chartId] === true) {
+                setSubmittingCharts(prev => { const n = { ...prev }; delete n[chartId]; return n; });
+            }
             // chartLoadingState[chartId] becoming false (or undefined) means it finished
             if (inFlight[chartId] && chartLoadingState[chartId] === false) {
                 delete inFlight[chartId];
+                setSubmittingCharts(prev => { const n = { ...prev }; delete n[chartId]; return n; });
                 setUpdateSuccess(prev => ({ ...prev, [chartId]: true }));
                 setTimeout(() => {
                     setUpdateSuccess(prev => { const n = { ...prev }; delete n[chartId]; return n; });
@@ -904,7 +911,11 @@ const AnalyticsDashboardPage = () => {
             ? String(viewAsAdmin.adminId || viewAsAdmin.id || viewAsAdmin._id || '')
             : null;
         const targetViewingAs = selectedAdminId || viewingAsOverride || viewingAs;
-        if (!targetAcctId || !targetViewingAs) return;
+        if (!targetAcctId || !targetViewingAs) {
+            // Cannot sync — no account or user identity; unblock the UI
+            setChartsReady(true);
+            return;
+        }
         setSchemaSyncing(true);
         setChartsReady(false);
         try {
@@ -1285,6 +1296,18 @@ const AnalyticsDashboardPage = () => {
         };
     }, []);
 
+    // Safety net: if chartsReady is still false after 10 s (auth/admins chain stuck),
+    // unblock the UI so the user isn't trapped on the loading mask indefinitely.
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setChartsReady(prev => {
+                if (!prev) console.warn('AnalyticsDashboard: chartsReady timeout — forcing ready state');
+                return true;
+            });
+        }, 10000);
+        return () => clearTimeout(timer);
+    }, []); // runs once on mount
+
     // Load charts whenever account or viewingAs changes
     useEffect(() => {
         if (!acctId || !viewingAs) return;
@@ -1379,7 +1402,11 @@ const AnalyticsDashboardPage = () => {
                 const list = Array.isArray(data) ? data : (data.admins || data.data || []);
                 setViewAsAdmins(list);
 
-                if (list.length === 0) return;
+                if (list.length === 0) {
+                    // No admins — unblock the UI
+                    setChartsReady(true);
+                    return;
+                }
 
                 // Helper: find admin by Botamation adminId (canonical key for AnalyticsSchema)
                 const findByPlatformId = (id) => id
@@ -1410,7 +1437,11 @@ const AnalyticsDashboardPage = () => {
                     adminToSelect = currentUserAdmin || findByPlatformId(localStorage.getItem('currentUserAdmin'));
                 }
 
-                if (!adminToSelect) return;
+                if (!adminToSelect) {
+                    // No admin match — unblock the UI with an empty dashboard
+                    setChartsReady(true);
+                    return;
+                }
 
                 setViewAsAdmin(adminToSelect);
 
@@ -1423,7 +1454,10 @@ const AnalyticsDashboardPage = () => {
                     setViewingAs(viewingAsId);
                 }
             })
-            .catch(() => { });
+            .catch(() => {
+                // Admins fetch failed — unblock the UI so it doesn't stay stuck on the loading mask
+                setChartsReady(true);
+            });
     }, [acctId, userDetails]);
     // Handle View As selection change
     const handleViewAsChange = async (selectedAdmin) => {
@@ -2373,6 +2407,89 @@ const AnalyticsDashboardPage = () => {
         }
     })();
 
+    // Shared "Update Chart" button used in both header-row (with categories) and no-category bar
+    const renderUpdateChartButton = (chartConfig, mergedConfig) => {
+        const id = chartConfig.id;
+        const isLoading = submittingCharts[id] || chartLoadingState[id];
+        const isSuccess = !!updateSuccess[id];
+        const isDirty   = isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig);
+
+        // Determine overlay visibility: gray when disabled, green when success
+        const showGray    = !isDirty && !isLoading && !isSuccess;
+        const showGreen   = isSuccess;
+
+        const handleClick = () => {
+            const cfg = mergedConfig;
+            const needsFetch = isChartRequestDirty(mergedConfig);
+            setSubmittingCharts(prev => ({ ...prev, [id]: true }));
+            setCharts(prev => prev.map(c => c.id === id ? { ...c, ...pendingChartConfigs[id] } : c));
+            setHasUnsavedChanges(true);
+            clearPendingConfig(id);
+            if (needsFetch) {
+                userFetchInFlightRef.current[id] = true;
+                fetchChartDataFromBackend(id, cfg, false, true);
+            } else {
+                setSubmittingCharts(prev => { const n = { ...prev }; delete n[id]; return n; });
+                hideFilter(id);
+            }
+        };
+
+        // Key drives animate-btn-state re-trigger on every state change
+        const contentKey = isSuccess ? 'success' : isLoading ? 'loading' : 'idle';
+
+        return (
+            <button
+                onClick={handleClick}
+                disabled={!isChartConfigured(mergedConfig) || (!isDirty && !isLoading)}
+                className={`btn-update flex items-center justify-center px-4 py-2.5 rounded-lg text-xs font-semibold
+                    bg-gradient-to-r from-indigo-600 to-violet-600 text-white
+                    shadow-md shadow-indigo-500/30
+                    transition-shadow duration-200
+                    ${isLoading ? 'cursor-wait' : !isDirty && !isSuccess ? 'cursor-not-allowed' : 'hover:shadow-indigo-500/50'}
+                    ${isSuccess ? 'btn-update-success-ring' : ''}
+                `}
+                title={!isChartConfigured(mergedConfig)
+                    ? 'Select the required chart fields first'
+                    : isDirty
+                        ? 'Update chart data'
+                        : 'Change the chart query fields to enable update'}
+            >
+                {/* Gray overlay — disabled state */}
+                <span
+                    className="btn-update-layer btn-update-layer-gray"
+                    style={{ opacity: showGray ? 1 : 0 }}
+                />
+                {/* Green overlay — success state */}
+                <span
+                    className="btn-update-layer btn-update-layer-green"
+                    style={{ opacity: showGreen ? 1 : 0 }}
+                />
+                {/* Content — re-keyed so animate-btn-state fires on every state change */}
+                <span key={contentKey} className="animate-btn-state relative flex items-center gap-1.5"
+                    style={{ color: showGray ? '#9ca3af' : 'white' }}>
+                    {isLoading ? (
+                        <>
+                            <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                            </svg>
+                            Updating…
+                        </>
+                    ) : isSuccess ? (
+                        <>
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Updated!
+                        </>
+                    ) : (
+                        'Update Chart'
+                    )}
+                </span>
+            </button>
+        );
+    };
+
     // Render single chart card
     const renderChartCard = (chartConfig) => {
         // mergedConfig = committed state + any pending (draft) changes from the slider
@@ -2763,52 +2880,7 @@ const AnalyticsDashboardPage = () => {
                             {/* ── Update Chart button in header row ── */}
                             {mergedConfig.chartCategory && (
                                 <div className="ml-auto flex items-center">
-                                    <button
-                                        onClick={() => {
-                                            const cfg = mergedConfig;
-                                            const needsFetch = isChartRequestDirty(mergedConfig);
-                                            setCharts(prev => prev.map(c => c.id === chartConfig.id ? { ...c, ...pendingChartConfigs[chartConfig.id] } : c));
-                                            setHasUnsavedChanges(true);
-                                            clearPendingConfig(chartConfig.id);
-                                            if (needsFetch) {
-                                                userFetchInFlightRef.current[chartConfig.id] = true;
-                                                fetchChartDataFromBackend(chartConfig.id, cfg, false, true);
-                                            } else {
-                                                hideFilter(chartConfig.id);
-                                            }
-                                        }}
-                                        disabled={!isChartConfigured(mergedConfig) || !isChartDirty(mergedConfig, chartConfig) || !!chartLoadingState[chartConfig.id]}
-                                        className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
-                                            ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-500/30'
-                                            : updateSuccess[chartConfig.id]
-                                                ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white'
-                                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                            }`}
-                                        title={!isChartConfigured(mergedConfig)
-                                            ? 'Select the required chart fields first'
-                                            : isChartDirty(mergedConfig, chartConfig)
-                                                ? 'Update chart data'
-                                                : 'Change the chart query fields to enable update'}
-                                    >
-                                        {chartLoadingState[chartConfig.id] ? (
-                                            <>
-                                                <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
-                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                                </svg>
-                                                Updating…
-                                            </>
-                                        ) : updateSuccess[chartConfig.id] ? (
-                                            <>
-                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                                </svg>
-                                                Updated
-                                            </>
-                                        ) : (
-                                            'Update Chart'
-                                        )}
-                                    </button>
+                                    {renderUpdateChartButton(chartConfig, mergedConfig)}
                                 </div>
                             )}
 
@@ -2828,52 +2900,7 @@ const AnalyticsDashboardPage = () => {
                             {/* ── Action buttons bar — only when no categories (otherwise in Account Category header row) ── */}
                             {categories.length === 0 && (
                                 <div className="flex items-center justify-end px-5 pt-2 pb-1 border-b border-gray-100 shrink-0 relative pr-10">
-                                    <button
-                                        onClick={() => {
-                                            const cfg = mergedConfig;
-                                            const needsFetch = isChartRequestDirty(mergedConfig);
-                                            setCharts(prev => prev.map(c => c.id === chartConfig.id ? { ...c, ...pendingChartConfigs[chartConfig.id] } : c));
-                                            setHasUnsavedChanges(true);
-                                            clearPendingConfig(chartConfig.id);
-                                            if (needsFetch) {
-                                                userFetchInFlightRef.current[chartConfig.id] = true;
-                                                fetchChartDataFromBackend(chartConfig.id, cfg, false, true);
-                                            } else {
-                                                hideFilter(chartConfig.id);
-                                            }
-                                        }}
-                                        disabled={!isChartConfigured(mergedConfig) || !isChartDirty(mergedConfig, chartConfig) || !!chartLoadingState[chartConfig.id]}
-                                        className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${isChartConfigured(mergedConfig) && isChartDirty(mergedConfig, chartConfig) && !chartLoadingState[chartConfig.id]
-                                            ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-500/30'
-                                            : updateSuccess[chartConfig.id]
-                                                ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white'
-                                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                            }`}
-                                        title={!isChartConfigured(mergedConfig)
-                                            ? 'Select the required chart fields first'
-                                            : isChartDirty(mergedConfig, chartConfig)
-                                                ? 'Update chart data'
-                                                : 'Change the chart query fields to enable update'}
-                                    >
-                                        {chartLoadingState[chartConfig.id] ? (
-                                            <>
-                                                <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
-                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                                </svg>
-                                                Updating…
-                                            </>
-                                        ) : updateSuccess[chartConfig.id] ? (
-                                            <>
-                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                                </svg>
-                                                Updated
-                                            </>
-                                        ) : (
-                                            'Update Chart'
-                                        )}
-                                    </button>
+                                    {renderUpdateChartButton(chartConfig, mergedConfig)}
 
                                     {/* Close button top right */}
                                     <button
